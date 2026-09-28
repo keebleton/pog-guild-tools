@@ -1,0 +1,7 @@
+# built zips and icons (CurseForge gets them; git doesn't need them)
+dist/*.zip
+dist/*.png
+
+# Python
+__pycache__/
+*.pyc

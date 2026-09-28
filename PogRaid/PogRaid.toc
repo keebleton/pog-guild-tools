@@ -1,0 +1,35 @@
+## Interface: 16001
+## Title: Pog Raid
+## Notes: Guild dashboard, message board, group finder, raid rosters, attendance, loot log, crafting directory, raid plans, and games: Sapper Sweeper, Gem Cutter, Wowdle and ranked duels.
+## Author: Jake McMichael
+## Version: 0.12.4
+## IconTexture: Interface\AddOns\PogRaid\Media\logo
+## Category: Guild
+## AddonCompartmentFunc: PogRaid_OnAddonCompartmentClick
+## X-Curse-Project-ID: 1712125
+## SavedVariables: PogRaidDB
+
+Core.lua
+Bug.lua
+Codec.lua
+Comm.lua
+UI.lua
+Canvas.lua
+Viewer.lua
+Editor.lua
+Roster.lua
+Attendance.lua
+Loot.lua
+Sync.lua
+Version.lua
+Social.lua
+JoinPopup.lua
+Home.lua
+Gems.lua
+Wowdle.lua
+Games.lua
+Duels.lua
+Crafting.lua
+Demo.lua
+Settings.lua
+Minimap.lua
