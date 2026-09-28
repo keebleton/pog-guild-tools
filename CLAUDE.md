@@ -64,6 +64,15 @@ Cards are a fill (UI.Card), no outline. Buttons are outlines; fill only when sel
 Small dim caps section titles, UI.ScrollHint on long lists, UI.ConfirmClick ("Sure?") for destructive actions.
 Window 902x624 with a 36 px title band; pages use a 902x608 grid.
 
+## How Jake likes to work
+- Plain English, short, recommendation first. He isn't a terminal person: give him buttons, double-click files and
+  in-game steps, and do the command-line parts yourself.
+- Never suggest stopping, pausing or "a good place to wrap up". When something lands, say what's done and move to the
+  next step; he decides when to stop.
+- He iterates by screenshot and notices small misalignments: measure, don't eyeball.
+- Keep it lean: single-agent work unless he asks for more horsepower.
+- When he asks, commit and push for him (GitHub Desktop is his tool for Fetch/Pull/Push).
+
 ## Jake's decisions
 - Don't change the top band without asking. No leveling race. Signups/Discord integration parked. No "what's new"
   pop-up (no extra things to click). Officer sync (rosters/attendance/loot between officers) on hold until a second
