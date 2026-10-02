@@ -104,6 +104,8 @@ end
 function M:EnableKeyboard(on) self.__keyboard = on end
 function M:SetPropagateKeyboardInput(on) self.__propagate = on end
 function M:IsMouseOver() return STUB.hover == self end
+function M:SetEnabled(on) self.__disabled = not on end
+function M:IsEnabled() return not self.__disabled end
 
 -- regions ---------------------------------------------------------------
 function M:CreateTexture() return new("Texture", self) end
@@ -215,6 +217,9 @@ STUB.instance = { "Stormwind", "none" }
 function GetInstanceInfo() return STUB.instance[1], STUB.instance[2], 0, "", 0, 0, false, 0 end
 function SetRaidTargetIconTexture(tex, i) tex.__raidIcon = i end
 function PlaySound() end
+-- music: PlayMusic replaces the zone music until StopMusic
+function PlayMusic(file) STUB.music = file return true end
+function StopMusic() STUB.music = nil end
 SOUNDKIT = { RAID_WARNING = 8959 }
 STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
 UISpecialFrames = {}
@@ -416,6 +421,16 @@ function UnitExists(unit) return unit == "target" and STUB.target ~= nil end
 function UnitIsPlayer(unit) return unit == "target" and STUB.target ~= nil end
 local baseUnitName = UnitName
 function UnitName(unit) if unit == "target" then return STUB.target end return baseUnitName(unit) end
+
+-- macro icons ---------------------------------------------------------------
+-- the client's macro icons: file IDs, classic art below 140000 and later art
+-- above (a name now and then, and repeats of ours)
+function GetMacroIcons(t)
+    for i = 1, 300 do t[#t + 1] = 139000 + i end
+    for i = 1, 50 do t[#t + 1] = 236000 + i end
+    t[#t + 1] = "INV_Misc_QuestionMark"
+    t[#t + 1] = 134169
+end
 
 -- minimap -------------------------------------------------------------------
 Minimap = new("Frame")

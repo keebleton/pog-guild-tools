@@ -324,6 +324,63 @@ ratings = bob.run("""local ns = ...
     return math.floor(t.players['Jake-Realm'].rating + 0.5) .. '/' .. math.floor(t.players['Mira-Realm'].rating + 0.5)""", bob.ns)
 check(ratings == "1216/1184", "duel: every client agrees on the new ratings (%s)" % ratings)
 
+# profiles and kudos: shared with everyone; an alt on the same account shows
+# the same profile and shares its kudos; a late login catches up
+mira.run("local ns = ...; ns.Profiles:Save({ status = 'Leveling my alt', icon = 134169, song = 2 })", mira.ns)
+anna.run("local ns = ...; ns.Profiles:GiveKudos('Mira-Realm', 1, 'Saved the wipe')", anna.ns)
+bob.run("local ns = ...; ns.Profiles:GiveKudos('Mira-Realm', 1, 'Clutch!')", bob.ns)
+pump(everyone, 3)
+check(jake.run("local ns = ...; local c = ns.Profiles:Content('Mira-Realm'); return c.status .. '/' .. c.icon .. '/' .. c.song", jake.ns)
+      == "Leveling my alt/134169/2", "profiles: a profile reaches everyone")
+check(jake.run("local ns = ...; local k, _, total, givers = ns.Profiles:Kudos('Mira-Realm'); return k[1].n .. '/' .. total .. '/' .. givers", jake.ns)
+      == "2/2/2", "kudos: kudos reach everyone")
+check(jake.run("local ns = ...; local _, recent = ns.Profiles:Kudos('Mira-Realm'); local m = {} for i, r in ipairs(recent) do m[i] = r.msg end table.sort(m) return table.concat(m, '|')", jake.ns)
+      == "Clutch!|Saved the wipe", "kudos: with their messages")
+# Mira logs in on her alt: same account (the saved data is shared), its own record
+miraalt = Client("Miraalt", GUILD + [("Miraalt-Realm", 3)])
+miraalt.stub.now = mira.stub.now  # everyone reads the same server clock
+mira.run("local ns = ...; ns.Profiles:Mine().chars[ns.Sync:GuildName()]['Miraalt-Realm'] = ns.Now() - 5; ns.Profiles:Publish()", mira.ns)
+account = mira.run("""local ns = ...
+    local a = ns.Profiles:Mine()
+    return a.content.status .. '|' .. a.content.icon .. '|' .. a.content.song .. '|' .. a.ed""", mira.ns)
+miraalt.run("""local ns, acct = ...
+    local status, icon, song, ed = acct:match('^(.-)|(%d+)|(%d+)|(%d+)$')
+    local g = ns.Sync:GuildName()
+    ns.db.account = { content = { status = status, icon = tonumber(icon), song = tonumber(song) }, ed = tonumber(ed),
+        chars = { [g] = { ['Mira-Realm'] = ns.Now() - 5, ['Miraalt-Realm'] = ns.Now() } }, together = {}, pins = {}, hidden = {} }
+    ns.Profiles:Publish()""", miraalt.ns, account)
+clients = everyone + [miraalt]
+miraalt.run("local ns = ...; ns.Sync:SendSummary()", miraalt.ns)  # its login fingerprint: catches up on the rest
+pump(clients, 30)
+check(jake.run("local ns = ...; local l = ns.Profiles:Linked('Miraalt-Realm'); return #l .. ':' .. ns.Profiles:Content('Miraalt-Realm').status", jake.ns)
+      == "2:Leveling my alt", "accounts: an alt that logged in joins its account, with the same profile")
+jake.run("local ns = ...; ns.Profiles:GiveKudos('Miraalt-Realm', 2, 'Held aggro on everything')", jake.ns)
+pump(clients, 3)
+check(bob.run("local ns = ...; local _, _, total = ns.Profiles:Kudos('Mira-Realm'); return total", bob.ns) == 3,
+      "kudos: kudos to an alt count on the account")
+# an edit on the alt shows on every character of the account, for everyone
+anna.online = False
+miraalt.run("local ns = ...; ns.Profiles:Save({ status = 'Alt life' })", miraalt.ns)
+pump(clients, 3)
+check(jake.run("local ns = ...; return ns.Profiles:Content('Mira-Realm').status", jake.ns) == "Alt life",
+      "accounts: the newest edit wins across the account")
+miraalt.run("local ns = ...; ns.Profiles:Save({ nick = 'Mimi' })", miraalt.ns)
+pump(clients, 3)
+check(bob.run("local ns = ...; return ns.Profiles:Name('Miraalt-Realm', true)", bob.ns) == "Mimi (Mira)",
+      "accounts: a nickname reaches everyone, with the main's name")
+anna.online = True
+anna.run("local ns = ...; ns.Sync:SendSummary()", anna.ns)
+pump(clients, 30)
+check(anna.run("local ns = ...; return ns.Profiles:Content('Mira-Realm').status", anna.ns) == "Alt life",
+      "profiles: a late login gets the newest profile")
+def profile_keys(c):
+    """Profile and kudos records with their revisions. (Whole hashes can differ for a
+    while here: an expired group listing isn't handed to the newcomer, by design.)"""
+    keys = c.run("local ns = ...; local out = {} for i, k in ipairs(ns.Sync:Keys()) do out[i] = k.key .. '@' .. k.rev end return table.concat(out, '|')", c.ns)
+    return sorted(k for k in keys.split("|") if k[:1] in ("u", "q"))
+check(len({tuple(profile_keys(c)) for c in clients}) == 1 and len(profile_keys(jake)) == 5,
+      "profiles: everyone ends with the same profiles and kudos")
+
 # version check: one guild message, one whisper back from each addon, nothing more
 for c in everyone:
     c.stub.sent = c.lua.table_from([])

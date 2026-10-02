@@ -22,6 +22,7 @@ local RX = PAD + LEFT_W + PAD
 local RW = FRAME_W - RX - PAD
 local TOP = TITLE_H
 local ROW_H = 22
+local GENERAL_H = 176   -- five checks
 
 local function S() return ns.db.settings end
 
@@ -70,7 +71,7 @@ function Settings:Build(page)
     -- General
     local gen = CreateFrame("Frame", nil, page)
     gen:SetPoint("TOPLEFT", PAD, -TOP)
-    gen:SetSize(LEFT_W, 150)
+    gen:SetSize(LEFT_W, GENERAL_H)
     UI.Card(gen)
     local t = UI.SectionTitle(gen, "General")
     t:SetPoint("TOPLEFT", 12, -12)
@@ -81,6 +82,10 @@ function Settings:Build(page)
         { "Pop-up sounds", function() return S().sounds end, function(v) S().sounds = v end },
         { "Group join request pop-ups", function() return S().joinPopups end, function(v) S().joinPopups = v end },
         { "Ranked duel challenges", function() return S().duelChallenges end, function(v) S().duelChallenges = v end },
+        { "Play profile songs", function() return S().profileSongs end, function(v)
+            S().profileSongs = v
+            if not v and ns.Profiles then ns.Profiles:StopSong() end
+        end },
     }
     for i, it in ipairs(items) do
         local c = UI.Check(gen, it[1], it[2], it[3])
@@ -92,8 +97,8 @@ function Settings:Build(page)
 
     -- Officer ranks
     local off = CreateFrame("Frame", nil, page)
-    off:SetPoint("TOPLEFT", PAD, -(TOP + 150 + GAP))
-    off:SetSize(LEFT_W, height - 150 - GAP)
+    off:SetPoint("TOPLEFT", PAD, -(TOP + GENERAL_H + GAP))
+    off:SetSize(LEFT_W, height - GENERAL_H - GAP)
     UI.Card(off)
     local t2 = UI.SectionTitle(off, "Officer ranks")
     t2:SetPoint("TOPLEFT", 12, -12)
@@ -118,7 +123,7 @@ function Settings:Build(page)
     who:SetPoint("TOPLEFT", RX, -TOP)
     who:SetSize(RW, height)
     UI.Card(who)
-    local t3 = UI.SectionTitle(who, "Who has Pog Raid")
+    local t3 = UI.SectionTitle(who, "Who has Pog Guild Tools")
     t3:SetPoint("TOPLEFT", 12, -12)
     who.mine = UI.Text(who, 10)
     who.mine:SetPoint("TOPRIGHT", -12, -13)
@@ -160,7 +165,7 @@ function Settings:Build(page)
     who.empty = UI.Text(who, 11)
     who.empty:SetPoint("TOP", 0, -60)
     who.empty:SetTextColor(0.5, 0.5, 0.55)
-    who.empty:SetText("Nobody else seen yet. Guildies running Pog Raid\nshow up here a little after they log in.")
+    who.empty:SetText("Nobody else seen yet. Guildies running Pog Guild Tools\nshow up here a little after they log in.")
     self.who = who
 end
 

@@ -42,7 +42,7 @@ function MinimapButton:Build()
     b:SetScript("OnClick", function(btn, button)
         if button == "RightButton" then
             UI.ShowMenu(btn, {
-                { text = "Pog Raid", header = true },
+                { text = "Pog Guild Tools", header = true },
                 { text = "Settings", func = function() ns.Editor:Toggle("settings") end },
                 { text = "Hide minimap button", func = function() self:SetHidden(true) end },
             })
@@ -57,7 +57,7 @@ function MinimapButton:Build()
     b:SetScript("OnEnter", function(btn)
         if not GameTooltip then return end
         GameTooltip:SetOwner(btn, "ANCHOR_LEFT")
-        GameTooltip:AddLine("Pog Raid", 1, 1, 1)
+        GameTooltip:AddLine("Pog Guild Tools", 1, 1, 1)
         GameTooltip:AddLine("Left-click: open", 0.8, 0.8, 0.85)
         GameTooltip:AddLine("Right-click: settings or hide", 0.8, 0.8, 0.85)
         GameTooltip:AddLine("Drag: move around the minimap", 0.8, 0.8, 0.85)

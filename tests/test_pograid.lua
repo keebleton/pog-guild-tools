@@ -41,6 +41,13 @@ check(ns.db ~= nil and #ns.db.order == 1, "load: first board created")
 check(STUB.prefix == "PogRaid", "load: addon prefix registered")
 check(SlashCmdList.POGRAID ~= nil, "load: slash command registered")
 check(ns.On("NOT_A_REAL_EVENT", function() end) == false, "events: unknown event fails quietly")
+do
+    local title
+    for line in io.lines(ADDON_DIR .. "/PogRaid.toc") do title = title or line:match("^## Title: (.+)$") end
+    ns.Print("hello")
+    check(title == "Pog Guild Tools" and STUB.printed[#STUB.printed] == "|cff66ccffPog Guild Tools|r: hello",
+        "name: Pog Guild Tools in the AddOns list and in chat")
+end
 
 -- Codec ---------------------------------------------------------------------
 local Codec = ns.Codec
@@ -556,7 +563,8 @@ do
     for _, t in ipairs(Editor.tabs) do if t.key == "boards" then boardsTab = t end end
     local order = {}
     for i, t in ipairs(Editor.tabs) do order[i] = t.key end
-    check(table.concat(order, ",") == "home,roster,attendance,loot,crafting,games,boards,settings", "tabs: Home ... Crafting, Games, Raid Plans, then Settings")
+    check(table.concat(order, ",") == "home,profiles,roster,attendance,loot,crafting,games,boards,settings",
+        "tabs: Home, Profiles ... Crafting, Games, Raid Plans, then Settings")
     do
         -- every gap between tab labels (and before the X) is the same: text
         -- edges from each tab's centre and its label width
@@ -763,7 +771,9 @@ do
     pool = Roster:PoolNames()
     check(pool[#pool] == "Raider07-Realm", "marks: players marked out sort to the bottom of the pool")
     local menu = Roster:PlayerEntries("Raider08-Realm")
-    check(menu[3].text:find("> ", 1, true) == 1, "marks: menu shows the current mark")
+    local marked
+    for _, x in ipairs(menu) do if x.text:find("> ", 1, true) == 1 then marked = marked or x.text end end
+    check(marked == "> Tentative", "marks: menu shows the current mark")
 
     -- size change moves extra groups to the bench
     Roster:SetSize(10)
@@ -1105,6 +1115,15 @@ do
     check(Loot:Entries()[1].link == blue and Loot:Entries()[1].player == "Raider02-Realm", "loot: stacked item message keeps a clean link")
     STUB.Fire("CHAT_MSG_LOOT", "Raider02 receives loot: " .. green .. ".")
     check(#Loot:Entries() == 3, "loot: below Rare skipped by default")
+    -- pugs in the raid (added to the pool by the attendance snapshot) are not guild members
+    G.players["Pugsley"] = { manual = true, class = "ROGUE" }
+    check(G.scanned and G.players["Raider01-Realm"].inGuild, "loot: (guild roster read for these)")
+    STUB.Fire("CHAT_MSG_LOOT", "Pugsley receives loot: " .. STUB.Link(18002, "Pug Epic") .. ".")
+    STUB.Fire("ENCOUNTER_LOOT_RECEIVED", 3001, 18003, STUB.Link(18003, "Pug Blade"), 1, "Strangerdanger", "MAGE")
+    check(#Loot:Entries() == 3, "loot: loot for players outside the guild is not logged")
+    check(Loot:AddManual("Pugsley", STUB.Link(18004, "Pug Ring")) ~= nil, "loot: Add loot still takes a pug")
+    Loot:Delete(Loot:Entries()[1])
+    G.players["Pugsley"] = nil
     STUB.Fire("CHAT_MSG_LOOT", { __secret = true })
     check(#Loot:Entries() == 3, "loot: hidden (secret) messages ignored safely")
 
@@ -1548,6 +1567,12 @@ do
     STUB.Fire("ENCOUNTER_LOOT_RECEIVED", 1, 20003, STUB.Link(20003, "World Epic"), 1, "Jake", "HUNTER")
     check(#seen == seenBefore + 2 and seen[1].itemID == 20003 and seen[2].itemID == 20001, "home: blue and epic kept, green skipped, duplicate merged")
     check(seen[2].player == "Newbie-Realm" and seen[1].player == "Jake-Realm", "home: loot mapped to guild names")
+    STUB.Fire("CHAT_MSG_LOOT", "Strangerdanger receives loot: " .. STUB.Link(20004, "Pug Blue", "0070dd") .. ".")
+    check(#seen == seenBefore + 2, "home: loot for a pug in the group is skipped")
+    table.insert(seen, 1, { t = ns.Now(), player = "Strangerdanger", itemID = 20005, link = STUB.Link(20005, "Old Pug Drop") })
+    Home:Refresh()
+    check(Home.lootCard.rows[1].item == seen[2], "home: pug drops saved by older versions are hidden")
+    table.remove(seen, 1)
     check(#ns.Loot:Entries() == logBefore, "home: raid loot log untouched outside raid nights")
     Home:Refresh()
     check(Home.lootCard.rows[1].item == seen[1] and Home.lootCard.rows[1].text:GetText():find("World Epic", 1, true)
@@ -2152,7 +2177,7 @@ do
     check(#STUB.sent == 1, "version: answers again after a relog (10 minutes later)")
     STUB.Fire("CHAT_MSG_ADDON", "PogRaid", "W99.0.0", "WHISPER", "Raider03-Realm")
     STUB.Fire("CHAT_MSG_ADDON", "PogRaid", "Wgarbage", "WHISPER", "Raider04-Realm")
-    check(printedContains("newer Pog Raid (99.0.0)") and Version.seen["Raider04-Realm"] == nil, "version: newer version noticed, junk ignored")
+    check(printedContains("newer Pog Guild Tools (99.0.0)") and Version.seen["Raider04-Realm"] == nil, "version: newer version noticed, junk ignored")
     STUB.printed = {}
     STUB.Fire("CHAT_MSG_ADDON", "PogRaid", "W99.1.0", "WHISPER", "Raider05-Realm")
     check(not printedContains("newer Pog Raid"), "version: the update note shows once")
@@ -2527,6 +2552,476 @@ do
     ns.Editor:ShowTab("home")
 end
 
+-- Profiles: accounts, Most played with, kudos, professions, page ---------------------------
+do
+    local P, Sync, UI = ns.Profiles, ns.Sync, ns.UI
+    local Editor = ns.Editor
+    STUB.party, STUB.roster, STUB.instance = nil, nil, { "Stormwind", "none" }
+    table.insert(STUB.guild, { name = "Jakealt-Realm", rankIndex = 2, level = 23, online = false, class = "MAGE" })
+    ns.Roster:ScanGuild()
+    local me = Sync:Me()
+    local guild = Sync:GuildName()
+    local now = ns.Now()
+    local function apply(name, rec) return Sync:Apply(Sync.collections[name], rec) end
+    local function prof(who, t)
+        local r = { id = who, rev = now, by = who, author = who, t = now }
+        for k, v in pairs(t or {}) do r[k] = v end
+        return r
+    end
+
+    -- a test build of 0.13 kept Most played with per character, a profile per
+    -- character and a wall: all of it moves to the account
+    ns.db.account = nil
+    ns.db.profiles = { guid1 = { together = { ["Raider05-Realm"] = 300 }, pins = { "Raider07-Realm" }, hidden = { x = true } },
+        guid2 = { together = { ["Raider05-Realm"] = 200 }, pins = {}, hidden = {} } }
+    ns.db.selfNames = ns.db.selfNames or {}
+    ns.db.selfNames.testguid = me
+    ns.db.sync[guild].wall = { old = { id = "old" } }
+    ns.db.sync[guild].profile[me] = prof(me, { status = "From the test build", icon = 134169 })
+    local a = P:Mine()
+    check(a.together["Raider05-Realm"] == 500 and ns.db.profiles == nil and a.pins == nil,
+        "accounts: the test build's Most played with moves to the account")
+    check(a.content.status == "From the test build" and a.content.icon == 134169 and ns.db.sync[guild].wall == nil,
+        "accounts: and its profile, and the old wall is dropped")
+    wipe(a.together); wipe(a.content); a.ed = nil
+    ns.db.sync[guild].profile[me] = nil
+    ns.db.selfNames.testguid = nil
+
+    -- our profile
+    P:Save({ status = "Farming Devilsaur", about = "Hunter, raider, menace." })
+    local mine = P:Get(me)
+    check(a.content.status == "Farming Devilsaur" and mine and mine.status == "Farming Devilsaur"
+        and mine.about == "Hunter, raider, menace." and mine.ed == a.ed and mine.chars == nil,
+        "accounts: saving keeps the profile on the account and shares it")
+    P:Save({ status = false, fav1 = "Molten Core" })
+    mine = P:Get(me)
+    check(mine.status == nil and mine.about == "Hunter, raider, menace." and mine.fav1 == "Molten Core",
+        "accounts: fields change one at a time, false clears")
+    local _, back = Sync:DecodeRecord(Sync:EncodeRecord(Sync.collections.profile, mine))
+    check(back and back.about == mine.about and back.fav1 == "Molten Core" and back.ed == mine.ed, "accounts: a profile survives the wire")
+
+    -- only you write your record; junk is refused
+    check(not apply("profile", prof("Raider03-Realm", { by = "Raider05-Realm", status = "hacked" })), "accounts: nobody writes someone else's record")
+    check(not apply("profile", prof("Raider03-Realm", { id = "Raider04-Realm" })), "accounts: a record's id is its character")
+    check(not apply("profile", prof("Raider03-Realm", { status = ("x"):rep(61) }))
+        and not apply("profile", prof("Raider03-Realm", { nick = ("x"):rep(21) })), "accounts: over-long text refused")
+    check(not apply("profile", prof("Raider03-Realm", { icon = 0 })) and not apply("profile", prof("Raider03-Realm", { icon = 2.5 }))
+        and not apply("profile", prof("Raider03-Realm", { ed = -1 })), "accounts: bad numbers refused")
+
+    -- our characters: every one we play joins the account
+    a.chars[guild]["Jakealt-Realm"] = now - 100
+    P:Publish()
+    check(P:Get(me).chars == "Jake-Realm,Jakealt-Realm" and P:IsMine("Jakealt-Realm") and #P:Linked(me) == 2,
+        "accounts: our characters are listed on our record")
+    check(P:Content("Jakealt-Realm") == a.content and P:Main("Jakealt-Realm") == me, "accounts: our alt shows our profile")
+
+    -- someone else's account: linked only when both records list each other
+    now = now + 10
+    apply("profile", prof("Raider03-Realm", { status = "Old news", chars = "Raider03-Realm,Raider09-Realm", ed = 100 }))
+    apply("profile", prof("Raider09-Realm", { rev = now + 1, status = "Looking for Scholo", chars = "Raider03-Realm,Raider09-Realm", ed = 200,
+        icon = 135349, color = 3, song = 2, role = "H", top = "Raider05-Realm,Raider06-Realm" }))
+    apply("profile", prof("Raider05-Realm", { status = "I'm Raider03 now", chars = "Raider03-Realm,Raider05-Realm", ed = 900 }))
+    local l3 = P:Linked("Raider03-Realm")
+    check(#l3 == 2 and l3[2] == "Raider09-Realm" and #P:Linked("Raider05-Realm") == 1,
+        "accounts: two records that list each other are one account; a one-sided claim isn't")
+    check(P:Content("Raider03-Realm").status == "Looking for Scholo" and P:Content("Raider09-Realm").status == "Looking for Scholo",
+        "accounts: the newest edit shows on every character")
+    check(P:Portrait("Raider03-Realm") == 135349 and P:Portrait("Raider04-Realm") == 135428,
+        "accounts: their portrait, or their class icon until they pick one")
+    local r3, g3, b3 = P:Color("Raider03-Realm")
+    check(r3 == P.COLORS[3][1] and g3 == P.COLORS[3][2] and b3 == P.COLORS[3][3] and P:Song("Raider03-Realm")[2] == "Stormwind",
+        "accounts: theme color and song")
+    check(P:Main("Raider09-Realm") == "Raider03-Realm", "accounts: the account goes by its highest level character")
+    local top3 = P:Top("Raider03-Realm")
+    check(#top3 == 2 and top3[1] == "Raider05-Realm", "accounts: their Most played with, as their account shared it")
+
+    -- Most played with: time grouped per account, counted every minute
+    STUB.party = { { name = "Raider05-Realm", class = "HUNTER" }, { name = "Raider06-Realm", class = "DRUID" },
+        { name = "Pugsley", class = "ROGUE" }, { name = "Jakealt-Realm", class = "MAGE" } }
+    -- (the stub's clock jumps, so a minute at a time to let every tick run)
+    local function minutes(n) for _ = 1, n do STUB.Advance(60) end end
+    minutes(20)
+    STUB.party = { { name = "Raider05-Realm", class = "HUNTER" } }
+    minutes(10)
+    STUB.party = nil
+    STUB.roster = { { name = "Jake" }, { name = "Raider07-Realm", online = false }, { name = "Raider08-Realm" } }
+    minutes(15)
+    STUB.roster = nil
+    check(a.together["Raider05-Realm"] == 1800 and a.together["Raider06-Realm"] == 1200 and a.together["Raider08-Realm"] == 900,
+        "most played: time grouped counted per guild member, party and raid")
+    check(a.together.Pugsley == nil and a.together["Raider07-Realm"] == nil and a.together["Jakealt-Realm"] == nil
+        and a.together[me] == nil, "most played: pugs, offline raid members and our own characters don't count")
+    local function top() return table.concat(P:TopNames(), ",") end
+    check(top() == "Raider05-Realm,Raider06-Realm,Raider08-Realm", "most played: most time grouped first")
+    a.together["Raider09-Realm"], a.together["Raider03-Realm"] = 500, 500
+    check(top() == "Raider05-Realm,Raider06-Realm,Raider03-Realm,Raider08-Realm",
+        "most played: someone's characters add up, shown as their account")
+    a.together["Raider10-Realm"] = 300
+    check(not top():find("Raider10", 1, true), "most played: a few minutes together isn't enough")
+    P:Publish()
+    check(P:Get(me).top == top(), "most played: shared")
+    for i = 11, 15 do a.together[("Raider%02d-Realm"):format(i)] = 700 + i end
+    check(#P:TopNames() == 5 and top() == "Raider05-Realm,Raider06-Realm,Raider03-Realm,Raider08-Realm,Raider15-Realm",
+        "most played: the top five")
+    for i = 11, 15 do a.together[("Raider%02d-Realm"):format(i)] = nil end
+    P:Publish()
+
+    -- kudos
+    local week = P.Week()
+    local T = 2900 * 604800 + 5 * 86400 + 15 * 3600
+    check(os.date("!%A %H:%M", T) == "Tuesday 15:00" and P.Week(T) == P.Week(T - 1) + 1 and P.Week(T + 604799) == P.Week(T),
+        "kudos: weeks turn over at the Tuesday reset")
+    check(P:GiveKudos("Raider03-Realm", 1) == nil and P:GiveKudos("Raider03-Realm", 1, "   ") == nil,
+        "kudos: not without a message")
+    check(P:GiveKudos("Raider03-Realm", 1, "Thanks for the |cffff0000heals|r") == true, "kudos: giving one")
+    local kid = me .. ":1:Raider03-Realm"
+    local k1 = Sync:Store("kudos")[kid]
+    check(k1 and k1.n == 1 and k1.wk == week and k1.to == "Raider03-Realm" and k1.msg == "Thanks for the /cffff0000heals/r",
+        "kudos: shared as a count per giver, kind and person, with the message")
+    local kinds, recent, total, givers = P:Kudos("Raider03-Realm")
+    check(kinds[1].n == 1 and kinds[1].gave and total == 1 and givers == 1 and recent[1].id == kid, "kudos: counted")
+    check(P:GiveKudos("Raider03-Realm", 1) == false and Sync:Store("kudos")[kid].n == 0 and P:Kudos("Raider03-Realm")[1].n == 0,
+        "kudos: clicking again the same week takes it back")
+    check(P:GiveKudos("Raider03-Realm", 1, "For real") == true and Sync:Store("kudos")[kid].n == 1
+        and Sync:Store("kudos")[kid].msg == "For real", "kudos: and gives it again, the newest message kept")
+    -- kudos to their alt count on their account; their own alts' don't
+    check(apply("kudos", { id = "Raider05-Realm:2:Raider09-Realm", rev = now, by = "Raider05-Realm", author = "Raider05-Realm", t = now,
+        to = "Raider09-Realm", kind = 2, n = 3, wk = week - 2, msg = "Never died once" }), "kudos: a guildie's kudos arrive")
+    apply("kudos", { id = "Raider09-Realm:3:Raider03-Realm", rev = now, by = "Raider09-Realm", author = "Raider09-Realm", t = now,
+        to = "Raider03-Realm", kind = 3, n = 5, wk = week, msg = "me me me" })
+    apply("kudos", { id = "Raider06-Realm:8:Raider03-Realm", rev = now, by = "Raider06-Realm", author = "Raider06-Realm", t = now,
+        to = "Raider03-Realm", kind = 8, n = 2, wk = week, msg = "lol" })
+    kinds, recent, total, givers = P:Kudos("Raider03-Realm")
+    check(kinds[2].n == 3 and kinds[3].n == 0 and total == 4 and givers == 2,
+        "kudos: an account's characters share their kudos, can't give themselves any, and Funny is retired")
+    check(P:GiveKudos("Raider03-Realm", 8, "lol") == nil and P.KUDOS[9][2] == "GGWP", "kudos: Funny can't be given, GGWP can")
+    check(P:GiveKudos("Jakealt-Realm", 1, "hi") == nil and P:GiveKudos(me, 1, "hi") == nil, "kudos: none for our own characters")
+    local function bad(t)
+        local r = { id = "Raider05-Realm:1:Raider06-Realm", rev = now, by = "Raider05-Realm", author = "Raider05-Realm", t = now,
+            to = "Raider06-Realm", kind = 1, n = 1, wk = week, msg = "nice" }
+        for k, v in pairs(t) do r[k] = v end
+        return not apply("kudos", r)
+    end
+    check(bad({ by = "Raider07-Realm" }) and bad({ id = "Raider05-Realm:2:Raider06-Realm" }) and bad({ kind = 0 })
+        and bad({ n = 521 }) and bad({ to = "Raider05-Realm", id = "Raider05-Realm:1:Raider05-Realm" }),
+        "kudos: someone else's, mismatched, unknown or self kudos refused")
+    check(bad({ msg = false }) and bad({ msg = ("x"):rep(81) }) and not bad({}), "kudos: a message is required, and short")
+    -- one a week per kind, from the whole account
+    apply("kudos", { id = "Jakealt-Realm:4:Raider05-Realm", rev = now, by = "Jakealt-Realm", author = "Jakealt-Realm", t = now,
+        to = "Raider05-Realm", kind = 4, n = 1, wk = week, msg = "from my alt" })
+    STUB.printed = {}
+    check(P:GiveKudos("Raider05-Realm", 4, "again") == nil and printedContains("you gave that from Jakealt this week"),
+        "kudos: one a week per kind, from any of our characters")
+    STUB.Advance(7 * 86400)
+    check(P:GiveKudos("Raider03-Realm", 1, "Week two") == true and Sync:Store("kudos")[kid].n == 2
+        and P:Kudos("Raider03-Realm")[1].n == 2, "kudos: next week it counts up")
+
+    -- professions: the two main ones
+    apply("profs", { id = "Raider10-Realm", rev = now, by = "Raider10-Realm", author = "Raider10-Realm", t = now,
+        list = "Cooking:300:300|Alchemy:250:300|Herbalism:300:300|Fishing:150:300" })
+    local pr = P:Professions("Raider10-Realm")
+    check(#pr == 2 and pr[1].name == "Alchemy" and pr[1].icon == 136240 and pr[1].recipes == nil and pr[2].name == "Herbalism"
+        and pr[2].gathering, "professions: main professions only, gathering ones marked")
+    local p3 = P:Professions("Raider03-Realm")
+    check(#p3 == 2 and p3[1].name == "Blacksmithing" and p3[1].recipes == 3 and p3[1].rank == 300 and not p3[2].gathering,
+        "professions: skill and shared recipe count")
+
+    -- the page
+    STUB.music = nil
+    SlashCmdList.POGRAID("profile Raider03")
+    check(Editor.currentTab == "profiles" and P.page:IsShown() and P.viewing == "Raider03-Realm", "page: /pog profile <name> opens theirs")
+    local b = P.banner
+    check(b.name:GetText():find("Raider03", 1, true) and b.status:GetText() == "Looking for Scholo"
+        and b.info:GetText():find("Level 60 Mage", 1, true) and b.info:GetText():find("Heals", 1, true), "page: banner")
+    check(b.whisper:IsShown() and not b.edit:IsShown() and b.song:GetText() == "Song: Stormwind", "page: someone else's buttons and song")
+    check(STUB.music == 53211 and b.play.label:GetText() == "Stop", "page: their song plays")
+    STUB.Script(b.play, "OnClick")
+    check(STUB.music == nil and b.play.label:GetText() == "Play", "page: and stops")
+    P:Refresh()
+    check(STUB.music == nil, "page: refreshing doesn't start it again")
+    check(P.aboutCard.infoRows[1].value:GetText() == "Raider09" and P.aboutCard.text:GetText() == "Nothing here yet.",
+        "page: their other characters")
+    -- one page per account: opening an alt shows it, on the alt's professions
+    P:Open("Raider09-Realm")
+    check(P.viewing == "Raider03-Realm" and P.profChar == "Raider09-Realm" and P.profCard.switch:IsShown()
+        and P.profCard.switch.label:GetText() == "Raider09 v" and not P.profCard.tiles[1]:IsShown(),
+        "accounts: opening an alt shows the account's page, on the alt's professions")
+    local pmenu
+    local realShowP = UI.ShowMenu
+    UI.ShowMenu = function(_, e) pmenu = e end
+    STUB.Script(P.profCard.switch, "OnClick")
+    UI.ShowMenu = realShowP
+    check(pmenu[2].text == "   Raider03" and pmenu[3].text == "> Raider09", "accounts: the professions card can switch character")
+    pmenu[2].func()
+    check(P.profChar == "Raider03-Realm" and P.profCard.tiles[1].name:GetText() == "Blacksmithing", "accounts: switched")
+    local tiles = P.topCard.tiles
+    check(tiles[1].member == "Raider05-Realm" and tiles[2]:IsShown() and not tiles[3]:IsShown(), "page: their Most played with")
+    -- members: one row per account
+    local rows, r03, r09 = P.list.rows, nil, nil
+    for _, row in ipairs(rows) do
+        if row.member == "Raider03-Realm" then r03 = row end
+        if row.member == "Raider09-Realm" then r09 = row end
+    end
+    check(r03 and not r09 and r03.name:GetText():find("+1", 1, true) and r03.sel:IsShown(), "list: one row per account, +1 for an alt")
+    local listed = {}
+    for _, m in ipairs(P:Members()) do listed[m] = true end
+    check(listed["Raider03-Realm"] and listed[me] and not listed["Raider20-Realm"] and not P:HasAddon("Raider20-Realm"),
+        "list: only people confirmed to have Pog Raid")
+    ns.db.versions = ns.db.versions or {}
+    ns.db.versions["Raider21-Realm"] = { v = "0.13.0", t = ns.Now() }
+    check(P:HasAddon("Raider21-Realm"), "list: someone we've heard the version check from counts")
+    ns.db.versions["Raider21-Realm"] = nil
+    P.searchBox:SetText("raider20")
+    STUB.Script(P.searchBox, "OnTextChanged")
+    check(not rows[1]:IsShown() and P.list.empty:GetText() == "Nobody with Pog Guild Tools matches.", "list: searching someone without it")
+    STUB.printed = {}
+    P:Open("Raider20-Realm")
+    check(P.viewing == "Raider03-Realm" and printedContains("doesn't have Pog Guild Tools yet"), "page: no profile without Pog Raid")
+    P.searchBox:SetText("raider09")
+    STUB.Script(P.searchBox, "OnTextChanged")
+    check(rows[1].member == "Raider03-Realm" and not rows[2]:IsShown(), "list: searching an alt finds the account")
+    P.searchBox:SetText("")
+    STUB.Script(P.searchBox, "OnTextChanged")
+    local sawOffline, onlineAfter = false, false
+    for _, row in ipairs(rows) do
+        if row.member then
+            if not row.dot:IsShown() then sawOffline = true elseif sawOffline then onlineAfter = true end
+        end
+    end
+    check(rows[1].dot:IsShown() and not onlineAfter, "list: online members first")
+    STUB.Script(tiles[1], "OnClick")
+    check(P.viewing == "Raider05-Realm", "page: clicking someone in Most played with opens their profile")
+    P:Open("Raider03-Realm")
+
+    -- professions and the recipe book
+    local pt = P.profCard.tiles
+    check(pt[1].name:GetText() == "Blacksmithing" and pt[1].skill:GetText() == "300 / 300" and pt[1].recipes:GetText() == "3 recipes"
+        and pt[2].recipes:GetText() == "recipes not shared yet", "page: profession tiles")
+    STUB.Script(pt[1], "OnClick")
+    local book = P.book
+    check(book:IsShown() and not P.aboutCard:IsShown() and book.rows[1].recipe and book.rows[1].recipe.name == "Arcanite Reaper"
+        and book.rows[3]:IsShown() and not book.rows[4]:IsShown() and book.meta:GetText() == "300 / 300, 3 recipes",
+        "book: clicking a profession opens their recipes")
+    book.search:SetText("reaper")
+    STUB.Script(book.search, "OnTextChanged")
+    check(book.rows[2]:IsShown() and not book.rows[3]:IsShown(), "book: search")
+    STUB.Script(book.back, "OnClick")
+    check(not book:IsShown() and P.aboutCard:IsShown(), "book: Back")
+    STUB.Script(pt[2], "OnClick")
+    check(book:IsShown() and book.empty:IsShown() and book.empty:GetText():find("hasn't shared their Mining", 1, true),
+        "book: a profession whose recipes aren't shared says so")
+    P:CloseBook()
+    P:Open("Raider10-Realm")
+    STUB.Script(P.profCard.tiles[2], "OnClick")
+    check(not book:IsShown() and P.profCard.tiles[2].hint:GetText() == "", "book: gathering professions have no book")
+    P:Open("Raider03-Realm")
+
+    -- kudos: the latest ones, no counts
+    local kcard = P.kudosCard
+    check(kcard.rows[1]:IsShown() and kcard.rows[2]:IsShown() and not kcard.rows[3]:IsShown() and kcard.meta:GetText() == ""
+        and kcard.give:IsShown(), "page: their latest kudos, and no counts")
+    local heads = kcard.rows[1].head:GetText() .. "|" .. kcard.rows[2].head:GetText()
+    check(heads:find("Clutch heals", 1, true) and heads:find("Great tank", 1, true) and not heads:find("Funny", 1, true)
+        and kcard.rows[1].msg:GetText() == "Week two" and kcard.rows[1].icon.__texture == P.KUDOS[1][1],
+        "page: each with its kind, giver and message, newest first")
+    STUB.Script(kcard.rows[1], "OnEnter")
+    local ktip = table.concat(GameTooltip.lines, "|")
+    check(ktip:find("Clutch heals", 1, true) and ktip:find("from Jake", 1, true) and ktip:find("Week two", 1, true),
+        "page: hovering a kudos shows it in full")
+    -- giving: a menu of the kinds, then a few words
+    local kmenu
+    local realShowK = UI.ShowMenu
+    UI.ShowMenu = function(_, e) kmenu = e end
+    STUB.Script(kcard.give, "OnClick")
+    local ktexts = {}
+    for _, e in ipairs(kmenu) do ktexts[#ktexts + 1] = e.text end
+    ktexts = table.concat(ktexts, "|")
+    check(#kmenu == 9 and kmenu[9].text:find("GGWP", 1, true) and kmenu[2].text:find("take back", 1, true)
+        and not ktexts:find("Funny", 1, true), "page: Give kudos lists the kinds, GGWP instead of Funny, ours this week marked")
+    kmenu[6].func()
+    local kc = UI.composeFrame
+    check(kc:IsShown() and kc.heading:GetText() == "Helpful for Raider03", "page: picking one asks for a few words")
+    STUB.Script(kc.submit, "OnClick")
+    check(kc:IsShown() and kcard.rows[1].msg:GetText() == "Week two", "page: not without them")
+    kc.field2:SetText("Showed me the Gnomeregan route")
+    STUB.Script(kc.submit, "OnClick")
+    check(kcard.rows[1].msg:GetText() == "Showed me the Gnomeregan route" and kcard.rows[3]:IsShown(), "page: given, at the top")
+    STUB.Script(kcard.give, "OnClick")
+    check(kmenu[6].text:find("take back", 1, true), "page: then it can be taken back")
+    kmenu[6].func()
+    UI.ShowMenu = realShowK
+    check(kcard.rows[1].msg:GetText() == "Week two" and not kcard.rows[3]:IsShown(), "page: taken back")
+
+    -- layout
+    local pl, pt0 = STUB.rect(P.page)
+    local function edges(f)
+        local l, t, w, h = STUB.rect(f)
+        return l - pl, pt0 - t, l - pl + w, pt0 - t + h
+    end
+    local bl, btop, br, bb = edges(b)
+    local al, at, ar = edges(P.aboutCard)
+    local _, _, _, pb = edges(P.profCard)
+    local tl, tt, tr = edges(P.topCard)
+    local _, _, kr, kb = edges(P.kudosCard)
+    local ll, _, lr = edges(P.list)
+    local ml, _, _, mb = edges(P.mine)
+    local _, st = edges(P.searchBox)
+    check(bl == al and al == lr + 12 and br == tr and tr == kr and br == 902 - 12, "layout: columns line up left and right")
+    check(btop == st and at == tt and pb == kb and kb == mb and mb == 608 - 12, "layout: tops and bottoms line up")
+    check(math.abs((tl - ar) - 8) < 0.01 and ll == 12 and ml == 12, "layout: gaps on the grid")
+    local _, pTop, _, pBottom = edges(b.pic)
+    check(math.abs((pTop - btop) - (bb - pBottom)) < 0.01, "layout: portrait centred in the banner")
+    local _, f1 = edges(P.aboutCard.infoRows[1])
+    local _, _, _, f3 = edges(P.aboutCard.infoRows[3])
+    check(#P.aboutCard.infoRows == 3 and math.abs((f1 - (at + 240 - P.layout.INFO_H)) - (at + 240 - f3)) < 0.01,
+        "layout: info rows centred under their divider")
+    local x1 = edges(P.topCard.tiles[1])
+    local _, _, x5 = edges(P.topCard.tiles[5])
+    check(math.abs((x1 - tl) - (tr - x5)) < 0.01, "layout: Most played with centred in its card")
+    -- (rows stretch between two anchors, which the stub doesn't follow: check where they start)
+    local k1l, k1t = edges(P.kudosCard.rows[1])
+    local _, _, _, kLast = edges(P.kudosCard.rows[#P.kudosCard.rows])
+    check(k1l == tl + 2 and k1t == tt + 100 + 8 + 26 + 4 and kLast <= kb and kLast > kb - 38,
+        "layout: kudos rows under the header, filling the card")
+    local p1l = edges(pt[1])
+    local _, _, p2r = edges(pt[2])
+    check(math.abs((p1l - al) - 8) < 0.01 and math.abs((ar - p2r) - 8) < 0.01, "layout: profession tiles fill their card")
+    local bkl, bkt, bkr, bkb = edges(book)
+    check(bkl == al and bkt == at and bkr == kr and bkb == kb, "layout: the recipe book covers the profile's body")
+
+    -- our own profile: edit it
+    P.playing = { 1, "x" }
+    STUB.music = 1
+    STUB.Script(P.mine, "OnClick")
+    check(P.viewing == me and STUB.music == nil and b.edit:IsShown() and b.portraitBtn:IsShown() and not b.whisper:IsShown(),
+        "page: My profile shows ours with edit buttons, and stops the music")
+    check(not P.kudosCard.give:IsShown(), "page: no kudos for ourselves")
+    local cf
+    local function edit(label)
+        for _, e in ipairs(P:EditMenu()) do if e.text == label then return e.func() end end
+        error("no " .. label)
+    end
+    edit("Status and About Me...")
+    cf = UI.composeFrame
+    cf.field1:SetText("Back from the Barrens")
+    cf.field2:SetText("")
+    STUB.Script(cf.submit, "OnClick")
+    check(a.content.status == "Back from the Barrens" and a.content.about == nil and P:Get(me).status == "Back from the Barrens"
+        and b.status:GetText() == "Back from the Barrens", "edit: status and About Me saved, an empty box clears")
+    edit("Status and About Me...")
+    cf.field1:SetText("")
+    cf.field2:SetText("Hunter main.")
+    STUB.Script(cf.submit, "OnClick")
+    check(a.content.status == nil and a.content.about == "Hunter main." and not cf:IsShown(), "edit: the status can be cleared too")
+    edit("Favorites...")
+    check(cf.fieldMid:IsShown() and not cf.area:IsShown(), "edit: favorites are two one-line boxes")
+    cf.field1:SetText("Molten Core")
+    cf.fieldMid:SetText("Deadmines")
+    STUB.Script(cf.fieldMid, "OnEnterPressed")
+    check(a.content.fav1 == "Molten Core" and a.content.fav2 == "Deadmines" and not cf:IsShown()
+        and P.aboutCard.infoRows[3].value:GetText() == "Deadmines", "edit: favorites, Enter in the last box saves")
+    local roles = {}
+    for _, e in ipairs(P:EditMenu()) do roles[#roles + 1] = e.text end
+    check(table.concat(roles, "|"):find("Main role|   DPS|   Tank|   Heals|> No main role", 1, true), "edit: roles DPS, Tank, Heals")
+    for _, e in ipairs(P:EditMenu()) do if e.text == "   Tank" then e.func() end end
+    check(a.content.role == "T" and b.info:GetText():find("Tank", 1, true), "edit: main role")
+    -- a nickname: big on the banner, our character's name beside it, everywhere
+    edit("Nickname...")
+    check(cf.field1:IsShown() and not cf.area:IsShown(), "nickname: one line")
+    cf.field1:SetText("Jakey")
+    STUB.Script(cf.submit, "OnClick")
+    check(a.content.nick == "Jakey" and P:Get(me).nick == "Jakey" and b.name:GetText():find("Jakey", 1, true)
+        and b.info:GetText():find("Jake|r", 1, true), "nickname: big on the banner, our character's name under it")
+    check(P:Name("Jakealt-Realm") == "Jakey" and P:Name(me, true) == "Jakey (Jake)" and P:Name("Raider03-Realm") == "Raider03",
+        "nickname: the whole account goes by it, others by their main")
+    local mineRow
+    for _, row in ipairs(P.list.rows) do if row.member == me then mineRow = row end end
+    check(mineRow and mineRow.name:GetText():find("Jakey", 1, true) and mineRow.name:GetText():find("Jake|r", 1, true),
+        "nickname: the members list shows it with the character's name")
+    P.searchBox:SetText("jakey")
+    STUB.Script(P.searchBox, "OnTextChanged")
+    check(P.list.rows[1].member == me, "nickname: the search finds it")
+    P.searchBox:SetText("")
+    STUB.Script(P.searchBox, "OnTextChanged")
+    STUB.Script(b.portraitBtn, "OnClick")
+    local pk = UI.pickerFrame
+    check(pk:IsShown() and pk.pageText:GetText() == "Page 1 of 4" and pk.cells[96]:IsShown() and pk.cells[97] == nil
+        and pk.nav:IsShown(), "edit: portrait picker: ours, then the client's classic icons, in pages")
+    check(#P:IconChoices() == 48 + 300 and P:IconChoices()[49] == 139001,
+        "edit: the client's classic-art icons as file IDs, no repeats, nothing newer")
+    STUB.Script(pk.next, "OnClick")
+    check(pk.cells[1].index == 97 and pk.cells[1].icon.__texture == 139049, "edit: next page")
+    STUB.Script(pk, "OnMouseWheel", 1)
+    check(pk.page == 1 and not pk.prev:IsEnabled(), "edit: the mouse wheel turns pages")
+    STUB.Script(pk.cells[25], "OnClick")
+    check(a.content.icon == 134169 and P:Portrait(me) == 134169 and P:Portrait("Jakealt-Realm") == 134169 and not pk:IsShown()
+        and b.pic.icon.__texture == 134169, "edit: picking a portrait, for the whole account")
+    STUB.Script(b.portraitBtn, "OnClick")
+    STUB.Script(pk.next, "OnClick")
+    STUB.Script(pk.cells[1], "OnClick")
+    STUB.Script(b.portraitBtn, "OnClick")
+    check(a.content.icon == 139049 and pk.page == 2 and pk.cells[1].selected, "edit: the picker opens on the page with ours")
+    STUB.Script(b.portraitBtn, "OnClick")
+    STUB.Script(b.colorBtn, "OnClick")
+    check(pk:IsShown() and pk.cells[1].tip == "Class color" and pk.cells[10]:IsShown() and not pk.cells[11]:IsShown()
+        and not pk.nav:IsShown(), "edit: color picker reuses the grid")
+    STUB.Script(pk.cells[8], "OnClick")
+    check(a.content.color == 7 and b.strip.__color[1] == P.COLORS[7][1], "edit: picking a color")
+    STUB.Script(b.colorBtn, "OnClick")
+    STUB.Script(pk.cells[1], "OnClick")
+    check(a.content.color == nil, "edit: back to class color")
+    local songs = P:SongMenu()
+    check(#songs == #P.SONGS + 1, "edit: song menu lists every song")
+    songs[3].func()
+    check(a.content.song == 2 and STUB.music == 53211 and b.song:GetText() == "Song: Stormwind", "edit: picking a song plays it")
+    P:Open("Raider03-Realm")
+    P:Open(me)
+    check(STUB.music == nil and b.play:IsShown(), "song: our own doesn't play by itself")
+    P:SongMenu()[1].func()
+    check(a.content.song == nil and STUB.music == nil and not b.play:IsShown(), "edit: No song")
+
+    -- our Most played with: automatic, nothing to pick
+    local ours = P.topCard.tiles
+    check(ours[4].member == "Raider08-Realm" and not ours[5]:IsShown() and P.topCard.meta:GetText() == "by time grouped",
+        "most played: ours, automatic, no empty slots")
+    STUB.Script(ours[4], "OnEnter")
+    check(table.concat(GameTooltip.lines, "|"):find("Doesn't have Pog Guild Tools yet", 1, true), "most played: says who doesn't have it")
+    STUB.Script(ours[4], "OnClick")
+    check(P.viewing == me, "most played: no profile to open without Pog Raid")
+    local shown
+    local realShow = UI.ShowMenu
+    UI.ShowMenu = function(_, e) shown = e end
+    -- our characters: forget one
+    STUB.Script(P.aboutCard.infoRows[1], "OnClick")
+    UI.ShowMenu = realShow
+    check(P.aboutCard.infoRows[1].value:GetText() == "Jakealt" and shown[#shown].text == "Jakealt isn't mine any more",
+        "accounts: our characters, and a way to let one go")
+    shown[#shown].func()
+    check(not P:IsMine("Jakealt-Realm") and P:Get(me).chars == nil and P.aboutCard.infoRows[1].value:GetText() == "just this one",
+        "accounts: a character let go leaves the account")
+
+    -- songs: off in Settings, and leaving the page stops them
+    ns.db.settings.profileSongs = false
+    P:Open("Raider03-Realm")
+    check(STUB.music == nil, "song: off in Settings, nothing plays")
+    ns.db.settings.profileSongs = true
+    P:Open(me)
+    P:Open("Raider03-Realm")
+    check(STUB.music == 53211, "song: (playing)")
+    Editor:ShowTab("home")
+    check(STUB.music == nil, "song: leaving the page stops it")
+
+    -- View profile from names elsewhere
+    local entries = ns.Roster:PlayerEntries("Raider03-Realm")
+    check(entries[2].text == "View profile" and ns.Roster:PlayerEntries("Raider20-Realm")[2].text ~= "View profile",
+        "names: roster menu has View profile, only for people with Pog Raid")
+    entries[2].func()
+    check(Editor.currentTab == "profiles" and P.viewing == "Raider03-Realm", "names: and it opens their profile")
+
+    STUB.music = nil
+    Editor:ShowTab("home")
+end
+
 -- Bug reports ----------------------------------------------------------------------------
 do
     local Bug = ns.Bug
@@ -2545,7 +3040,7 @@ do
     pcall(geterrorhandler(), "Interface/AddOns/OtherAddon/x.lua:1: not ours")
     check(#list == 2, "bug: other addons' errors are left alone")
     local report = Bug:Report()
-    check(report:find("Pog Raid " .. ns.VERSION, 1, true) and report:find("This session:", 1, true) and report:find("[x2]", 1, true)
+    check(report:find("Pog Guild Tools " .. ns.VERSION, 1, true) and report:find("This session:", 1, true) and report:find("[x2]", 1, true)
         and report:find("    PogRaid/Home.lua:42: in function", 1, true), "bug: report has version, counts and stack lines")
     Bug.session = {}
     check(Bug:Report():find("Earlier:", 1, true) and not Bug:Report():find("This session:", 1, true), "bug: older errors listed as earlier")
@@ -2555,7 +3050,7 @@ do
     check(PogRaidCopy and PogRaidCopy:IsShown() and PogRaidCopy.edit:GetText():find("X.lua:30", 1, true) ~= nil, "bug: /pog bug opens the copy box")
     PogRaidCopy:Hide()
     SlashCmdList.POGRAID("bug clear")
-    check(#ns.db.errors == 0 and Bug:Report():find("No Pog Raid errors recorded.", 1, true) ~= nil, "bug: /pog bug clear empties it")
+    check(#ns.db.errors == 0 and Bug:Report():find("No Pog Guild Tools errors recorded.", 1, true) ~= nil, "bug: /pog bug clear empties it")
     STUB.stack = nil
 
     -- performance lines for /pog probe

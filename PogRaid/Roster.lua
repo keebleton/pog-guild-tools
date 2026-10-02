@@ -971,6 +971,9 @@ function Roster:PlayerEntries(name)
         e[#e + 1] = { text = (role == k and "> " or "   ") .. grp.label:sub(1, -2), color = grp.color,
             func = function() self:SetRole(name, k) end }
     end
+    if ns.Profiles:HasAddon(name) then
+        table.insert(e, 2, { text = "View profile", func = function() ns.Profiles:Open(name) end })
+    end
     e[#e + 1] = { text = (not role and "> " or "   ") .. "No role", func = function() self:SetRole(name, nil) end }
     local p = G().players[name]
     if p and p.manual then

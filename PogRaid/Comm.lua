@@ -126,7 +126,7 @@ end
 local function hold()
     if not warnedRestricted then
         warnedRestricted = true
-        ns.Print("addon messages are locked right now (boss fight?). Pog Raid will send as soon as they unlock.")
+        ns.Print("addon messages are locked right now (boss fight?). Pog Guild Tools will send as soon as they unlock.")
     end
     schedule(1)
 end
@@ -319,7 +319,7 @@ function Comm.CheckRaid()
     end
     check = { replies = {} }
     Send("Q", Comm.GroupChannel())
-    ns.Print("checking who has Pog Raid...")
+    ns.Print("checking who has Pog Guild Tools...")
     C_Timer.After(3, function()
         local have, missing = {}, {}
         for _, n in ipairs(groupNames()) do
@@ -350,7 +350,7 @@ function Comm.GuildPing()
     ns.Print("sync ping: asking the guild...")
     C_Timer.After(5, function()
         if (Comm.guildPongs or 0) == 0 then
-            ns.Print("sync ping: |cffff8040no answer in 5s|r. Either nobody else online runs Pog Raid, or guild addon messages aren't getting through.")
+            ns.Print("sync ping: |cffff8040no answer in 5s|r. Either nobody else online runs Pog Guild Tools, or guild addon messages aren't getting through.")
         end
         Comm.guildPingAt = nil
     end)
@@ -428,7 +428,7 @@ ns.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
                 Send("Z!" .. ns.VERSION, "WHISPER", Ambiguate(sender, "none"))
             end
         elseif text:sub(2, 2) == "!" and Comm.guildPingAt then
-            ns.Print(("sync ping: %s answered (Pog Raid %s) in %.1fs"):format(shortName(sender), text:sub(3),
+            ns.Print(("sync ping: %s answered (Pog Guild Tools %s) in %.1fs"):format(shortName(sender), text:sub(3),
                 GetTime() - Comm.guildPingAt))
             Comm.guildPongs = (Comm.guildPongs or 0) + 1
         end

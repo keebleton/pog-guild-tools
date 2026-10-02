@@ -1,7 +1,7 @@
 -- PogRaid core: saved data, event dispatch, slash commands, API probe.
 local ADDON, ns = ...
 
-ns.VERSION = "0.12.4"
+ns.VERSION = "0.13.0"
 ns.MEDIA = "Interface\\AddOns\\" .. ADDON .. "\\Media\\"
 
 -- Colours used by arrows, circles and text. Index is what goes over the wire.
@@ -64,7 +64,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 end)
 
 function ns.Print(msg)
-    DEFAULT_CHAT_FRAME:AddMessage("|cff66ccffPog Raid|r: " .. tostring(msg))
+    DEFAULT_CHAT_FRAME:AddMessage("|cff66ccffPog Guild Tools|r: " .. tostring(msg))
 end
 
 -- Plays a SOUNDKIT sound unless sounds are turned off in Settings.
@@ -188,6 +188,7 @@ ns.On("ADDON_LOADED", function(name)
     if st.sounds == nil then st.sounds = true end
     if st.joinPopups == nil then st.joinPopups = true end
     if st.duelChallenges == nil then st.duelChallenges = true end
+    if st.profileSongs == nil then st.profileSongs = true end
     if db.guild.maxLevelOnly == nil then db.guild.maxLevelOnly = false end
     -- v2: "max level only" used to default on, which hid every raider on the
     -- beta (nobody at cap yet). It was never a choice, so reset it.
@@ -286,6 +287,9 @@ SlashCmdList.POGRAID = function(msg)
     elseif cmd == "duels" or cmd == "wowdle" or cmd == "gems" then
         ns.Editor:Toggle("games")
         if ns.Games.page then ns.Games:SetMode(cmd) end
+    elseif cmd == "profile" or cmd == "profiles" then
+        local who = (msg or ""):match("^%s*%S+%s+(.-)%s*$")
+        if who and who ~= "" then ns.Profiles:Open(who) else ns.Editor:Toggle("profiles") end
     elseif cmd == "crafting" or cmd == "craft" then
         ns.Editor:Toggle("crafting")
     elseif cmd == "plans" then

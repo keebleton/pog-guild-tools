@@ -131,7 +131,7 @@ function Editor:Build()
     self.band, self.divider = bar, divider
     local title = UI.Text(bar, 14)
     title:SetPoint("LEFT", PAD, 0)
-    title:SetText("Pog Raid")
+    title:SetText("Pog Guild Tools")
     local close = UI.Tab(bar, "X", 28, BAND_H, function() f:Hide() end)
     close:SetPoint("RIGHT", -PAD + 7, 0)
     self.closeBtn = close

@@ -1,4 +1,4 @@
-# Pog Raid
+# Pog Guild Tools
 
 Raid leader and guild tools for World of Warcraft: Forever (interface 16001). Tabs include **Home** (the dashboard `/pog` opens on), **Raid Plans** (formerly Boards) (draw a boss diagram on the raid's own map art and pop it up on everyone's screen) **Roster** (build raid rosters from the guild) **Attendance** (logs who raided) and **Loot** (who got what). Officer sync is next.
 
@@ -13,12 +13,12 @@ Raid leader and guild tools for World of Warcraft: Forever (interface 16001). Ta
 1. Install World of Warcraft (Forever), [Git](https://git-scm.com/download/win), [GitHub Desktop](https://desktop.github.com/), [Python](https://www.python.org/downloads/) (tick "Add python.exe to PATH") and Claude Code.
 2. In GitHub Desktop: File > Clone repository > `keebleton/pog-raid`.
 3. Double-click `Set up this PC.bat` in the cloned folder. It links the addon into WoW, installs what the tests need and runs them.
-4. Don't let the CurseForge app install or update Pog Raid on a computer you develop on: it replaces the link with its own copy.
+4. Don't let the CurseForge app install or update Pog Guild Tools on a computer you develop on: it replaces the link with its own copy.
 5. Every session: **Fetch origin** (and Pull) in GitHub Desktop before you start, **Commit** and **Push origin** when you're done.
 
 ## Commands
 
-- `/pog` opens Home (again closes it); `/pog home`, `/pog boards`, `/pog roster`, `/pog attendance`, `/pog loot`, `/pog games`, `/pog duels`, `/pog plans` and `/pog settings` open a tab; `/pog minimap` shows/hides the minimap button
+- `/pog` opens Home (again closes it); `/pog profile [name]` opens your profile or someone else's; `/pog home`, `/pog boards`, `/pog roster`, `/pog attendance`, `/pog loot`, `/pog games`, `/pog duels`, `/pog plans` and `/pog settings` open a tab; `/pog minimap` shows/hides the minimap button
 - `/pog probe` reports what this client supports (map art, messaging lockdown, events) and runs a self-whisper round trip
 - `/pog test` sends the selected board to yourself, so you can see the viewer solo
 - `/pog check` lists who in the group has PogRaid
@@ -39,10 +39,23 @@ Right-click deletes, the mouse wheel zooms, right-drag pans. Map picks your curr
 The dashboard `/pog` opens on. A header with the guild logo on a dark round plate (`Media/logo.tga`, made by `tools_make_logo.py <image>`), guild name, message of the day (hover for it in full plus the guild info; officers who can edit it get an Edit button), a stats line and a level spread chart (12 bars of 5 levels; hover a bar for the count). Below, three columns:
 
 - **Activity / Chat** (toggle in the card header): level-ups, achievements, joins and leaves from guild roster updates and guild achievement messages; or the last 100 guild chat lines you saw. **Online now** underneath (click to whisper or invite).
-- **Message board:** officers post (title + message), pin and delete; anyone with Pog Raid comments in the thread and can delete their own comments. Officers are guild ranks at or above rank index 1 by default (`PogRaidDB.guild.officerRank`).
+- **Message board:** officers post (title + message), pin and delete; anyone with Pog Guild Tools comments in the thread and can delete their own comments. Officers are guild ranks at or above rank index 1 by default (`PogRaidDB.guild.officerRank`).
 - **Group finder:** anyone posts what they are doing and who they need; one listing each, gone after 45 minutes. Listings show how full the group is (1/5, 3/5, 5/5 full; raids count against 10/20/40) and update as people join. Click a listing to **Request to join** (the poster gets a pop-up with Invite / No thanks, sent addon to addon by whisper) or whisper the poster; click your own listing to answer requests. **Recent loot** (blue and up, you and your group) underneath.
 
-The board and group finder are shared between everyone in the guild running Pog Raid (Sync.lua): changes go out on the guild addon channel as they happen, and people who log in later catch up by comparing a fingerprint of what each addon holds and trading only the differences. Data is kept per guild. `tests/test_sync.py` runs four clients side by side to test this.
+The board and group finder are shared between everyone in the guild running Pog Guild Tools (Sync.lua): changes go out on the guild addon channel as they happen, and people who log in later catch up by comparing a fingerprint of what each addon holds and trading only the differences. Data is kept per guild. `tests/test_sync.py` runs four clients side by side to test this.
+
+## Profiles
+
+A page for every guild member running Pog Guild Tools, MySpace style, one per account. The list on the left shows guild accounts confirmed to have Pog Guild Tools (their addon has been heard, or they've shared a profile or professions), one row each, online first, with a search box that finds any of their characters. Click anyone, or pick View profile from a name's menu on Home, Roster or Crafting.
+
+- **One profile per account.** Status, About me, favorites, main role, portrait, color and song are kept for your whole account and every character you play shares them. Opening any of someone's characters shows their account's page, named after their highest level character or the nickname they set (the character's name always shows beside a nickname, so nobody can pass as someone else). The Professions card starts on the character you opened and can switch between their characters. Two characters count as one account only when each lists the other, so nobody can attach themselves to your page; a character joins once it logs in with Pog Guild Tools. You can let a character go from the Characters line.
+- **Banner:** portrait, name, level, class, rank, main role (DPS, Tank or Heals), status line, online (or online on another of their characters), and their profile song (Play / Stop).
+- **About me**, their characters and two favorites (raid, dungeon).
+- **Professions:** their two main professions (no Cooking, First Aid or Fishing) with skill and recipe count. Click one to browse their recipes, with a search box.
+- **Most played with:** the five guild accounts you group with most (counted every minute across all your characters, guild members only, at least 10 minutes together). Automatic.
+- **Kudos:** the latest kudos someone was given, each with its kind, who gave it and their message (hover for the whole message). No counts are shown, so nobody sees how many anyone has; you see your own total on your page. Give kudos on someone's page picks a kind (Clutch heals, Great tank, Big damage, Carried me, Helpful, Generous, Great leader, GGWP) and asks for a few words (required); each kind once a week per person (the week turns over at the Tuesday reset), and one given this week can be taken back from the same menu. Your own characters can't give each other kudos.
+
+On your own page, Edit sets the status, About me, nickname, favorites and main role; Portrait picks from about 4,000 classic-art icons (48 favorites first, then pages of the classic icons the client offers for macros); Color picks the theme color (or your class color); Song picks one of 21 classic music tracks. Someone else's song plays when you open their page (Settings: Play profile songs), stops when you leave, and never plays on your own page by itself. Profiles and kudos are shared through Sync (collections `profile` and `kudos`); Most played with times stay on your computer.
 
 ## Roster
 
@@ -80,7 +93,7 @@ Chess-style ratings for duels between guildies. Challenge someone from the Ranke
 
 ## Settings, minimap button, versions
 
-**Settings** tab: show/hide the minimap button, pop-up sounds, group join pop-ups, ranked duel challenges (off = declined automatically); **officer ranks** (shared guild-wide through sync, changeable by officers only, guild master always included); and **who has Pog Raid** with versions (old ones flagged). The **minimap button** (gnome) opens Pog Raid on left-click, offers Settings / Hide on right-click, and drags around the ring; `/pog minimap` brings a hidden one back, and Pog Raid is also in Blizzard's AddOns menu. The **version check** is one tiny guild message at login, one whispered reply per addon (at most every 10 minutes per person), and after that the version rides on the sync check-in; a newer version gives one chat note.
+**Settings** tab: show/hide the minimap button, pop-up sounds, group join pop-ups, ranked duel challenges (off = declined automatically); **officer ranks** (shared guild-wide through sync, changeable by officers only, guild master always included); and **who has Pog Guild Tools** with versions (old ones flagged). The **minimap button** (gnome) opens Pog Guild Tools on left-click, offers Settings / Hide on right-click, and drags around the ring; `/pog minimap` brings a hidden one back, and Pog Guild Tools is also in Blizzard's AddOns menu. The **version check** is one tiny guild message at login, one whispered reply per addon (at most every 10 minutes per person), and after that the version rides on the sync check-in; a newer version gives one chat note.
 
 ## First in-game checks (beta)
 

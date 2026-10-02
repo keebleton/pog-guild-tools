@@ -121,8 +121,9 @@ function Home:OnChat(text, sender)
 end
 
 -- Recent loot on the home page: any drop of LOOT_MIN_QUALITY or better the
--- client reports (you and your group, anywhere), kept apart from the raid
--- loot log. The same item for the same player within two minutes is one entry.
+-- client reports for a guild member (you and guildies in your group, anywhere;
+-- pugs are skipped), kept apart from the raid loot log. The same item for the
+-- same player within two minutes is one entry.
 function Home:OnLoot(player, link)
     if not player or not link or secret(player) or secret(link) then return end
     local itemID = ns.Loot.ItemID(link)
@@ -130,6 +131,7 @@ function Home:OnLoot(player, link)
     local quality = ns.Loot.Quality(link)
     if not quality or quality < Home.LOOT_MIN_QUALITY then return end
     local key = ns.Attendance:Key(player)
+    if not ns.Loot.FromGuild(key) then return end
     local now = ns.Now()
     local list = G().seenLoot
     for _, e in ipairs(list) do
@@ -443,7 +445,7 @@ end
 function Home:RefreshHeader()
     local h = self.header
     local inGuild = IsInGuild()
-    h.name:SetText(inGuild and (GetGuildInfo("player") or "Your guild") or "Pog Raid")
+    h.name:SetText(inGuild and (GetGuildInfo("player") or "Your guild") or "Pog Guild Tools")
     local motd = inGuild and self:MOTD() or ""
     h.motd:SetText(motd ~= "" and motd or (inGuild and "No message of the day." or "You are not in a guild."))
     -- a real message is green; the placeholder stays quiet
@@ -718,7 +720,7 @@ function Home:RefreshBoard()
     elseif canPost then
         c.empty:SetText("No posts yet. Use New post to write the first one.")
     else
-        c.empty:SetText("No posts yet. Officers can post here, and\neveryone with Pog Raid can comment.")
+        c.empty:SetText("No posts yet. Officers can post here, and\neveryone with Pog Guild Tools can comment.")
     end
     c.empty:SetShown(#posts == 0)
 end
@@ -823,7 +825,7 @@ function Home:RefreshGroups()
         end
         row.right2:SetText(status)
         row.sub:SetText(colorName(g.author) .. (g.need and ("  |cff9a9aa2needs " .. g.need .. "|r") or ""))
-    end, IsInGuild() and "No groups up. Post one and guildies\nwith Pog Raid will see it." or "")
+    end, IsInGuild() and "No groups up. Post one and guildies\nwith Pog Guild Tools will see it." or "")
 end
 
 ------------------------------------------------------------------------
@@ -865,12 +867,16 @@ function Home:Build(page)
     end, function(row)
         local name = row.item
         if name and name ~= ns.Sync:Me() then
-            UI.ShowMenu(row, {
+            local menu = {
                 { text = display(name), header = true },
                 { text = "Whisper", func = function() whisper(name) end },
                 { text = "Invite to group", func = function() Home.Invite(name) end },
                 { text = "Challenge to a ranked duel", func = function() ns.Duels:Challenge(name) end },
-            })
+            }
+            if ns.Profiles:HasAddon(name) then
+                table.insert(menu, 2, { text = "View profile", func = function() ns.Profiles:Open(name) end })
+            end
+            UI.ShowMenu(row, menu)
         end
     end)
 
@@ -919,7 +925,12 @@ function Home:Refresh()
     self:RefreshGroups()
 
     self.lootCard.meta:SetText("blue and up")
-    fillRows(self.lootCard, G().seenLoot, function(row, e)
+    -- drops saved before pugs were skipped stay hidden too
+    local loot = {}
+    for _, e in ipairs(G().seenLoot) do
+        if e.demo or ns.Loot.FromGuild(e.player) then loot[#loot + 1] = e end
+    end
+    fillRows(self.lootCard, loot, function(row, e)
         row.text:SetText(("%s  %s"):format(colorName(e.player), e.link))
         row.right:SetText(Home.Ago(e.t))
     end, "Blue and better drops you or\nyour group get show up here.")

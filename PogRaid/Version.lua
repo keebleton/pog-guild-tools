@@ -47,7 +47,7 @@ function Version:Note(sender, version)
     store()[key] = { v = version, t = ns.Now() }
     if Version.Compare(version, ns.VERSION) == 1 and not self.warned then
         self.warned = true
-        ns.Print(("a newer Pog Raid (%s) is out, you have %s. Update it from CurseForge."):format(version, ns.VERSION))
+        ns.Print(("a newer Pog Guild Tools (%s) is out, you have %s. Update it from CurseForge."):format(version, ns.VERSION))
     end
     if ns.Settings then ns.Settings:Changed() end
 end

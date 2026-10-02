@@ -170,7 +170,7 @@ function Duels:Challenge(name)
     C_Timer.After(Duels.ANSWER_WAIT, function()
         if self.outgoing == o then
             self.outgoing = nil
-            ns.Print(("%s didn't answer (they may not have Pog Raid)"):format(short(name)))
+            ns.Print(("%s didn't answer (they may not have Pog Guild Tools)"):format(short(name)))
             self:Refresh()
         end
     end)

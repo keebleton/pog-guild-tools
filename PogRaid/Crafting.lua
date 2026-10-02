@@ -428,7 +428,7 @@ function Crafting:Build(page)
     left.empty:SetPoint("TOP", 0, -60)
     left.empty:SetWidth(LEFT_W - 24)
     left.empty:SetTextColor(0.5, 0.5, 0.55)
-    left.empty:SetText("Nobody's professions yet. They show up\nonce guildies with Pog Raid log in.")
+    left.empty:SetText("Nobody's professions yet. They show up\nonce guildies with Pog Guild Tools log in.")
     self.left = left
 
     -- Search and results, right
@@ -537,6 +537,9 @@ function Crafting:RowMenu(row)
             entries[#entries + 1] = { text = "Whisper " .. display(c.name) .. (online(c.name) and "" or " (offline)"),
                 func = function() ns.Home.Whisper(c.name) end }
         end
+    end
+    if row.kind ~= "recipe" then
+        entries[#entries + 1] = { text = "View profile", func = function() ns.Profiles:Open(e.name) end }
     end
     if entries[1] then
         table.insert(entries, 1, { text = row.kind == "recipe" and e.name or display(e.name), header = true })

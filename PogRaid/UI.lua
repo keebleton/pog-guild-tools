@@ -293,6 +293,134 @@ function UI.ShowMenu(anchor, entries)
 end
 
 ------------------------------------------------------------------------
+-- Picker: a grid of icons or colour swatches under a button.
+-- items = { { tex = file, color = {r,g,b}, tip = text, selected = bool } },
+-- or plain textures (long icon lists stay light): then `selected` is an index
+-- and `tips` maps texture -> tooltip. onPick(index). Clicking the same button
+-- again closes it. With `rows`, longer lists get pages (< > under the grid,
+-- or the mouse wheel), opening on the page with the selected item.
+------------------------------------------------------------------------
+local picker
+local PICK_GAP, PICK_PAD, PICK_NAV = 3, 6, 26
+
+local function pickerCell(i, size)
+    local b = picker.cells[i]
+    if not b then
+        b = UI.IconButton(picker, size, function(self)
+            picker:Hide()
+            if picker.onPick then picker.onPick(self.index) end
+        end)
+        b:SetScript("OnEnter", function(self)
+            if not self.tip or not GameTooltip then return end
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(self.tip, 1, 1, 1)
+            GameTooltip:Show()
+        end)
+        b:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+        picker.cells[i] = b
+    end
+    return b
+end
+
+local function pickerPage()
+    local p = picker
+    local per = p.cols * p.rows
+    local pages = math.max(1, math.ceil(#p.items / per))
+    p.page = math.max(1, math.min(p.page, pages))
+    local first = (p.page - 1) * per
+    local shownCells = math.min(per, #p.items)
+    for i = 1, shownCells do
+        local b = pickerCell(i, p.size)
+        local it = p.items[first + i]
+        if it then
+            local plain = type(it) ~= "table"
+            local tex = plain and it or it.tex
+            b.index, b.tip = first + i, plain and p.tips and p.tips[it] or (not plain and it.tip) or nil
+            b:SetSize(p.size, p.size)
+            if not plain and it.color then
+                b.icon:SetColorTexture(it.color[1], it.color[2], it.color[3], 1)
+            else
+                b.icon:SetTexture(tex)
+                b.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+            end
+            b:SetSelected((not plain and it.selected) or first + i == p.selected)
+            local col, row = (i - 1) % p.cols, math.floor((i - 1) / p.cols)
+            b:ClearAllPoints()
+            b:SetPoint("TOPLEFT", p, "TOPLEFT", PICK_PAD + col * (p.size + PICK_GAP), -(PICK_PAD + row * (p.size + PICK_GAP)))
+            b:Show()
+        else
+            b:Hide()
+        end
+    end
+    for i = shownCells + 1, #p.cells do p.cells[i]:Hide() end
+    p.nav:SetShown(pages > 1)
+    p.pageText:SetText(("Page %d of %d"):format(p.page, pages))
+    p.prev:SetEnabledState(p.page > 1)
+    p.next:SetEnabledState(p.page < pages)
+    p.pages = pages
+end
+
+function UI.Picker(anchor, items, cols, size, onPick, rows, selected, tips)
+    if not picker then
+        picker = CreateFrame("Frame", nil, UIParent)
+        picker:SetFrameStrata("FULLSCREEN_DIALOG")
+        picker:SetClampedToScreen(true)
+        picker:EnableMouse(true)
+        UI.Panel(picker, { 0.05, 0.05, 0.06, 0.98 }, UI.BORDER)
+        picker.cells = {}
+        picker:Hide()
+        picker:SetScript("OnEvent", function(self)
+            if self:IsShown() and not self:IsMouseOver() and not (self.anchor and self.anchor:IsMouseOver()) then
+                self:Hide()
+            end
+        end)
+        pcall(picker.RegisterEvent, picker, "GLOBAL_MOUSE_DOWN")
+        local nav = CreateFrame("Frame", nil, picker)
+        nav:SetPoint("BOTTOMLEFT", PICK_PAD, PICK_PAD)
+        nav:SetPoint("BOTTOMRIGHT", -PICK_PAD, PICK_PAD)
+        nav:SetHeight(PICK_NAV - PICK_GAP)
+        picker.nav = nav
+        local function turn(d)
+            picker.page = picker.page + d
+            pickerPage()
+        end
+        picker.prev = UI.Button(nav, "<", 30, 20, function() turn(-1) end)
+        picker.prev:SetPoint("LEFT", 0, 0)
+        picker.next = UI.Button(nav, ">", 30, 20, function() turn(1) end)
+        picker.next:SetPoint("RIGHT", 0, 0)
+        picker.pageText = UI.Text(nav, 11)
+        picker.pageText:SetPoint("CENTER", 0, 0)
+        picker.pageText:SetTextColor(0.7, 0.7, 0.75)
+        picker:EnableMouseWheel(true)
+        picker:SetScript("OnMouseWheel", function(_, d) turn(-d) end)
+        UI.pickerFrame = picker
+    end
+    if picker:IsShown() and picker.anchor == anchor then
+        picker:Hide()
+        return
+    end
+    picker.anchor = anchor
+    picker.onPick = onPick
+    picker.items, picker.cols, picker.size, picker.selected, picker.tips = items, cols, size, selected, tips
+    picker.rows = rows or math.max(1, math.ceil(#items / cols))
+    picker.page = 1
+    if not selected then
+        for i, it in ipairs(items) do
+            if type(it) == "table" and it.selected then selected = i end
+        end
+    end
+    if selected then picker.page = math.floor((selected - 1) / (cols * picker.rows)) + 1 end
+    pickerPage()
+    local shownRows = math.min(picker.rows, math.max(1, math.ceil(#items / cols)))
+    local shownCols = math.min(cols, #items)
+    picker:SetSize(2 * PICK_PAD + shownCols * size + (shownCols - 1) * PICK_GAP,
+        2 * PICK_PAD + shownRows * size + (shownRows - 1) * PICK_GAP + (picker.pages > 1 and PICK_NAV or 0))
+    picker:ClearAllPoints()
+    picker:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
+    picker:Show()
+end
+
+------------------------------------------------------------------------
 -- Text prompt: a small edit box that floats where you need it.
 ------------------------------------------------------------------------
 local prompt
@@ -393,8 +521,9 @@ end
 ------------------------------------------------------------------------
 -- Compose: a small dialog with up to two one-line fields and a text area.
 -- opts = { heading, label1, labelMid, label2, max1, maxMid, max2, text1,
--- textMid, text2, button }. onSubmit(text1, text2, textMid). Enter moves to
--- the next box; Enter in the text area submits.
+-- textMid, text2, button, optional, noArea }. onSubmit(text1, text2, textMid).
+-- Enter moves to the next box; Enter in the last one submits. `noArea`: only
+-- the one-line fields.
 ------------------------------------------------------------------------
 local compose
 
@@ -445,11 +574,14 @@ function UI.Compose(opts, onSubmit)
 
         local function submit()
             local a, b = compose.field1:GetText(), compose.field2:GetText()
-            if compose.opts.label1 and a:gsub("%s", "") == "" then
-                compose.field1:SetFocus()
-                return
+            -- `optional`: empty boxes are fine (they clear what was there)
+            if not compose.opts.optional then
+                if compose.opts.label1 and a:gsub("%s", "") == "" then
+                    compose.field1:SetFocus()
+                    return
+                end
+                if not compose.opts.label1 and b:gsub("%s", "") == "" then return end
             end
-            if not compose.opts.label1 and b:gsub("%s", "") == "" then return end
             local mid = compose.fieldMid:GetText()
             local cb = compose.onSubmit
             compose:Hide()
@@ -457,10 +589,18 @@ function UI.Compose(opts, onSubmit)
         end
         compose.submit:SetScript("OnClick", submit)
         compose.field1:SetScript("OnEnterPressed", function()
-            if compose.fieldMid:IsShown() then compose.fieldMid:SetFocus() else body:SetFocus() end
+            if compose.fieldMid:IsShown() then
+                compose.fieldMid:SetFocus()
+            elseif compose.opts.noArea then
+                submit()
+            else
+                body:SetFocus()
+            end
         end)
         compose.field1:SetScript("OnEscapePressed", function() compose:Hide() end)
-        compose.fieldMid:SetScript("OnEnterPressed", function() body:SetFocus() end)
+        compose.fieldMid:SetScript("OnEnterPressed", function()
+            if compose.opts.noArea then submit() else body:SetFocus() end
+        end)
         compose.fieldMid:SetScript("OnEscapePressed", function() compose:Hide() end)
         body:SetScript("OnEnterPressed", submit)
         body:SetScript("OnEscapePressed", function() compose:Hide() end)
@@ -500,7 +640,11 @@ function UI.Compose(opts, onSubmit)
     compose.label2:SetText(opts.label2 or "")
     compose.area:ClearAllPoints()
     compose.area:SetPoint("TOPLEFT", 12, y - 16)
-    compose:SetHeight(-y + 16 + 96 + 54)
+    local area = not opts.noArea
+    compose.label2:SetShown(area)
+    compose.area:SetShown(area)
+    compose.count:SetShown(area)
+    compose:SetHeight(area and (-y + 16 + 96 + 54) or (-y + 50))
     compose.limit(compose.field1, opts.max1 or 60)
     compose.limit(compose.fieldMid, opts.maxMid or 60)
     compose.limit(compose.field2, opts.max2 or 300)

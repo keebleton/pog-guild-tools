@@ -108,6 +108,15 @@ local function recentBoss(s)
     end
 end
 
+-- Loot is only logged automatically for guild members, so pugs in the group
+-- are skipped (Add loot still takes anyone). Until the guild roster has been
+-- read once nobody is known yet, so everyone counts.
+function Loot.FromGuild(key)
+    if not G().scanned then return true end
+    local p = G().players[key]
+    return p ~= nil and p.inGuild == true
+end
+
 -- The one place new loot lands. Returns the entry, or nil if skipped.
 function Loot:Record(player, link, source, boss)
     if not player or not link or secret(player) or secret(link) then return nil end
@@ -118,6 +127,7 @@ function Loot:Record(player, link, source, boss)
     local quality = Loot.Quality(link)
     if quality and quality < (G().lootMinQuality or 3) then return nil end
     local key = ns.Attendance:Key(player)
+    if not Loot.FromGuild(key) then return nil end
     local now = ns.Now()
     for _, e in pairs(G().loot) do
         if not e.deleted and e.player == key and e.itemID == itemID and math.abs(now - e.t) <= Loot.DEDUPE_SECONDS then

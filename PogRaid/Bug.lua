@@ -95,12 +95,12 @@ end
 
 function Bug:Report()
     local version, build = GetBuildInfo()
-    local lines = { ("Pog Raid %s, client %s (%s), %s"):format(ns.VERSION, tostring(version), tostring(build),
+    local lines = { ("Pog Guild Tools %s, client %s (%s), %s"):format(ns.VERSION, tostring(version), tostring(build),
         date("%Y-%m-%d %H:%M", ns.Now())) }
     local list = store() or {}
     if not list[1] then
         lines[#lines + 1] = ""
-        lines[#lines + 1] = "No Pog Raid errors recorded."
+        lines[#lines + 1] = "No Pog Guild Tools errors recorded."
         return table.concat(lines, "\n")
     end
     local now, earlier = {}, {}
@@ -123,7 +123,7 @@ function Bug:Report()
 end
 
 function Bug:Show()
-    ns.UI.CopyBox("Pog Raid bug report", self:Report())
+    ns.UI.CopyBox("Pog Guild Tools bug report", self:Report())
 end
 
 ------------------------------------------------------------------------
@@ -146,7 +146,7 @@ end
 function Bug:SyncReport()
     local Sync, Comm = ns.Sync, ns.Comm
     local st = Comm.stats
-    local lines = { ("Pog Raid %s sync check, %s"):format(ns.VERSION, date("%Y-%m-%d %H:%M", ns.Now())) }
+    local lines = { ("Pog Guild Tools %s sync check, %s"):format(ns.VERSION, date("%Y-%m-%d %H:%M", ns.Now())) }
     local guild = Sync:GuildName()
     lines[#lines + 1] = ("You: %s   guild: %s   messages locked: %s"):format(tostring(Sync:Me()),
         guild and ('"' .. guild .. '"') or (IsInGuild() and "in a guild, name not loaded yet" or "not in a guild"),
@@ -182,7 +182,7 @@ function Bug:SyncReport()
 end
 
 function Bug:ShowSync()
-    ns.UI.CopyBox("Pog Raid sync check", self:SyncReport())
+    ns.UI.CopyBox("Pog Guild Tools sync check", self:SyncReport())
 end
 
 ------------------------------------------------------------------------
