@@ -90,7 +90,11 @@ Sync:Register({
         end
     end,
     expired = function(rec) return rec.exp < ns.Now() end,
-    onChange = changed,
+    perRecord = true,
+    onChange = function(rec)
+        changed()
+        if ns.GroupToast then ns.GroupToast:Consider(rec) end
+    end,
 })
 
 ------------------------------------------------------------------------

@@ -22,7 +22,7 @@ local RX = PAD + LEFT_W + PAD
 local RW = FRAME_W - RX - PAD
 local TOP = TITLE_H
 local ROW_H = 22
-local GENERAL_H = 176   -- five checks
+local GENERAL_H = 202   -- six checks
 
 local function S() return ns.db.settings end
 
@@ -86,6 +86,7 @@ function Settings:Build(page)
             S().profileSongs = v
             if not v and ns.Profiles then ns.Profiles:StopSong() end
         end },
+        { "New group pop-ups", function() return S().groupToasts end, function(v) S().groupToasts = v end },
     }
     for i, it in ipairs(items) do
         local c = UI.Check(gen, it[1], it[2], it[3])
@@ -102,18 +103,13 @@ function Settings:Build(page)
     UI.Card(off)
     local t2 = UI.SectionTitle(off, "Officer ranks")
     t2:SetPoint("TOPLEFT", 12, -12)
-    off.note = UI.Text(off, 10)
-    off.note:SetPoint("TOPLEFT", 12, -30)
-    off.note:SetWidth(LEFT_W - 24)
-    off.note:SetJustifyH("LEFT")
-    off.note:SetTextColor(0.55, 0.55, 0.6)
     off.ranks = {}
     for i = 1, 10 do
         local idx = i - 1
         local c = UI.Check(off, "", function() return self:IsOfficerRank(idx) end,
             function(v) self:SetOfficerRank(idx, v) end)
         c:SetWidth(LEFT_W - 24)
-        c:SetPoint("TOPLEFT", 12, -(76 + (i - 1) * 26))
+        c:SetPoint("TOPLEFT", 12, -(32 + (i - 1) * 26))
         off.ranks[i] = c
     end
     self.officers = off
@@ -165,7 +161,7 @@ function Settings:Build(page)
     who.empty = UI.Text(who, 11)
     who.empty:SetPoint("TOP", 0, -60)
     who.empty:SetTextColor(0.5, 0.5, 0.55)
-    who.empty:SetText("Nobody else seen yet. Guildies running Pog Guild Tools\nshow up here a little after they log in.")
+    who.empty:SetText("Nobody else seen yet.")
     self.who = who
 end
 
@@ -187,8 +183,6 @@ function Settings:Refresh()
     local off = self.officers
     local canEdit = ns.Sync:AmOfficer()
     local myRank = (ns.db.guild.players[ns.Sync:Me()] or {}).rankIndex
-    off.note:SetText(canEdit and "Officers can post on the message board.\nShared with the whole guild."
-        or "Officers can post on the message board.\nOnly officers can change this.")
     local numRanks = IsInGuild() and GuildControlGetNumRanks and GuildControlGetNumRanks() or 0
     for i, c in ipairs(off.ranks) do
         local name = i <= numRanks and GuildControlGetRankName(i) or nil

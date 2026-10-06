@@ -633,7 +633,7 @@ function Roster:ShowTooltip(name, row)
     local att = ns.Attendance and ns.Attendance:Summary()
     if att and att.nights > 0 then
         local a = att.byName[name]
-        GameTooltip:AddDoubleLine("Attendance (4 / 8 / all)",
+        GameTooltip:AddDoubleLine("Attendance, weeks (4 / 8 / all)",
             a and ("%d%% / %d%% / %d%%"):format(math.floor(a.last4 * 100 + 0.5), math.floor(a.last8 * 100 + 0.5),
                 math.floor(a.all * 100 + 0.5)) or "never",
             0.8, 0.8, 0.85, 1, 1, 1)

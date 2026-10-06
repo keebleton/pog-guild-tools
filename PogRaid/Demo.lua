@@ -141,7 +141,7 @@ function Demo:Clear()
 end
 
 function Demo:Refresh()
-    ns.Attendance.cache = nil
+    ns.Attendance.cache, ns.Attendance.sessionsCache = nil, nil
     ns.Attendance.viewing = nil
     ns.Loot.counts = nil
     for _, m in ipairs({ ns.Attendance, ns.Loot, ns.Home }) do

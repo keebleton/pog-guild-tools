@@ -526,7 +526,7 @@ end
 function Loot:Refresh()
     if not self.page then return end
     local s = ns.Attendance:Active()
-    self.status:SetText(s and ("|cff66dd77Recording|r loot for " .. s.name) or "Records while attendance is recording")
+    self.status:SetText(s and ("|cff66dd77Recording|r loot for " .. s.name) or "Not recording")
     self.nightBtn:SetLabel(self.night and nightName(self.night) or "All nights")
     local rows = self:Filtered()
     local players = {}
@@ -608,7 +608,7 @@ function Loot:RefreshTable()
     if #rows == 0 then
         local anything = #self:Entries() > 0
         self.empty:SetText(anything and "Nothing matches these filters." or
-            "No loot yet. Items are logged while attendance is recording,\nor add one by hand with Add loot.")
+            "No loot yet.")
     end
     self.empty:SetShown(#rows == 0)
 end

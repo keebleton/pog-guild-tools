@@ -18,7 +18,7 @@ Raid leader and guild tools for World of Warcraft: Forever (interface 16001). Ta
 
 ## Commands
 
-- `/pog` opens Home (again closes it); `/pog profile [name]` opens your profile or someone else's; `/pog home`, `/pog boards`, `/pog roster`, `/pog attendance`, `/pog loot`, `/pog games`, `/pog duels`, `/pog plans` and `/pog settings` open a tab; `/pog minimap` shows/hides the minimap button
+- `/pog` opens Home (again closes it); `/pog profile [name]` opens your profile or someone else's; `/pog home`, `/pog boards`, `/pog roster`, `/pog attendance`, `/pog loot`, `/pog games`, `/pog duels`, `/pog plans` and `/pog settings` open a tab; `/pog minimap` shows/hides the minimap button; `/pog late`, `/pog early` and `/pog ontime` tell the raid leaders about tonight
 - `/pog probe` reports what this client supports (map art, messaging lockdown, events) and runs a self-whisper round trip
 - `/pog test` sends the selected board to yourself, so you can see the viewer solo
 - `/pog check` lists who in the group has PogRaid
@@ -40,7 +40,7 @@ The dashboard `/pog` opens on. A header with the guild logo on a dark round plat
 
 - **Activity / Chat** (toggle in the card header): level-ups, achievements, joins and leaves from guild roster updates and guild achievement messages; or the last 100 guild chat lines you saw. **Online now** underneath (click to whisper or invite).
 - **Message board:** officers post (title + message), pin and delete; anyone with Pog Guild Tools comments in the thread and can delete their own comments. Officers are guild ranks at or above rank index 1 by default (`PogRaidDB.guild.officerRank`).
-- **Group finder:** anyone posts what they are doing and who they need; one listing each, gone after 45 minutes. Listings show how full the group is (1/5, 3/5, 5/5 full; raids count against 10/20/40) and update as people join. Click a listing to **Request to join** (the poster gets a pop-up with Invite / No thanks, sent addon to addon by whisper) or whisper the poster; click your own listing to answer requests. **Recent loot** (blue and up, you and your group) underneath.
+- **Group finder:** anyone posts what they are doing and who they need; one listing each, gone after 45 minutes. Listings show how full the group is (1/5, 3/5, 5/5 full; raids count against 10/20/40) and update as people join. Click a listing to **Request to join** (the poster gets a pop-up with Invite / No thanks, sent addon to addon by whisper) or whisper the poster; click your own listing to answer requests. When a guildie posts a new group, a small pop-up fades in above your chat box ("Flyne is forming a group for Deadmines"); click it to ask to join, right-click to dismiss (Settings: New group pop-ups). **Recent loot** (blue and up) underneath: what you and your group get, plus every guildie's own drops, shared for a day (the game only shows each player their own group's loot).
 
 The board and group finder are shared between everyone in the guild running Pog Guild Tools (Sync.lua): changes go out on the guild addon channel as they happen, and people who log in later catch up by comparing a fingerprint of what each addon holds and trading only the differences. Data is kept per guild. `tests/test_sync.py` runs four clients side by side to test this.
 
@@ -67,9 +67,12 @@ Every roster and player record carries an id, revision time and author so office
 
 ## Attendance
 
-Records itself while you are in a raid group inside a raid instance and you are leader, assistant or a guild officer (Options turns that off; Start raid / End raid work by hand). A snapshot every 5 minutes and after every boss notes who is in the raid and online; a night ends 10 minutes after you leave the raid group. Credit for a night is the share of snapshots a player was there for; bench players on that night's roster earn credit while benched (Options turns this off). Right-click a player on a night to set present / half / absent, or Add player for a sub the snapshots missed.
+Records itself while you are in a raid group inside a raid instance and you are leader, assistant or a guild officer (Options turns that off; Start raid / End raid work by hand). A snapshot every 5 minutes and after every boss notes who is in the raid and online, and when each player was first and last seen; a night ends 10 minutes after you leave the raid group.
 
-Summary shows each raider's attendance over the last 4, last 8 and all nights (click a column header to sort), and hovering a raider in the Roster tab shows their attendance in the tooltip. Copy as CSV for a spreadsheet, Copy for Discord for a post.
+- **A night counts 100%**, or **50%** for arriving more than 15 minutes after it started or leaving more than 15 minutes before it ended. Anyone who said so ahead of time gets full credit: **Late / early...** in the Attendance tab (or `/pog late`, `/pog early`, `/pog ontime`) shares "I'll be late" or "I'll leave early" for tonight, and raid leaders and officers get a chat note. The night shows "late", "left early" or "late (said so)".
+- **Bench** players on that night's roster count as there (Options turns this off), and being called in from the bench isn't late. Right-click a player on a night to set present / half / absent, or Add player for a sub the snapshots missed.
+- **Weekly:** a raid week (from the Tuesday reset) counts as a player's best night that week, so with two raid teams raiding with either one counts, and never twice. Summary shows each raider's attendance over the last 4 and 8 raid weeks and all weeks (click a column header to sort); hovering a raider in the Roster tab shows it too. Copy as CSV for a spreadsheet, Copy for Discord for a post.
+- **Shared between officers:** nights recorded by officers (guild ranks ticked in Settings) reach every other addon, so both teams' nights add up in everyone's weekly numbers. Two officers recording the same raid show as one night. Raiders see the attendance too.
 
 ## Loot
 
@@ -85,7 +88,7 @@ Minesweeper with Goblin Sapper Charges. Apprentice (9x9, 10 sappers), Journeyman
 
 ## Games: Wowdle
 
-A daily WoW word of 5 to 8 letters (singular words and names, no plurals; six tries, green / gold / grey). The page says how long today's word is and the grid resizes to fit. The whole guild gets the same word, which changes at the daily reset. Type straight away or use the on-screen keyboard. Today in the guild lists who solved it and in how many (hover for their colour squares, never the letters); your stats show games played, win %, streak, best streak and guess distribution; Copy result gives Discord squares. Any letters of the right length count as a guess (no dictionary is bundled). `/pog wowdle`.
+A daily WoW word of 5 to 8 letters (singular words and names, no plurals; six tries, green / gold / grey). The page says how long today's word is and the grid resizes to fit. The whole guild gets the same word, which changes at the daily reset. Type straight away or use the on-screen keyboard. Today in the guild lists who solved it and in how many (hover for their colour squares, never the letters); your stats show games played, win %, streak, best streak and guess distribution; Copy result gives Discord squares; Post to guild puts just the score ("Wowdle #12  4/6") in the chat box after /g, ready to send with Enter (addons can't post chat themselves on Forever). Any letters of the right length count as a guess (no dictionary is bundled). `/pog wowdle`.
 
 ## Games: Ranked Duels
 

@@ -126,7 +126,7 @@ end
 local function hold()
     if not warnedRestricted then
         warnedRestricted = true
-        ns.Print("addon messages are locked right now (boss fight?). Pog Guild Tools will send as soon as they unlock.")
+        ns.Print("addon messages are locked right now (boss fight?), sending when they unlock")
     end
     schedule(1)
 end

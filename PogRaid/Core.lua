@@ -1,7 +1,7 @@
 -- PogRaid core: saved data, event dispatch, slash commands, API probe.
 local ADDON, ns = ...
 
-ns.VERSION = "0.13.0"
+ns.VERSION = "0.13.1"
 ns.MEDIA = "Interface\\AddOns\\" .. ADDON .. "\\Media\\"
 
 -- Colours used by arrows, circles and text. Index is what goes over the wire.
@@ -121,6 +121,16 @@ function ns.Now()
     return GetServerTime and GetServerTime() or time()
 end
 
+-- Raid weeks run from the weekly reset (Tuesday 15:00 UTC); raid days from
+-- 10:00 UTC, so an evening raid that runs past midnight is still one day.
+function ns.Week(t)
+    return math.floor(((t or ns.Now()) - 5 * 86400 - 15 * 3600) / 604800)
+end
+
+function ns.RaidDay(t)
+    return math.floor(((t or ns.Now()) - 10 * 3600) / 86400)
+end
+
 local idCounter = 0
 function ns.NewId()
     idCounter = idCounter + 1
@@ -189,6 +199,7 @@ ns.On("ADDON_LOADED", function(name)
     if st.joinPopups == nil then st.joinPopups = true end
     if st.duelChallenges == nil then st.duelChallenges = true end
     if st.profileSongs == nil then st.profileSongs = true end
+    if st.groupToasts == nil then st.groupToasts = true end
     if db.guild.maxLevelOnly == nil then db.guild.maxLevelOnly = false end
     -- v2: "max level only" used to default on, which hid every raider on the
     -- beta (nobody at cap yet). It was never a choice, so reset it.
@@ -287,6 +298,14 @@ SlashCmdList.POGRAID = function(msg)
     elseif cmd == "duels" or cmd == "wowdle" or cmd == "gems" then
         ns.Editor:Toggle("games")
         if ns.Games.page then ns.Games:SetMode(cmd) end
+    elseif cmd == "late" then
+        local _, early = ns.Attendance:MyNotice()
+        ns.Attendance:SetNotice(true, early)
+    elseif cmd == "early" then
+        local late = ns.Attendance:MyNotice()
+        ns.Attendance:SetNotice(late, true)
+    elseif cmd == "ontime" then
+        ns.Attendance:SetNotice(false, false)
     elseif cmd == "profile" or cmd == "profiles" then
         local who = (msg or ""):match("^%s*%S+%s+(.-)%s*$")
         if who and who ~= "" then ns.Profiles:Open(who) else ns.Editor:Toggle("profiles") end

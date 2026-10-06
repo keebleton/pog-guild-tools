@@ -407,7 +407,7 @@ function Duels:Build(view, top, height)
     board.empty = UI.Text(board, 11)
     board.empty:SetPoint("TOP", 0, -56)
     board.empty:SetTextColor(0.5, 0.5, 0.55)
-    board.empty:SetText("No ranked duels yet. Challenge a guildie to get on the board.")
+    board.empty:SetText("No ranked duels yet.")
 end
 
 local MEDALS = { { 1, 0.82, 0.2 }, { 0.8, 0.82, 0.88 }, { 0.85, 0.55, 0.3 } }
@@ -418,7 +418,7 @@ function Duels:Refresh()
     local mine = tbl.players[me()]
     local card = self.card
     card.rating:SetText(tostring(math.floor((mine and mine.rating or Duels.START) + 0.5)))
-    card.rank:SetText(mine and ("Rank #%d of %d"):format(mine.rank, #tbl.list) or "Unranked, play a match to join")
+    card.rank:SetText(mine and ("Rank #%d of %d"):format(mine.rank, #tbl.list) or "Unranked")
     local w, l = mine and mine.wins or 0, mine and mine.losses or 0
     card.record:SetText(("%d W  %d L%s"):format(w, l, (w + l) > 0 and ("  (%d%%)"):format(math.floor(100 * w / (w + l) + 0.5)) or ""))
 
@@ -524,10 +524,6 @@ function Popup:Build()
     f.yes = UI.Button(f, "Accept", 90, 22, function() self:Answer(true) end)
     f.yes:SetPoint("RIGHT", f.no, "LEFT", -6, 0)
     f.yes:SetPrimary()
-    f.sub = UI.Text(f, 10)
-    f.sub:SetPoint("BOTTOMLEFT", 12, 13)
-    f.sub:SetTextColor(0.55, 0.55, 0.6)
-    f.sub:SetText("Ratings change only if you both agree")
     f:Hide()
     self.frame = f
 end

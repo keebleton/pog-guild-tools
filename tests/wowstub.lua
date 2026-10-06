@@ -105,6 +105,8 @@ function M:EnableKeyboard(on) self.__keyboard = on end
 function M:SetPropagateKeyboardInput(on) self.__propagate = on end
 function M:IsMouseOver() return STUB.hover == self end
 function M:SetEnabled(on) self.__disabled = not on end
+function M:SetAlpha(a) self.__alpha = a end
+function M:GetAlpha() return self.__alpha or 1 end
 function M:IsEnabled() return not self.__disabled end
 
 -- regions ---------------------------------------------------------------

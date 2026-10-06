@@ -26,6 +26,8 @@ Crafting.PUBLISH_DELAY = 120   -- skill-ups while crafting: share at most this o
 Crafting.MAX_RECIPES = 1000
 -- Gathering and fishing have no recipe book to share (English client names).
 Crafting.NO_RECIPES = { Fishing = true, Herbalism = true, Skinning = true, Archaeology = true }
+-- rogue skills the skill list files with professions: not shared or shown
+Crafting.SKIP = { Poisons = true, Lockpicking = true }
 
 local PAD, TITLE_H = 12, 30
 local FRAME_W, FRAME_H = 902, 608
@@ -54,7 +56,7 @@ end
 local function parseList(list)
     local out = {}
     for name, rank, max in tostring(list or ""):gmatch("([^:|]+):(%d+):(%d+)") do
-        out[#out + 1] = { name = name, rank = tonumber(rank), max = tonumber(max) }
+        if not Crafting.SKIP[name] then out[#out + 1] = { name = name, rank = tonumber(rank), max = tonumber(max) } end
     end
     return out
 end
@@ -148,6 +150,9 @@ function Crafting:ReadProfessions()
             end
         end
     end
+    for i = #out, 1, -1 do
+        if Crafting.SKIP[out[i].name] then table.remove(out, i) end
+    end
     table.sort(out, function(a, b) return a.name < b.name end)
     return out, true
 end
@@ -199,6 +204,7 @@ function Crafting:ScanRecipes()
     local prof = ok and type(base) == "table" and base.professionName
     if type(prof) ~= "string" or prof == "" then return end
     prof = prof:gsub("[:|]", "")
+    if Crafting.SKIP[prof] then return end
     local ids, names = {}, self:NameCache()
     local okIds, all = pcall(T.GetAllRecipeIDs)
     for _, id in ipairs(okIds and all or {}) do
@@ -280,7 +286,7 @@ function Crafting:Index()
     local list = {}
     local unnamed = 0
     for _, rec in pairs(Sync:Store("recipes") or {}) do
-        if not rec.deleted then
+        if not rec.deleted and not Crafting.SKIP[rec.prof] then
             for _, id in ipairs(Crafting.Unpack(rec.ids)) do
                 local e = byId[id]
                 if not e then
@@ -428,7 +434,7 @@ function Crafting:Build(page)
     left.empty:SetPoint("TOP", 0, -60)
     left.empty:SetWidth(LEFT_W - 24)
     left.empty:SetTextColor(0.5, 0.5, 0.55)
-    left.empty:SetText("Nobody's professions yet. They show up\nonce guildies with Pog Guild Tools log in.")
+    left.empty:SetText("No professions shared yet.")
     self.left = left
 
     -- Search and results, right
@@ -601,7 +607,7 @@ function Crafting:Refresh()
         if Crafting.NO_RECIPES[self.selected] then
             right.empty:SetText(self.selected .. " has no recipes.")
         elseif not shared then
-            right.empty:SetText(("%s hasn't shared their %s recipes yet.\nThey show up once %s opens that profession window."):format(
+            right.empty:SetText(("%s hasn't shared their %s recipes yet."):format(
                 display(self.member), self.selected, display(self.member)))
         else
             right.empty:SetText("No recipe like that.")
@@ -663,10 +669,10 @@ function Crafting:Refresh()
     right.status:SetText(self:StatusText())
 end
 
--- What we share, and a nudge to open a profession window we haven't read.
+-- What we share, or a nudge to open a profession window we haven't read.
 function Crafting:StatusText()
     local mine = self:ReadProfessions()
-    if not mine[1] then return "You have no professions to share yet." end
+    if not mine[1] then return "No professions yet." end
     local shared, missing = {}, {}
     local store = Sync:Store("recipes") or {}
     for _, p in ipairs(mine) do
@@ -677,13 +683,12 @@ function Crafting:StatusText()
             missing[#missing + 1] = p.name
         end
     end
-    local s = shared[1] and ("Sharing your recipes: " .. table.concat(shared, ", ") .. ".") or ""
     if missing[1] then
-        s = s .. (s ~= "" and "  " or "") .. "Open your " .. table.concat(missing, ", ") .. " window once to share "
-            .. (#missing == 1 and "its" or "their") .. " recipes."
+        return ("open your %s %s once to share recipes!"):format(table.concat(missing, " and "):lower(),
+            #missing == 1 and "window" or "windows")
     end
-    if s == "" then s = "Your professions have no recipes to share." end
-    return s
+    if shared[1] then return "Recipes shared: " .. table.concat(shared, ", ") end
+    return "No recipes to share."
 end
 
 ------------------------------------------------------------------------

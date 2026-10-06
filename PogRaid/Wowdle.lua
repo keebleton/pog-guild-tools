@@ -198,10 +198,25 @@ function Wowdle:Stats()
 end
 
 -- The Discord-friendly squares (they show as boxes inside WoW, paste fine).
-function Wowdle:ShareText()
+-- "Wowdle #12  4/6" (X/6 when missed).
+function Wowdle:ScoreText()
     local cur = self:Current()
     local n = G().history[cur.day]
-    local lines = { ("Wowdle #%d  %s/6"):format(self:Number(cur.day), (n and n <= Wowdle.TRIES) and n or "X") }
+    return ("Wowdle #%d  %s/6"):format(self:Number(cur.day), (n and n <= Wowdle.TRIES) and n or "X")
+end
+
+-- Guild chat: just the score (the squares look odd in chat). Addons can't
+-- post chat on Forever, so it goes into the chat box ready for Enter.
+function Wowdle:PostScore()
+    local text = "/g " .. self:ScoreText()
+    if ChatFrame_OpenChat then
+        pcall(ChatFrame_OpenChat, text, DEFAULT_CHAT_FRAME)
+    end
+end
+
+function Wowdle:ShareText()
+    local cur = self:Current()
+    local lines = { self:ScoreText() }
     local squares = { g = "\240\159\159\169", y = "\240\159\159\168", x = "\226\172\155" }
     for row in self:Pattern():gmatch("[gyx]+") do
         lines[#lines + 1] = (row:gsub("[gyx]", squares))
@@ -411,6 +426,8 @@ function Wowdle:Build(view, top, height)
         UI.CopyBox("Wowdle result (squares paste into Discord)", self:ShareText())
     end)
     side.share:SetPoint("BOTTOMRIGHT", -12, 12)
+    side.post = UI.Button(side, "Post to guild", 110, 24, function() self:PostScore() end)
+    side.post:SetPoint("RIGHT", side.share, "LEFT", -6, 0)
     view:SetScript("OnShow", function() if self:State() == "playing" then input:SetFocus() end end)
     -- leaving the page always gives the keyboard back
     view:SetScript("OnHide", function() input:ClearFocus() end)
@@ -513,12 +530,12 @@ function Wowdle:Refresh()
     if self.flash then
         self.status:SetText("|cffff8866" .. self.flash .. "|r")
     elseif state == "won" then
-        self.status:SetText(("|cff66dd77Solved in %d!|r Come back after the daily reset."):format(#cur.guesses))
+        self.status:SetText(("|cff66dd77Solved in %d!|r"):format(#cur.guesses))
     elseif state == "lost" then
-        self.status:SetText(("The word was |cffffd200%s|r. New word after the daily reset."):format(self:Word(cur.day)))
+        self.status:SetText(("The word was |cffffd200%s|r."):format(self:Word(cur.day)))
     else
         -- the word's length lives here, under the keyboard, clear of the game tabs
-        self.status:SetText(("|cff8a8a92Today's word has %d letters. Type a guess and press Enter.|r"):format(self:Length(cur.day)))
+        self.status:SetText(("|cff8a8a92%d letters|r"):format(self:Length(cur.day)))
     end
 
     local side = self.side
@@ -557,4 +574,5 @@ function Wowdle:Refresh()
         b.count:SetText(tostring(n))
     end
     side.share:SetEnabledState(state ~= "playing")
+    side.post:SetEnabledState(state ~= "playing")
 end

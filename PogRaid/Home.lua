@@ -140,7 +140,61 @@ function Home:OnLoot(player, link)
     end
     table.insert(list, 1, { t = now, player = key, itemID = itemID, link = link })
     for i = #list, Home.LOOT_MAX + 1, -1 do list[i] = nil end
+    -- our own drops go to the whole guild (the game only shows each of us
+    -- the loot of people in our group)
+    if key == ns.Sync:Me() and ns.Sync:GuildName() then
+        ns.Sync:Write("drops", { id = ns.NewId(), author = key, t = now, item = link, q = quality })
+    end
     self:Changed()
+end
+
+-- Guildies' own blue-and-better drops, shared for a day.
+Home.DROPS_KEEP = 86400
+
+ns.Sync:Register({
+    name = "drops", code = "l", order = 5,
+    fields = { "item", "q" },
+    numeric = { q = true },
+    valid = function(rec)
+        return rec.by == rec.author and type(rec.item) == "string" and #rec.item <= 250
+            and rec.item:find("item:%d+") ~= nil and rec.q ~= nil and rec.q >= Home.LOOT_MIN_QUALITY and rec.q <= 7
+    end,
+    prune = function(store)
+        local cutoff = ns.Now() - Home.DROPS_KEEP
+        for id, rec in pairs(store) do
+            if rec.t < cutoff then store[id] = nil end
+        end
+    end,
+    expired = function(rec) return rec.t < ns.Now() - Home.DROPS_KEEP end,
+    onChange = function() Home:Changed() end,
+})
+
+-- Recent loot: what we saw (us and our group) plus guildies' shared drops,
+-- newest first, each drop once.
+function Home:RecentLoot()
+    local out, seen = {}, {}
+    for _, e in ipairs(G().seenLoot) do
+        -- drops saved before pugs were skipped stay hidden too
+        if e.demo or ns.Loot.FromGuild(e.player) then
+            out[#out + 1] = e
+            local k = e.player .. ":" .. e.itemID
+            seen[k] = seen[k] or {}
+            table.insert(seen[k], e.t)
+        end
+    end
+    for _, rec in pairs(ns.Sync:Store("drops") or {}) do
+        local itemID = not rec.deleted and ns.Loot.ItemID(rec.item)
+        if itemID then
+            local dup = false
+            for _, t in ipairs(seen[rec.author .. ":" .. itemID] or {}) do
+                if math.abs(t - rec.t) <= ns.Loot.DEDUPE_SECONDS then dup = true end
+            end
+            if not dup then out[#out + 1] = { t = rec.t, player = rec.author, itemID = itemID, link = rec.item } end
+        end
+    end
+    table.sort(out, function(a, b) return a.t > b.t end)
+    for i = #out, Home.LOOT_MAX + 1, -1 do out[i] = nil end
+    return out
 end
 
 function Home:Changed()
@@ -718,9 +772,9 @@ function Home:RefreshBoard()
     if not IsInGuild() then
         c.empty:SetText("Join a guild to see its message board.")
     elseif canPost then
-        c.empty:SetText("No posts yet. Use New post to write the first one.")
+        c.empty:SetText("No posts yet.")
     else
-        c.empty:SetText("No posts yet. Officers can post here, and\neveryone with Pog Guild Tools can comment.")
+        c.empty:SetText("No posts yet.")
     end
     c.empty:SetShown(#posts == 0)
 end
@@ -749,7 +803,7 @@ function Home:BuildGroups(page)
     c.post = headButton(c, "Post group", 74, function()
         local mine = ns.Social:MyGroup()
         UI.Compose({ heading = mine and "Update your group" or "Post a group", label1 = "Doing what?",
-            labelMid = "Looking for", label2 = "Description (optional, shown when people hover your group)",
+            labelMid = "Looking for", label2 = "Description (optional)",
             max1 = ns.Social.MAX_LFG, maxMid = ns.Social.MAX_LFG, max2 = ns.Social.MAX_LFG_DESC,
             text1 = mine and mine.what or "", textMid = mine and mine.need or "", text2 = mine and mine.desc or "",
             button = "Post" }, function(what, desc, need)
@@ -825,7 +879,7 @@ function Home:RefreshGroups()
         end
         row.right2:SetText(status)
         row.sub:SetText(colorName(g.author) .. (g.need and ("  |cff9a9aa2needs " .. g.need .. "|r") or ""))
-    end, IsInGuild() and "No groups up. Post one and guildies\nwith Pog Guild Tools will see it." or "")
+    end, IsInGuild() and "No groups up." or "")
 end
 
 ------------------------------------------------------------------------
@@ -907,11 +961,11 @@ function Home:Refresh()
     fillRows(self.feedCard, G().feed, function(row, e)
         row.text:SetText(self:FeedText(e))
         row.right:SetText(Home.Ago(e.t))
-    end, "Level-ups, achievements and new\nmembers show up here.")
+    end, "Nothing yet.")
     fillRows(self.chatCard, G().chat, function(row, m)
         row.text:SetText(colorName(m.name) .. ": " .. m.text)
         row.right:SetText(Home.Ago(m.t))
-    end, "Guild chat you see is kept here.")
+    end, "No guild chat yet.")
 
     local online = self:OnlineList()
     self.onlineCard.meta:SetText(inGuild and tostring(#online) or "")
@@ -925,15 +979,10 @@ function Home:Refresh()
     self:RefreshGroups()
 
     self.lootCard.meta:SetText("blue and up")
-    -- drops saved before pugs were skipped stay hidden too
-    local loot = {}
-    for _, e in ipairs(G().seenLoot) do
-        if e.demo or ns.Loot.FromGuild(e.player) then loot[#loot + 1] = e end
-    end
-    fillRows(self.lootCard, loot, function(row, e)
+    fillRows(self.lootCard, self:RecentLoot(), function(row, e)
         row.text:SetText(("%s  %s"):format(colorName(e.player), e.link))
         row.right:SetText(Home.Ago(e.t))
-    end, "Blue and better drops you or\nyour group get show up here.")
+    end, "No drops yet.")
 end
 
 ------------------------------------------------------------------------

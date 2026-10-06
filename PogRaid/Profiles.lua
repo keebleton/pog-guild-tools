@@ -269,25 +269,53 @@ local function lists(rec, name)
     return rec ~= nil and rec.chars ~= nil and ("," .. rec.chars .. ","):find("," .. name .. ",", 1, true) ~= nil
 end
 
--- The characters on `name`'s account: those whose records and `name`'s list
--- each other (ours: the ones we've played). Always starts with `name`.
+-- name -> characters whose records list it (built once per page refresh).
+function Profiles:Claims()
+    local memo = self.memo
+    if memo and memo.__claims then return memo.__claims end
+    local claims = {}
+    for id, rec in pairs(Sync:Store("profile") or {}) do
+        if not rec.deleted and rec.chars then
+            for c in rec.chars:gmatch("[^,]+") do
+                if c ~= id then
+                    claims[c] = claims[c] or {}
+                    table.insert(claims[c], id)
+                end
+            end
+        end
+    end
+    if memo then memo.__claims = claims end
+    return claims
+end
+
+-- The characters on `name`'s account (ours: the ones we've played). Always
+-- starts with `name`. Two records are one account when they list each other,
+-- or when one lists the other and the other was last shared before the
+-- account knew about it (no list yet) with the very same profile edit.
 function Profiles:Linked(name)
     local memo = self.memo -- only while the page refreshes
     if memo and memo[name] then return memo[name] end
-    local out
+    local out = { name }
     if self:IsMine(name) then
-        out = { name }
         for _, c in ipairs(self:MyChars()) do
             if c ~= name then out[#out + 1] = c end
         end
     else
-        out = { name }
         local rec = self:Get(name)
-        if rec and rec.chars then
-            for c in rec.chars:gmatch("[^,]+") do
-                if c ~= name and lists(self:Get(c), name) then out[#out + 1] = c end
+        local seen = { [name] = true }
+        local function consider(c)
+            if seen[c] then return end
+            seen[c] = true
+            local other = self:Get(c)
+            if not rec or not other then return end
+            local mine, theirs = lists(rec, c), lists(other, name)
+            local sameEdit = rec.ed ~= nil and rec.ed == other.ed
+            if (mine and theirs) or (theirs and not rec.chars and sameEdit) or (mine and not other.chars and sameEdit) then
+                out[#out + 1] = c
             end
         end
+        for c in tostring(rec and rec.chars or ""):gmatch("[^,]+") do consider(c) end
+        for _, c in ipairs(self:Claims()[name] or {}) do consider(c) end
     end
     if memo then memo[name] = out end
     return out
@@ -492,9 +520,7 @@ end
 -- Kudos
 ------------------------------------------------------------------------
 -- Weeks counted from the weekly reset (Tuesday 15:00 UTC).
-function Profiles.Week(t)
-    return math.floor(((t or ns.Now()) - 5 * 86400 - 15 * 3600) / 604800)
-end
+Profiles.Week = ns.Week
 
 -- Kudos to an account: per kind { n, givers, gave = we gave it this week },
 -- the latest records, the total and how many accounts gave. Kudos between
@@ -822,7 +848,7 @@ function Profiles:RefreshList()
         end
     end
     list.empty:SetText(IsInGuild() and ((self.search or "") ~= "" and "Nobody with Pog Guild Tools matches."
-        or "Guildies show up here once their\nPog Guild Tools has been heard from.") or "")
+        or "Nobody yet.") or "")
     list.empty:SetShown(#members == 0)
 end
 
@@ -916,7 +942,7 @@ function Profiles:RefreshBanner()
         b.status:SetText(content.status)
         b.status:SetTextColor(r, g, bl)
     else
-        b.status:SetText(mine and "No status yet. Use Edit to set one." or "No status yet.")
+        b.status:SetText("No status yet.")
         b.status:SetTextColor(0.5, 0.5, 0.55)
     end
     -- online on this character, or on another of theirs
@@ -951,7 +977,7 @@ function Profiles:EditMenu()
             end)
         end },
         { text = "Nickname...", func = function()
-            UI.Compose({ heading = "Nickname", label1 = "What the guild calls you (your character's name shows with it)",
+            UI.Compose({ heading = "Nickname", label1 = "Nickname",
                 max1 = Profiles.MAX_NICK, text1 = content.nick or "", text2 = "", button = "Save", optional = true,
                 noArea = true }, function(nick)
                 self:Save({ nick = clean(nick, Profiles.MAX_NICK) })
@@ -1096,7 +1122,6 @@ function Profiles:BuildAbout(page)
             local p = G().players[n] or {}
             GameTooltip:AddDoubleLine(display(n), p.level and ("Level " .. p.level) or "", classColor(n))
         end
-        GameTooltip:AddLine("A character joins once it logs in with Pog Guild Tools.", 0.6, 0.6, 0.65, true)
         GameTooltip:Show()
     end)
     chars:SetScript("OnLeave", hideTip)
@@ -1129,7 +1154,7 @@ function Profiles:RefreshAbout()
         c.text:SetTextColor(0.88, 0.88, 0.91)
     else
         local any = self:IsMine(name) or next(content) ~= nil
-        c.text:SetText(self:IsMine(name) and "Nothing here yet. Use Edit to write a little about yourself."
+        c.text:SetText(self:IsMine(name) and "Nothing here yet."
             or (any and "Nothing here yet." or (display(name) .. " hasn't set up a profile yet.")))
         c.text:SetTextColor(0.5, 0.5, 0.55)
     end
@@ -1220,7 +1245,7 @@ function Profiles:RefreshProfessions()
         end
         t:SetShown(p ~= nil)
     end
-    c.empty:SetText(self:IsMine(name) and "Your professions share themselves.\nOpen a profession window once to add its recipes."
+    c.empty:SetText(self:IsMine(name) and "No professions shared yet."
         or "No professions shared yet.")
     c.empty:SetShown(#profs == 0)
 end
@@ -1338,7 +1363,7 @@ function Profiles:RefreshBook()
         end
     end
     if not shared then
-        f.empty:SetText(("%s hasn't shared their %s recipes yet.\nThey share them by opening their %s window with Pog Guild Tools.")
+        f.empty:SetText(("%s hasn't shared their %s recipes yet.")
             :format(display(b.name), b.prof, b.prof))
     else
         f.empty:SetText("No recipes match.")
@@ -1392,7 +1417,7 @@ function Profiles:RefreshTop()
         end
         t:SetShown(who ~= nil)
     end
-    c.empty:SetText(mine and "Group up with guildies and the ones\nyou play with most show up here." or "Nobody here yet.")
+    c.empty:SetText("Nobody here yet.")
     c.empty:SetShown(#top == 0)
 end
 
@@ -1499,8 +1524,7 @@ function Profiles:RefreshKudos()
             r:Hide()
         end
     end
-    c.empty:SetText(mine and "No kudos yet. Guildies give them\nfrom your profile."
-        or "No kudos yet. Use Give kudos to be the first!")
+    c.empty:SetText("No kudos yet.")
     c.empty:SetShown(#recent == 0)
 end
 

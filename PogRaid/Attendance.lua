@@ -1,10 +1,17 @@
 -- PogRaid attendance: records who was in the raid each night and turns it
--- into attendance percentages.
+-- into weekly attendance.
 --
 -- A session (one raid night) is snapshotted every 5 minutes and after each
--- boss. A player's credit for the night is the share of snapshots they were
--- in the raid and online; bench players on that night's roster earn credit
--- for the snapshots they sat out. Officers can override any credit.
+-- boss, noting when each player was first and last seen. A night counts 100%,
+-- or 50% for arriving more than GRACE after the start or leaving more than
+-- GRACE before the end, unless they said so ahead of time ("I'll be late" /
+-- "I'll leave early": shared `notice` records, full credit). Bench players on
+-- that night's roster count as there. Officers can override any credit.
+--
+-- Weekly: a raid week (Tuesday reset) counts as a player's best night that
+-- week, so with two raid teams raiding either one counts. Nights are shared
+-- between officers (`nights` records), so both teams' nights add up; two
+-- officers recording the same raid show as one night.
 --
 -- Layout (same grid as the other tabs):
 --   [Start raid][End raid]  [session name ............]
@@ -12,7 +19,7 @@
 --   [Summary             ]  [Player      Status     Credit]
 --   [sessions ...        ]  [ ...                         ]
 --   [Delete session      ]  [Options][Add player]  [CSV][Discord]
-local _, ns = ...
+local ADDON, ns = ...
 local UI = ns.UI
 
 local Att = {}
@@ -29,11 +36,14 @@ local LIST_Y = ROW2_Y + BAR_H + GAP
 local BOTTOM_Y = FRAME_H - PAD - BAR_H
 local LIST_H = BOTTOM_Y - GAP - LIST_Y
 local ROW_H = 22
+local NOTICE_W = 110
 
 Att.SNAP_EVERY = 300   -- seconds between snapshots
 Att.END_AFTER = 600    -- out of the raid group this long ends the night
 Att.STALE = 4 * 3600   -- a session untouched this long is closed on sight
 Att.CHECK_EVERY = 30
+Att.GRACE = 15 * 60    -- this late, or this early out, still counts as there
+Att.KEEP = 365 * 86400 -- shared nights kept a year
 
 local function G() return ns.db.guild end
 local function display(name) return name and Ambiguate(name, "short") end
@@ -57,15 +67,48 @@ local function pct(v) return ("%d%%"):format(math.floor(v * 100 + 0.5)) end
 ------------------------------------------------------------------------
 -- Sessions
 ------------------------------------------------------------------------
+-- Two recordings of the same raid: their times mostly overlap and most of
+-- one's players are in the other.
+local function sameRaid(a, b)
+    local aStop, bStop = a.stop or a.lastSnap or a.start, b.stop or b.lastSnap or b.start
+    local overlap = math.min(aStop, bStop) - math.max(a.start, b.start)
+    if overlap <= 0 or overlap < 0.5 * math.min(aStop - a.start, bStop - b.start) then return false end
+    local shared, total = 0, 0
+    for n in pairs(a.present) do
+        total = total + 1
+        if b.present[n] then shared = shared + 1 end
+    end
+    return total > 0 and shared >= 0.5 * total
+end
+
+-- Raid nights, newest first. Of two officers' recordings of one raid only
+-- the fuller one is listed. Cached until something changes.
 function Att:Sessions()
-    local out = {}
+    if self.sessionsCache then return self.sessionsCache end
+    local all = {}
     for _, s in pairs(G().sessions) do
-        if not s.deleted then out[#out + 1] = s end
+        if not s.deleted then all[#all + 1] = s end
+    end
+    table.sort(all, function(a, b)
+        if a.snaps ~= b.snaps then return a.snaps > b.snaps end
+        return a.id < b.id
+    end)
+    local out = {}
+    for _, s in ipairs(all) do
+        local dup = false
+        for _, k in ipairs(out) do
+            if sameRaid(k, s) or sameRaid(s, k) then
+                dup = true
+                break
+            end
+        end
+        if not dup then out[#out + 1] = s end
     end
     table.sort(out, function(a, b)
         if a.start ~= b.start then return a.start > b.start end
         return a.id > b.id
     end)
+    self.sessionsCache = out
     return out
 end
 
@@ -115,7 +158,8 @@ function Att:Start()
     local now = ns.Now()
     local roster = ns.Roster:Current()
     local s = { id = ns.NewId(), name = zone or "Raid", start = now, lastSnap = 0, lastSeen = now, snaps = 0,
-        present = {}, benchSnaps = {}, bosses = {}, overrides = {}, rosterId = roster and roster.id }
+        present = {}, firstAt = {}, lastAt = {}, benchSnaps = {}, bosses = {}, overrides = {},
+        rosterId = roster and roster.id, rec = ns.Sync:Me() }
     ns.Touch(s)
     G().sessions[s.id] = s
     G().activeSession = s.id
@@ -133,6 +177,7 @@ function Att:End(s)
     ns.Touch(s)
     G().activeSession = nil
     ns.Print(("attendance: '%s' saved, %d snapshot%s"):format(s.name, s.snaps, s.snaps == 1 and "" or "s"))
+    self:Share(s)
     self:Changed()
 end
 
@@ -149,6 +194,10 @@ function Att:Snapshot(s)
             local k = self:Key(name)
             here[k] = true
             s.present[k] = (s.present[k] or 0) + 1
+            if s.firstAt then
+                s.firstAt[k] = s.firstAt[k] or now
+                s.lastAt[k] = now
+            end
             local p = G().players[k]
             if not p then
                 p = { manual = true, class = class }
@@ -188,11 +237,50 @@ function Att:Check()
     end
 end
 
+-- Arrived more than GRACE after the start, left more than GRACE before the
+-- end (only once the night is over).
+function Att:LateEarly(s, name)
+    local first, last = s.firstAt and s.firstAt[name], s.lastAt and s.lastAt[name]
+    if not first then return false, false end
+    local late = first - s.start > Att.GRACE
+    local early = s.stop ~= nil and s.stop - last > Att.GRACE
+    return late, early
+end
+
+-- They told the raid ahead of time (from any of their characters).
+function Att:SaidSo(s, name)
+    local store = ns.Sync:Store("notice") or {}
+    local day = ns.RaidDay(s.start)
+    local late, early = false, false
+    for _, c in ipairs(ns.Profiles and ns.Profiles:Linked(name) or { name }) do
+        local n = store[c .. ":" .. day]
+        if n and not n.deleted then
+            late, early = late or n.late == true, early or n.early == true
+        end
+    end
+    return late, early
+end
+
+local function benched(s, name)
+    return G().benchCredit ~= false and (s.benchSnaps[name] or 0) > 0
+end
+
 function Att:Credit(s, name)
     if s.overrides[name] then return s.overrides[name] end
     if s.snaps == 0 then return 0 end
-    local b = (G().benchCredit ~= false) and (s.benchSnaps[name] or 0) or 0
-    return math.min(1, ((s.present[name] or 0) + b) / s.snaps)
+    local p = s.present[name] or 0
+    if not s.firstAt then
+        -- nights recorded before 0.13.1: the share of snapshots
+        local b = (G().benchCredit ~= false) and (s.benchSnaps[name] or 0) or 0
+        return math.min(1, (p + b) / s.snaps)
+    end
+    if p == 0 then return benched(s, name) and 1 or 0 end
+    -- swapped in from the bench (or out to it) isn't late or early
+    if benched(s, name) then return 1 end
+    local late, early = self:LateEarly(s, name)
+    local saidLate, saidEarly = self:SaidSo(s, name)
+    if (late and not saidLate) or (early and not saidEarly) then return 0.5 end
+    return 1
 end
 
 function Att:Status(s, name)
@@ -203,8 +291,17 @@ function Att:Status(s, name)
     local p, b = s.present[name] or 0, s.benchSnaps[name] or 0
     if p == 0 and b > 0 then return "bench" end
     if p == 0 then return "absent" end
-    if s.snaps > 0 and p / s.snaps >= 0.9 then return "present" end
-    return "partial"
+    if not s.firstAt then
+        if s.snaps > 0 and p / s.snaps >= 0.9 then return "present" end
+        return "partial"
+    end
+    if b > 0 and G().benchCredit ~= false then return "present" end
+    local late, early = self:LateEarly(s, name)
+    if not late and not early then return "present" end
+    local saidLate, saidEarly = self:SaidSo(s, name)
+    local text = (late and early) and "late, left early" or (late and "late" or "left early")
+    if (not late or saidLate) and (not early or saidEarly) then text = text .. " (said so)" end
+    return text
 end
 
 -- Everyone relevant to a night: seen, benched, overridden, or on its roster.
@@ -235,23 +332,210 @@ end
 function Att:SetOverride(s, name, credit)
     s.overrides[name] = credit
     ns.Touch(s)
+    self:Share(s)
     self:Changed()
 end
 
 function Att:DeleteSession(s)
     s.deleted = true
-    s.present, s.benchSnaps, s.bosses, s.overrides = nil, nil, nil, nil
     ns.Touch(s)
+    self:Share(s)
+    s.present, s.benchSnaps, s.bosses, s.overrides, s.firstAt, s.lastAt = {}, {}, {}, {}, nil, nil
     if G().activeSession == s.id then G().activeSession = nil end
     self.viewing = nil
     self:Changed()
 end
 
 ------------------------------------------------------------------------
--- Summary: attendance over the last N nights. Cached until data changes.
+-- Sharing nights between officers (`nights`), and "I'll be late / leave
+-- early" notices from anyone (`notice`).
+-- A night travels as text: "Name:count:first:last/..." with times as
+-- seconds after the start; bench "Name:count/...", overrides
+-- "Name:credit/...", bosses "Boss:1:seconds/..." (1 = kill).
+------------------------------------------------------------------------
+-- set once the whole addon has loaded (see the end of this section), so the
+-- order files load in doesn't matter
+local Sync
+
+local function safe(name) return (tostring(name):gsub("[:/]", " ")) end
+
+function Att:ToRecord(s)
+    if s.deleted then
+        return { id = s.id, author = s.rec or Sync:Me(), t = s.start, deleted = true, start = s.start, snaps = 0 }
+    end
+    local seen, bench, over, bosses = {}, {}, {}, {}
+    for n, c in pairs(s.present) do
+        local f, l = s.firstAt and s.firstAt[n], s.lastAt and s.lastAt[n]
+        seen[#seen + 1] = f and ("%s:%d:%d:%d"):format(safe(n), c, f - s.start, l - s.start) or ("%s:%d"):format(safe(n), c)
+    end
+    for n, c in pairs(s.benchSnaps) do bench[#bench + 1] = ("%s:%d"):format(safe(n), c) end
+    for n, c in pairs(s.overrides) do over[#over + 1] = ("%s:%s"):format(safe(n), tostring(c)) end
+    for _, b in ipairs(s.bosses) do
+        bosses[#bosses + 1] = ("%s:%d:%d"):format(safe(b.name or "?"), b.success and 1 or 0, math.max(0, (b.t or s.start) - s.start))
+    end
+    table.sort(seen)
+    table.sort(bench)
+    table.sort(over)
+    return { id = s.id, author = s.rec or Sync:Me(), t = s.start, deleted = s.deleted, name = s.name, start = s.start,
+        stop = s.stop, snaps = s.snaps, seen = table.concat(seen, "/"), bench = table.concat(bench, "/"),
+        over = table.concat(over, "/"), bosses = table.concat(bosses, "/") }
+end
+
+function Att:FromRecord(rec)
+    local cur = G().sessions[rec.id]
+    -- our own change (we already have it), or a night we're still recording
+    if cur and (rec.by == Sync:Me() or G().activeSession == rec.id) then return end
+    if rec.deleted then
+        if cur then
+            cur.deleted = true
+            if self.viewing == rec.id then self.viewing = nil end
+        end
+        self:Changed()
+        return
+    end
+    local s = { id = rec.id, name = rec.name or "Raid", start = rec.start, stop = rec.stop, lastSnap = rec.stop,
+        snaps = rec.snaps, present = {}, benchSnaps = {}, overrides = {}, bosses = {}, rec = rec.author,
+        rosterId = cur and cur.rosterId, rev = rec.rev, by = rec.by }
+    local timed = false
+    for n, c, f, l in tostring(rec.seen or ""):gmatch("([^:/]+):(%d+):?(%d*):?(%d*)") do
+        s.present[n] = tonumber(c)
+        if f ~= "" then
+            s.firstAt = s.firstAt or {}
+            s.lastAt = s.lastAt or {}
+            s.firstAt[n], s.lastAt[n] = rec.start + tonumber(f), rec.start + tonumber(l)
+            timed = true
+        end
+    end
+    if timed or (rec.seen or "") == "" then
+        s.firstAt, s.lastAt = s.firstAt or {}, s.lastAt or {}
+    end
+    for n, c in tostring(rec.bench or ""):gmatch("([^:/]+):(%d+)") do s.benchSnaps[n] = tonumber(c) end
+    for n, c in tostring(rec.over or ""):gmatch("([^:/]+):([%d%.]+)") do s.overrides[n] = tonumber(c) end
+    for name, k, at in tostring(rec.bosses or ""):gmatch("([^:/]+):(%d):(%d+)") do
+        s.bosses[#s.bosses + 1] = { name = name, success = k == "1", t = rec.start + tonumber(at) }
+    end
+    G().sessions[rec.id] = s
+    self:Changed()
+end
+
+-- Share a night we recorded, or changed (officers only: others' addons
+-- wouldn't take it). Nights from before sharing stay on this computer.
+function Att:Share(s)
+    if not s.rec or not Sync:GuildName() or not Sync:AmOfficer() then return end
+    Sync:Write("nights", self:ToRecord(s))
+end
+
+local function sane(rec, fields)
+    for f, max in pairs(fields) do
+        local v = rec[f]
+        if v ~= nil and (type(v) ~= "string" or #v > max) then return false end
+    end
+    return true
+end
+
+-- Registered once the whole addon has loaded: WoW reads the .toc (file
+-- order) only when the game starts, so nothing here relies on Sync.lua
+-- loading first.
+local function registerSync()
+Sync = ns.Sync
+Sync:Register({
+    name = "nights", code = "n", order = 4,
+    fields = { "name", "start", "stop", "snaps", "seen", "bench", "over", "bosses" },
+    numeric = { start = true, stop = true, snaps = true },
+    perRecord = true,
+    valid = function(rec)
+        return Sync:IsOfficer(rec.by) and sane(rec, { name = 60, seen = 6000, bench = 2000, over = 2000, bosses = 2000 })
+            and (rec.deleted or (rec.start ~= nil and rec.snaps ~= nil and rec.snaps >= 0))
+    end,
+    prune = function(store)
+        local cutoff = ns.Now() - Att.KEEP
+        for id, rec in pairs(store) do
+            if rec.t < cutoff then store[id] = nil end
+        end
+    end,
+    expired = function(rec) return rec.t < ns.Now() - Att.KEEP end,
+    onChange = function(rec) Att:FromRecord(rec) end,
+})
+
+Sync:Register({
+    name = "notice", code = "a", order = 2,
+    fields = { "day", "late", "early" },
+    numeric = { day = true },
+    bool = { late = true, early = true },
+    valid = function(rec)
+        return rec.by == rec.author and rec.day ~= nil and rec.id == rec.author .. ":" .. rec.day
+    end,
+    prune = function(store)
+        local cutoff = ns.RaidDay() - 14
+        for id, rec in pairs(store) do
+            if rec.day < cutoff then store[id] = nil end
+        end
+    end,
+    expired = function(rec) return rec.day < ns.RaidDay() - 14 end,
+    onChange = function(rec) Att:OnNotice(rec) end,
+})
+end
+
+ns.On("ADDON_LOADED", function(name)
+    if name == ADDON and not Sync then registerSync() end
+end)
+
+-- Our notice for tonight: running late, leaving early, both or neither.
+function Att:MyNotice()
+    local n = (Sync:Store("notice") or {})[Sync:Me() .. ":" .. ns.RaidDay()]
+    if n and not n.deleted then return n.late == true, n.early == true end
+    return false, false
+end
+
+function Att:SetNotice(late, early)
+    if not Sync:GuildName() then return end
+    local me, day = Sync:Me(), ns.RaidDay()
+    local id = me .. ":" .. day
+    local cur = (Sync:Store("notice") or {})[id]
+    if not late and not early then
+        if cur and not cur.deleted then
+            Sync:Write("notice", { id = id, author = me, t = cur.t, day = day, deleted = true })
+        end
+        ns.Print("noted: on time tonight")
+    else
+        Sync:Write("notice", { id = id, author = me, t = cur and cur.t or ns.Now(), day = day,
+            late = late or nil, early = early or nil })
+        ns.Print(("noted: you'll %s tonight"):format(
+            (late and early) and "be late and leave early" or (late and "be late" or "leave early")))
+    end
+    self:Changed()
+end
+
+-- Raid leaders and officers hear about tonight's notices as they come in.
+function Att:OnNotice(rec)
+    self:Changed()
+    if rec.deleted or rec.day ~= ns.RaidDay() or rec.author == Sync:Me() or not (rec.late or rec.early) then return end
+    local leads = UnitIsGroupLeader("player") or UnitIsGroupAssistant("player") or Sync:AmOfficer()
+    if not leads then return end
+    self.told = self.told or {}
+    local key = rec.id .. (rec.late and "L" or "") .. (rec.early and "E" or "")
+    if self.told[key] then return end
+    self.told[key] = true
+    ns.Print(("%s will %s tonight"):format(display(rec.author),
+        (rec.late and rec.early) and "be late and leave early" or (rec.late and "be late" or "leave early")))
+end
+
+function Att:NoticeMenu()
+    local late, early = self:MyNotice()
+    return {
+        { text = "Tonight's raid", header = true },
+        { text = (late and "> " or "   ") .. "I'll be late", func = function() self:SetNotice(not late, early) end },
+        { text = (early and "> " or "   ") .. "I'll leave early", func = function() self:SetNotice(late, not early) end },
+        { text = "   On time after all", disabled = not late and not early, func = function() self:SetNotice(false, false) end },
+    }
+end
+
+------------------------------------------------------------------------
+-- Summary: attendance over the last 4 and 8 raid weeks and all of them; a
+-- week counts as a player's best night that week. Cached until data changes.
 ------------------------------------------------------------------------
 function Att:Changed()
-    self.cache = nil
+    self.cache, self.sessionsCache = nil, nil
     if self.page and self.page:IsShown() then self:Refresh() end
     if ns.Roster.page and ns.Roster.page:IsShown() then ns.Roster:RefreshPool() end
 end
@@ -259,37 +543,46 @@ end
 function Att:Summary()
     if self.cache then return self.cache end
     local sessions = self:Sessions()
-    local rows, byName = {}, {}
-    local function row(name)
-        local r = byName[name]
-        if not r then
-            r = { name = name, sum4 = 0, sum8 = 0, sumAll = 0, attended = 0 }
-            byName[name] = r
-            rows[#rows + 1] = r
+    local weeks, best = {}, {}
+    for _, s in ipairs(sessions) do
+        local w = ns.Week(s.start)
+        if not best[w] then
+            best[w] = {}
+            weeks[#weeks + 1] = w
         end
-        return r
-    end
-    for i, s in ipairs(sessions) do
         for _, name in ipairs(self:SessionNames(s)) do
             local c = self:Credit(s, name)
-            local r = row(name)
+            if c > (best[w][name] or 0) then best[w][name] = c end
+            best[w][name] = best[w][name] or 0
+        end
+    end
+    table.sort(weeks, function(a, b) return a > b end)
+    local rows, byName = {}, {}
+    for i, w in ipairs(weeks) do
+        for name, c in pairs(best[w]) do
+            local r = byName[name]
+            if not r then
+                r = { name = name, sum4 = 0, sum8 = 0, sumAll = 0, attended = 0 }
+                byName[name] = r
+                rows[#rows + 1] = r
+            end
             if i <= 4 then r.sum4 = r.sum4 + c end
             if i <= 8 then r.sum8 = r.sum8 + c end
             r.sumAll = r.sumAll + c
             if c > 0 then r.attended = r.attended + 1 end
         end
     end
-    local n4, n8, nAll = math.min(4, #sessions), math.min(8, #sessions), #sessions
+    local n4, n8, nAll = math.min(4, #weeks), math.min(8, #weeks), #weeks
     for _, r in ipairs(rows) do
         r.last4 = n4 > 0 and r.sum4 / n4 or 0
         r.last8 = n8 > 0 and r.sum8 / n8 or 0
         r.all = nAll > 0 and r.sumAll / nAll or 0
     end
-    self.cache = { rows = rows, byName = byName, nights = nAll }
+    self.cache = { rows = rows, byName = byName, nights = #sessions, weeks = nAll }
     return self.cache
 end
 
--- Attendance over the last 8 nights, or nil before any night is recorded.
+-- Attendance over the last 8 weeks, or nil before any night is recorded.
 function Att:Percent(name)
     local sum = self:Summary()
     if sum.nights == 0 then return nil end
@@ -310,7 +603,7 @@ function Att:SortedSummary()
 end
 
 function Att:CSV()
-    local lines = { "Player,Last 4,Last 8,All,Nights attended" }
+    local lines = { "Player,Last 4 weeks,Last 8 weeks,All weeks,Weeks attended" }
     for _, r in ipairs(self:SortedSummary()) do
         lines[#lines + 1] = ("%s,%d,%d,%d,%d"):format(display(r.name),
             math.floor(r.last4 * 100 + 0.5), math.floor(r.last8 * 100 + 0.5), math.floor(r.all * 100 + 0.5), r.attended)
@@ -320,7 +613,7 @@ end
 
 function Att:DiscordText()
     local sum = self:Summary()
-    local lines = { ("**Attendance, last %d night%s**"):format(math.min(8, sum.nights), sum.nights == 1 and "" or "s") }
+    local lines = { ("**Attendance, last %d raid week%s**"):format(math.min(8, sum.weeks), sum.weeks == 1 and "" or "s") }
     for _, r in ipairs(self:SortedSummary()) do
         lines[#lines + 1] = ("%s %s"):format(display(r.name), pct(r.last8))
     end
@@ -333,8 +626,8 @@ end
 local SESSION_COLS = { { key = "name", label = "Player", x = 8, left = true },
     { key = "status", label = "Status", x = 300, left = true }, { key = "credit", label = "Credit", x = -12 } }
 local SUMMARY_COLS = { { key = "name", label = "Player", x = 8, left = true },
-    { key = "last4", label = "Last 4", x = 330 }, { key = "last8", label = "Last 8", x = 420 },
-    { key = "all", label = "All", x = 510 }, { key = "attended", label = "Nights", x = -12 } }
+    { key = "last4", label = "Last 4 wks", x = 330 }, { key = "last8", label = "Last 8 wks", x = 420 },
+    { key = "all", label = "All", x = 510 }, { key = "attended", label = "Weeks", x = -12 } }
 
 local function placeCell(fs, parent, col, w)
     fs:ClearAllPoints()
@@ -375,17 +668,27 @@ function Att:Build(page)
         if clean ~= "" then
             s.name = clean
             ns.Touch(s)
+            self.renamed = s
             self:RefreshList()
         end
     end)
     self.nameBox:SetScript("OnEnterPressed", self.nameBox.ClearFocus)
+    -- a renamed night is shared once the box is done with
+    self.nameBox:HookScript("OnEditFocusLost", function()
+        if self.renamed then
+            self:Share(self.renamed)
+            self.renamed = nil
+        end
+    end)
     self.title = UI.Text(page, 13)
     self.title:SetPoint("LEFT", page, "TOPLEFT", RX + 2, -(ROW1_Y + BAR_H / 2))
 
-    -- Row 2: status (left), info (right)
+    -- Row 2: status and the "late / early" button (left), info (right)
+    self.noticeBtn = UI.Button(page, "Late / early...", NOTICE_W, BAR_H, function(b) UI.ShowMenu(b, self:NoticeMenu()) end)
+    self.noticeBtn:SetPoint("TOPLEFT", PAD + LEFT_W - NOTICE_W, -ROW2_Y)
     self.status = UI.Text(page, 11)
     self.status:SetPoint("LEFT", page, "TOPLEFT", PAD + 2, -(ROW2_Y + BAR_H / 2))
-    self.status:SetWidth(LEFT_W - 4)
+    self.status:SetWidth(LEFT_W - NOTICE_W - GAP - 4)
     self.status:SetJustifyH("LEFT")
     self.status:SetWordWrap(false)
     self.info = UI.Text(page, 11)
@@ -569,6 +872,11 @@ function Att:Refresh()
     else
         self.status:SetText("Waiting for a raid")
     end
+    local late, early = self:MyNotice()
+    if not active and (late or early) then
+        self.status:SetText((late and early) and "You'll be late and leave early" or (late and "You'll be late tonight"
+            or "You'll leave early tonight"))
+    end
     self.status:SetTextColor(0.6, 0.6, 0.65)
 
     local s = self:Viewing()
@@ -586,8 +894,9 @@ function Att:Refresh()
             kills, kills == 1 and "" or "s", wipes, wipes == 1 and "" or "s", s.stop and "" or ", recording"))
     else
         self.title:SetText("Attendance summary")
-        local n = self:Summary().nights
-        self.info:SetText(("%d raid night%s recorded"):format(n, n == 1 and "" or "s"))
+        local sum = self:Summary()
+        self.info:SetText(("%d raid week%s, %d night%s"):format(sum.weeks,
+            sum.weeks == 1 and "" or "s", sum.nights, sum.nights == 1 and "" or "s"))
     end
     self:RefreshList()
     self:RefreshTable()
@@ -664,8 +973,15 @@ function Att:RefreshTable()
             if s then
                 local status = self:Status(s, name)
                 row.cells[2]:SetText(status)
-                local dim = (status == "absent")
-                row.cells[2]:SetTextColor(dim and 0.95 or 0.7, dim and 0.35 or 0.7, dim and 0.3 or 0.75)
+                if status == "absent" then
+                    row.cells[2]:SetTextColor(0.95, 0.35, 0.3)
+                elseif status:find("said so", 1, true) then
+                    row.cells[2]:SetTextColor(0.4, 0.85, 0.45)
+                elseif status:find("late", 1, true) or status:find("early", 1, true) then
+                    row.cells[2]:SetTextColor(1, 0.82, 0.2)
+                else
+                    row.cells[2]:SetTextColor(0.7, 0.7, 0.75)
+                end
                 local c = self:Credit(s, name)
                 row.cells[3]:SetText(pct(c))
                 row.cells[3]:SetTextColor(pctColor(c))
@@ -685,7 +1001,7 @@ function Att:RefreshTable()
     end
     if #rows == 0 then
         self.empty:SetText(s and "Nobody recorded yet." or
-            "No raid nights yet. Attendance records itself when you\nlead or assist a raid inside a raid instance.")
+            "No raid nights yet :)")
     end
     self.empty:SetShown(#rows == 0)
 end

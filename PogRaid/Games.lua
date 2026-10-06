@@ -431,7 +431,7 @@ function Games:BuildScores(page)
         c.empty = UI.Text(c, 11)
         c.empty:SetPoint("TOP", 0, -56)
         c.empty:SetTextColor(0.5, 0.5, 0.55)
-        c.empty:SetText("No times yet. Clear a board\nto set the first one.")
+        c.empty:SetText("No times yet.")
         panel.cols[lv.key] = c
     end
 end

@@ -381,6 +381,31 @@ def profile_keys(c):
 check(len({tuple(profile_keys(c)) for c in clients}) == 1 and len(profile_keys(jake)) == 5,
       "profiles: everyone ends with the same profiles and kudos")
 
+# attendance: an officer's raid night reaches the other officers; a raider's
+# "I'll be late" reaches the raid leader
+anna.run("""local ns = ...
+    STUB.roster = { { name = "Anna" }, { name = "Mira" }, { name = "Bob" } }
+    STUB.instance = { "Skyreach Spire", "raid" }
+    STUB.isLeader = true
+    ns.Attendance:Check()
+    for _ = 1, 12 do STUB.Advance(300) end
+    ns.Attendance:End()
+    STUB.roster, STUB.isLeader = nil, false
+    STUB.instance = { "Stormwind", "none" }""", anna.ns)
+pump(clients, 5)
+check(jake.run("""local ns = ...
+    for _, s in ipairs(ns.Attendance:Sessions()) do
+        if s.rec == 'Anna-Realm' then return s.present['Mira-Realm'] .. '/' .. ns.Attendance:Credit(s, 'Bob-Realm') end
+    end""", jake.ns) == "13/1", "attendance: an officer's raid night reaches the other officers")
+check(jake.run("local ns = ...; local r = ns.Attendance:Summary().byName['Mira-Realm']; return r and r.last8", jake.ns) == 1,
+      "attendance: and counts in their weekly numbers")
+jake.run("local ns = ...; STUB.printed = {}; STUB.isLeader = true", jake.ns)
+mira.run("local ns = ...; ns.Attendance:SetNotice(true, false)", mira.ns)
+pump(clients, 3)
+check(jake.run("local ns = ...; for _, m in ipairs(STUB.printed) do if m:find('Mira will be late tonight', 1, true) then return true end end", jake.ns),
+      "attendance: a raider's I'll be late reaches the raid leader")
+jake.run("local ns = ...; STUB.isLeader = false", jake.ns)
+
 # version check: one guild message, one whisper back from each addon, nothing more
 for c in everyone:
     c.stub.sent = c.lua.table_from([])
@@ -572,6 +597,20 @@ ratings = stone.run("""local ns = ...
     local f, k = t.players['Flyne Lee'], t.players['Keeb Sixseven']
     return f and k and (math.floor(f.rating + 0.5) .. '/' .. math.floor(k.rating + 0.5))""", stone.ns)
 check(ratings == "1216/1184", "surname: a duel announced with first names still counts (%s)" % ratings)
+
+# a guildie's new group pops up for the others; a guildie's drop shows in everyone's recent loot
+for c in clients:
+    c.run("local ns = ...; if ns.GroupToast.frame then ns.GroupToast.frame:Hide() end", c.ns)
+bob.run("local ns = ...; ns.Social:PostGroup('Wailing Caverns', 'tank')", bob.ns)
+pump(clients, 3)
+check(jake.run("local ns = ...; local f = ns.GroupToast.frame; return f and f:IsShown() and f.text:GetText()", jake.ns)
+      and "is forming a group for Wailing Caverns" in jake.run("local ns = ...; return ns.GroupToast.frame.text:GetText()", jake.ns),
+      "toast: a guildie's new group pops up for the others")
+check(not bob.run("local ns = ...; local f = ns.GroupToast.frame; return f and f:IsShown()", bob.ns), "toast: but not for the poster")
+mira.run("local ns = ...; ns.Home:OnLoot('Mira', STUB.Link(23001, 'Mira Blue', '0070dd'))", mira.ns)
+pump(clients, 3)
+check(jake.run("local ns = ...; for _, e in ipairs(ns.Home:RecentLoot()) do if e.itemID == 23001 then return e.player end end", jake.ns)
+      == "Mira-Realm", "drops: a guildie's drop shows in everyone's recent loot")
 
 # another guild's data stays separate
 bob.stub.guildName = "Other Guild"

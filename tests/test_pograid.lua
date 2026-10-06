@@ -932,8 +932,10 @@ do
     STUB.Advance(300)
     STUB.Advance(300)
     check(s.snaps == 4 and s.present["Raider09-Realm"] == 2, "attendance: leaving stops the count")
-    check(Att:Credit(s, "Raider01-Realm") == 1 and Att:Credit(s, "Raider09-Realm") == 0.5, "attendance: credit is the share of snapshots")
-    check(Att:Status(s, "Raider01-Realm") == "present" and Att:Status(s, "Raider09-Realm") == "partial", "attendance: status labels")
+    check(s.firstAt["Raider01-Realm"] == s.start and s.lastAt["Raider09-Realm"] == s.start + 300,
+        "attendance: when each player was first and last seen")
+    check(Att:Credit(s, "Raider01-Realm") == 1 and Att:Status(s, "Raider09-Realm") == "present",
+        "attendance: no one is early until the night is over")
 
     -- a boss kill logs and snapshots
     STUB.Fire("ENCOUNTER_END", 3001, "Stormcaller Vael", 14, 20, 1)
@@ -984,8 +986,11 @@ do
     check(s2 and s3 and s2 ~= s3 and #Att:Sessions() == 3, "attendance: separate nights")
     local sum = Att:Summary()
     local r1, r2 = sum.byName["Raider01-Realm"], sum.byName["Raider02-Realm"]
-    check(math.abs(r1.last8 - 2 / 3) < 1e-9 and r1.attended == 2, "summary: missed one of three nights")
+    check(sum.weeks == 1 and sum.nights == 3 and r1.last8 == 1 and r1.attended == 1,
+        "summary: missing one night of the week still counts the week (best night)")
     check(r2.last8 == 1 and r2.all == 1, "summary: perfect attendance")
+    check(ns.Sync:Store("nights")[s3.id] and ns.Sync:Store("nights")[s3.id].seen:find("Raider01-Realm:1:0:0", 1, true),
+        "sharing: a night we recorded is shared with the officers")
     check(Att:Percent("Raider01-Realm") == r1.last8 and Att:Percent("Nobody") == 0, "summary: percent lookup")
 
     -- the roster pool shows it
@@ -997,7 +1002,8 @@ do
     for _, rw in ipairs(Roster.poolRows) do if rw.player == "Raider01-Realm" then row = rw end end
     check(row and row.att == nil, "roster: no attendance column in the pool")
     STUB.Script(row, "OnEnter")
-    check(table.concat(GameTooltip.lines, "|"):find("67%% / 67%%") ~= nil, "roster: attendance still in the hover tooltip")
+    check(table.concat(GameTooltip.lines, "|"):find("Attendance, weeks (4 / 8 / all) | 100% / 100% / 100%", 1, true) ~= nil,
+        "roster: weekly attendance in the hover tooltip")
     STUB.Script(row, "OnLeave")
 
     -- tab UI
@@ -1006,7 +1012,8 @@ do
     check(Att.listRows[1].label:GetText() == "Summary" and Att.listRows[2].sessionId == s3.id, "attendance: summary first, newest night next")
     check(Att:Viewing() == s3, "attendance: opens on the night last recorded")
     STUB.Script(Att.listRows[1], "OnClick")
-    check(Att.headCells[3].text:GetText():find("LAST 8", 1, true) and Att.tableRows[1].player ~= nil, "attendance: summary table")
+    check(Att.headCells[3].text:GetText():find("LAST 8 WKS", 1, true) and Att.tableRows[1].player ~= nil
+        and Att.info:GetText():find("1 raid week, 3 nights", 1, true), "attendance: summary table, by week")
     STUB.Script(Att.headCells[1], "OnClick")
     check(Att.sortCol == "name" and Att.tableRows[1].player < Att.tableRows[2].player, "attendance: header click sorts")
     Att.sortCol = nil
@@ -1017,13 +1024,15 @@ do
 
     -- export
     local csv = Att:CSV()
-    check(csv:find("^Player,Last 4,Last 8,All,Nights attended\n") and csv:find("\nRaider01,67,67,67,2", 1, true), "export: CSV")
+    check(csv:find("^Player,Last 4 weeks,Last 8 weeks,All weeks,Weeks attended\n") and csv:find("\nRaider01,100,100,100,1", 1, true),
+        "export: CSV")
     check(Att:DiscordText():find("Raider02 100%", 1, true), "export: Discord text")
 
     -- delete a night (two clicks), tombstone kept
     STUB.Script(Att.deleteBtn, "OnClick")
     STUB.Script(Att.deleteBtn, "OnClick")
     check(G.sessions[s.id].deleted and #Att:Sessions() == 2 and Att:Viewing() == nil, "attendance: delete night leaves a tombstone")
+    check(ns.Sync:Store("nights")[s.id] == nil or ns.Sync:Store("nights")[s.id].deleted, "sharing: and the delete is shared")
 
     -- stale session closed on sight (e.g. logged out mid-raid overnight)
     raid({ 1 })
@@ -1040,33 +1049,139 @@ do
     raid({ 1 })
     Att:Check()
     local sb = Att:Active()
+    STUB.Advance(1200) -- called in 20 minutes into the night
     raid({ 1, 5 })
     Att:Snapshot(sb)
-    check(sb.benchSnaps["Raider05-Realm"] == 1 and sb.present["Raider05-Realm"] == 1, "attendance: bench time only while not in the raid")
+    check(sb.benchSnaps["Raider05-Realm"] == 2 and sb.present["Raider05-Realm"] == 1, "attendance: bench time only while not in the raid")
+    check(sb.firstAt["Raider05-Realm"] - sb.start >= 1200 and Att:Credit(sb, "Raider05-Realm") == 1
+        and Att:Status(sb, "Raider05-Realm") == "present", "attendance: called in from the bench isn't late")
     Att:End()
     table.remove(r2.bench)
     Att:DeleteSession(sb)
 
-    -- windows: ten nights, Raider03 only came to the two oldest
+    -- windows: ten raid weeks, Raider03 only came in the two oldest
     local saved = {}
     for id, x in pairs(G.sessions) do saved[id] = x end
     wipe(G.sessions)
+    local base = 2900 * 604800 + 5 * 86400 + 15 * 3600 + 86400 -- a Wednesday
+    local function night(id, start, present, snaps)
+        G.sessions[id] = { id = id, name = id, start = start, stop = start + 7200, snaps = snaps or 1,
+            present = present, benchSnaps = {}, bosses = {}, overrides = {} }
+    end
     for i = 1, 10 do
         local present = { ["Raider02-Realm"] = 1 }
         if i <= 2 then present["Raider03-Realm"] = 1 end
-        G.sessions["n" .. i] = { id = "n" .. i, name = "Night " .. i, start = 1000 * i, stop = 1000 * i + 10, snaps = 1,
-            present = present, benchSnaps = {}, bosses = {}, overrides = {} }
+        night("n" .. i, base + i * 604800, present)
     end
-    Att.cache = nil
+    Att:Changed()
     local w = Att:Summary().byName["Raider03-Realm"]
-    check(w.last4 == 0 and w.last8 == 0 and math.abs(w.all - 0.2) < 1e-9 and w.attended == 2, "summary: last 4 / last 8 / all windows")
+    check(w.last4 == 0 and w.last8 == 0 and math.abs(w.all - 0.2) < 1e-9 and w.attended == 2, "summary: last 4 / last 8 / all weeks")
     G.sessions["n9"].present["Raider03-Realm"] = 1
-    Att.cache = nil
+    Att:Changed()
     w = Att:Summary().byName["Raider03-Realm"]
-    check(w.last4 == 0.25 and w.last8 == 0.125, "summary: a recent night counts in both windows")
+    check(w.last4 == 0.25 and w.last8 == 0.125, "summary: a recent week counts in both windows")
+    -- the other raid team's night that week: raiding either counts, never twice
+    night("team2", base + 9 * 604800 + 86400, { ["Raider03-Realm"] = 1, ["Raider04-Realm"] = 1 })
+    night("team2b", base + 10 * 604800 + 86400, { ["Raider03-Realm"] = 1, ["Raider04-Realm"] = 1 })
+    Att:Changed()
+    w = Att:Summary().byName["Raider03-Realm"]
+    check(w.last4 == 0.5 and Att:Summary().byName["Raider02-Realm"].last4 == 1 and Att:Summary().weeks == 10,
+        "summary: two teams, a week counts once either way")
+    -- two officers recorded the same raid: listed once (the fuller one)
+    night("dupA", base + 3 * 604800 + 3600, { ["Raider02-Realm"] = 5, ["Raider05-Realm"] = 5 }, 5)
+    night("dupB", base + 3 * 604800 + 3900, { ["Raider02-Realm"] = 4, ["Raider05-Realm"] = 4 }, 4)
+    night("other", base + 3 * 604800 + 3600, { ["Raider11-Realm"] = 5, ["Raider12-Realm"] = 5 }, 5)
+    Att:Changed()
+    local listed = {}
+    for _, x in ipairs(Att:Sessions()) do listed[x.id] = true end
+    check(listed.dupA and not listed.dupB and listed.other, "summary: one raid recorded twice shows once, two raids at once both show")
     wipe(G.sessions)
     for id, x in pairs(saved) do G.sessions[id] = x end
-    Att.cache = nil
+    Att:Changed()
+
+    -- late, left early, said so: a two-hour night
+    local function mins(n) for _ = 1, n / 5 do STUB.Advance(300) end end
+    ns.Sync:Apply(ns.Sync.collections.notice, { id = "Raider04-Realm:" .. ns.RaidDay(), rev = ns.Now(), by = "Raider04-Realm",
+        author = "Raider04-Realm", t = ns.Now(), day = ns.RaidDay(), late = true })
+    raid({ 1, 2, 3, 5 })
+    Att:Check()
+    local sl = Att:Active()
+    mins(10)
+    raid({ 1, 2, 3, 5, 7 })
+    mins(10)
+    raid({ 1, 2, 3, 5, 7, 6 })
+    mins(10)
+    raid({ 1, 2, 3, 5, 7, 6, 4 })
+    mins(30)
+    raid({ 1, 2, 5, 7, 6, 4 })
+    mins(55)
+    raid({ 1, 2, 7, 6, 4 })
+    mins(5)
+    Att:End()
+    local function cs(n) return Att:Credit(sl, n), Att:Status(sl, n) end
+    local c, st = cs("Raider07-Realm")
+    check(c == 1 and st == "present", "late: 15 minutes in still counts as on time")
+    c, st = cs("Raider06-Realm")
+    check(c == 0.5 and st == "late", "late: later than that is 50%, marked late")
+    c, st = cs("Raider04-Realm")
+    check(c == 1 and st == "late (said so)", "late: saying so ahead of time is full credit")
+    c, st = cs("Raider03-Realm")
+    check(c == 0.5 and st == "left early", "late: leaving more than 15 minutes early is 50%")
+    c, st = cs("Raider05-Realm")
+    check(c == 1 and st == "present", "late: leaving in the last 15 minutes is fine")
+    Att:DeleteSession(sl)
+
+    -- "I'll be late / leave early": one click, shared, and the leaders hear it
+    STUB.printed = {}
+    Att:NoticeMenu()[2].func()
+    local nl, ne = Att:MyNotice()
+    check(nl and not ne and ns.Sync:Store("notice")["Jake-Realm:" .. ns.RaidDay()].late and printedContains("noted: you'll be late tonight"),
+        "notice: I'll be late, shared")
+    SlashCmdList.POGRAID("early")
+    nl, ne = Att:MyNotice()
+    check(nl and ne, "notice: /pog early adds leaving early")
+    SlashCmdList.POGRAID("ontime")
+    nl, ne = Att:MyNotice()
+    check(not nl and not ne and ns.Sync:Store("notice")["Jake-Realm:" .. ns.RaidDay()].deleted, "notice: /pog ontime clears it")
+    STUB.printed = {}
+    local today = ns.RaidDay()
+    local nrec = { id = "Raider08-Realm:" .. today, rev = ns.Now(), by = "Raider08-Realm", author = "Raider08-Realm",
+        t = ns.Now(), day = today, early = true }
+    ns.Sync:Apply(ns.Sync.collections.notice, nrec)
+    check(printedContains("Raider08 will leave early tonight"), "notice: raid leaders hear about it")
+    STUB.printed = {}
+    Att:OnNotice(nrec)
+    check(not printedContains("Raider08"), "notice: once")
+    check(not ns.Sync:Apply(ns.Sync.collections.notice, { id = "Raider09-Realm:" .. today, rev = ns.Now(), by = "Raider08-Realm",
+        author = "Raider09-Realm", t = ns.Now(), day = today, late = true }), "notice: nobody posts one for someone else")
+
+    -- nights recorded before sharing existed stay on this computer
+    G.sessions["old-local"] = { id = "old-local", name = "Old night", start = ns.Now() - 90000, stop = ns.Now() - 86400,
+        snaps = 2, present = { ["Raider02-Realm"] = 2 }, benchSnaps = {}, bosses = {}, overrides = {} }
+    Att:SetOverride(G.sessions["old-local"], "Raider03-Realm", 1)
+    check(ns.Sync:Store("nights")["old-local"] == nil, "sharing: nights from before sharing aren't shared")
+    G.sessions["old-local"] = nil
+    Att:Changed()
+
+    -- shared nights from another officer arrive; members can't share nights
+    local nightRec = { id = "officer-night", rev = ns.Now(), by = "Raider01-Realm", author = "Raider01-Realm", t = ns.Now() - 7200,
+        name = "Team two", start = ns.Now() - 7200, stop = ns.Now(), snaps = 24,
+        seen = "Raider11-Realm:24:0:7200/Raider12-Realm:10:2400:7200", bench = "Raider13-Realm:24", over = "Raider14-Realm:0.5",
+        bosses = "Stormcaller Vael:1:3000" }
+    check(ns.Sync:Apply(ns.Sync.collections.nights, nightRec), "sharing: an officer's night arrives")
+    local on = G.sessions["officer-night"]
+    check(on and on.name == "Team two" and on.present["Raider11-Realm"] == 24 and Att:Credit(on, "Raider11-Realm") == 1
+        and Att:Status(on, "Raider12-Realm") == "late" and Att:Credit(on, "Raider13-Realm") == 1
+        and Att:Credit(on, "Raider14-Realm") == 0.5 and on.bosses[1].success and on.bosses[1].name == "Stormcaller Vael",
+        "sharing: with who came when, the bench, overrides and bosses")
+    local forged = {}
+    for k, v in pairs(nightRec) do forged[k] = v end
+    forged.id, forged.by, forged.author = "member-night", "Raider05-Realm", "Raider05-Realm"
+    check(not ns.Sync:Apply(ns.Sync.collections.nights, forged), "sharing: members can't share nights")
+    ns.Sync:Apply(ns.Sync.collections.nights, { id = "officer-night", rev = ns.Now() + 1, by = "Raider01-Realm",
+        author = "Raider01-Realm", t = nightRec.t, start = nightRec.start, snaps = 0, deleted = true })
+    check(G.sessions["officer-night"].deleted, "sharing: an officer's delete reaches us")
+    Att:Changed()
 
     -- layout: same grid as the roster tab
     local page = Att.page
@@ -1075,6 +1190,9 @@ do
     local ll, lt, lw, lh = STUB.rect(Att.listRows[1]:GetParent() or Att.table)
     check(near(tl - pl, 12 + 262 + 12) and near(tl + tw, pl + 902 - 12), "layout: table fills the right column")
     check(near(pt - tt, 98) and near(th, 464), "layout: table on the list rows of the grid")
+    local nl2, nt2, nw2, nh2 = STUB.rect(Att.noticeBtn)
+    check(near(nl2 + nw2, pl + 12 + 262) and near(pt - nt2, 30 + 26 + 8) and near(nh2, 26),
+        "layout: Late / early lines up with the left column, on row 2")
     STUB.roster = nil
     STUB.isLeader = false
     STUB.instance = { "Stormwind", "none" }
@@ -1180,7 +1298,7 @@ do
     local tip = table.concat(GameTooltip.lines, "\n")
     check(GameTooltip.shown and tip:find("Raider01", 1, true) and tip:find("Loot, last 8 nights | 2 main spec, 2 total", 1, true),
         "roster: hovering a raider shows loot")
-    check(tip:find("Attendance (4 / 8 / all)", 1, true) and tip:find("Officer, level 60", 1, true), "roster: tooltip has rank and attendance")
+    check(tip:find("Attendance, weeks (4 / 8 / all)", 1, true) and tip:find("Officer, level 60", 1, true), "roster: tooltip has rank and attendance")
     STUB.Script(slot, "OnLeave")
     check(not GameTooltip.shown, "roster: tooltip hides")
 
@@ -1422,7 +1540,7 @@ do
     -- a regular member sees no New post button
     ns.db.guild.officerRank = -1
     Home:Refresh()
-    check(not Social:CanPost() and not bc.newPost:IsShown() and bc.empty:GetText():find("Officers can post", 1, true),
+    check(not Social:CanPost() and not bc.newPost:IsShown() and bc.empty:GetText() == "No posts yet.",
         "board: members can't post")
     ns.db.guild.officerRank = nil
 
@@ -2158,7 +2276,7 @@ do
     local realRank = myP.rankIndex
     myP.rankIndex = 3
     Settings:Refresh()
-    check(not ranks[2].enabled and Settings.officers.note:GetText():find("Only officers", 1, true), "officers: read-only for members")
+    check(not ranks[2].enabled and Settings.officers.note == nil, "officers: read-only for members, no explanation line")
     myP.rankIndex = realRank
     Settings:Refresh()
 
@@ -2353,6 +2471,12 @@ do
     local share = W:ShareText()
     check(share:find("Wowdle #" .. W:Number(W:Current().day) .. "  3/6", 1, true) and select(2, share:gsub("\n", "")) == 3,
         "wowdle: copy result with squares")
+    local opened
+    local realOpen = ChatFrame_OpenChat
+    ChatFrame_OpenChat = function(text) opened = text end
+    STUB.Script(W.side.post, "OnClick")
+    ChatFrame_OpenChat = realOpen
+    check(opened == "/g Wowdle #" .. W:Number(W:Current().day) .. "  3/6", "wowdle: Post to guild puts the score in the chat box, no squares")
     -- a new day, a new word; a streak builds
     STUB.now = STUB.now + 86400
     check(#W:Current().guesses == 0 and W:State() == "playing", "wowdle: fresh board the next day")
@@ -2395,7 +2519,7 @@ do
     local gl, _, gw = STUB.rect(W.grid)
     local vl = STUB.rect(W.view)
     check(W.tiles[1][8]:IsShown() and gw <= 400 and near(gl - vl, 12 + (400 - gw) / 2), "wowdle: eight tiles fit, centred")
-    check(W.status:GetText():find("Today's word has 8 letters", 1, true), "wowdle: the line under the keyboard says how long the word is")
+    check(W.status:GetText():find("8 letters", 1, true), "wowdle: the line under the keyboard says how long the word is")
     local _, st, _, sh = STUB.rect(W.status)
     local _, vt = STUB.rect(W.view)
     check(vt - st > 64, "wowdle: that line sits below the game tabs, not over them")
@@ -2485,7 +2609,7 @@ do
     SlashCmdList.POGRAID("crafting")
     local left, right = C.left, C.right
     check(C.page and C.page:IsShown() and left.rows[1].name:GetText() == "Blacksmithing", "crafting: tab opens with the professions list")
-    check(right.empty:IsShown() and right.status:GetText():find("Open your Cooking window", 1, true) ~= nil,
+    check(right.empty:IsShown() and right.status:GetText() == "open your cooking window once to share recipes!",
         "crafting: hint, and a nudge to share the other profession")
     STUB.Script(left.rows[1], "OnClick")
     check(C.selected == "Blacksmithing" and right.rows[1]:IsShown() and right.rows[1].name:GetText() == "Raider03"
@@ -2516,7 +2640,7 @@ do
     check(C.member == nil and C.selected == "Blacksmithing", "crafting: picking a profession leaves the recipe book")
     slots = { 1, nil, nil, 3, 2 }
     info[3] = { "Fishing", 3, 75, 150, 0, 0, 356 }
-    check(not C:StatusText():find("Fishing", 1, true), "crafting: no nudge to open a Fishing window")
+    check(not C:StatusText():lower():find("fishing", 1, true), "crafting: no nudge to open a Fishing window")
     slots = { 1, nil, nil, nil, 2 }
 
     C.searchBox:SetText("arcanite")
@@ -2624,6 +2748,20 @@ do
     local l3 = P:Linked("Raider03-Realm")
     check(#l3 == 2 and l3[2] == "Raider09-Realm" and #P:Linked("Raider05-Realm") == 1,
         "accounts: two records that list each other are one account; a one-sided claim isn't")
+    -- a character last shared before its account knew about the other one
+    -- (no list yet): linked when the other lists it and the profile edit matches
+    apply("profile", prof("Raider16-Realm", { status = "I tank", chars = "Raider16-Realm,Raider17-Realm", ed = 5000 }))
+    apply("profile", prof("Raider17-Realm", { status = "I tank", ed = 5000 }))
+    local l16, l17 = P:Linked("Raider16-Realm"), P:Linked("Raider17-Realm")
+    check(#l16 == 2 and #l17 == 2 and l17[2] == "Raider16-Realm",
+        "accounts: an older record with no list yet joins when the profile edit matches, from either side")
+    apply("profile", prof("Raider18-Realm", { status = "Totally Raider19", chars = "Raider18-Realm,Raider19-Realm", ed = 6000 }))
+    apply("profile", prof("Raider19-Realm", { status = "Me", ed = 7000 }))
+    check(#P:Linked("Raider19-Realm") == 1 and #P:Linked("Raider18-Realm") == 1,
+        "accounts: but not when the profiles differ (nobody can claim someone else's character)")
+    apply("profile", prof("Raider21-Realm", { status = "I tank", chars = "Raider16-Realm,Raider21-Realm", ed = 5000 }))
+    check(#P:Linked("Raider21-Realm") == 1 and #P:Linked("Raider16-Realm") == 2,
+        "accounts: copying a profile can't claim a character whose record lists its own characters")
     check(P:Content("Raider03-Realm").status == "Looking for Scholo" and P:Content("Raider09-Realm").status == "Looking for Scholo",
         "accounts: the newest edit shows on every character")
     check(P:Portrait("Raider03-Realm") == 135349 and P:Portrait("Raider04-Realm") == 135428,
@@ -3020,6 +3158,118 @@ do
 
     STUB.music = nil
     Editor:ShowTab("home")
+end
+
+-- Poisons, group pop-ups, guild-wide recent loot ---------------------------------------
+do
+    local Sync, Home, C = ns.Sync, ns.Home, ns.Crafting
+    local now = ns.Now()
+
+    -- Poisons (and Lockpicking) aren't professions here
+    local parsed = C.ParseList("Poisons:100:300|Alchemy:50:75|Lockpicking:20:300")
+    check(#parsed == 1 and parsed[1].name == "Alchemy", "crafting: Poisons and Lockpicking left out of shared lists")
+    GetProfessions = function() return 1, nil, nil, 2 end
+    GetProfessionInfo = function(i) return unpack(({ { "Poisons", 1, 100, 300 }, { "Alchemy", 2, 50, 75 } })[i]) end
+    local mine = C:ReadProfessions()
+    check(#mine == 1 and mine[1].name == "Alchemy", "crafting: and not read as ours")
+    GetProfessions, GetProfessionInfo = nil, nil
+    Sync:Apply(Sync.collections.recipes, { id = "Raider07-Realm:Poisons", rev = now, by = "Raider07-Realm",
+        author = "Raider07-Realm", t = now, prof = "Poisons", ids = C.Pack({ 16665 }) })
+    C.index = nil
+    local found = false
+    for _, hit in ipairs(C:Search("arcanite")) do
+        for _, cr in ipairs(hit.crafters) do if cr.name == "Raider07-Realm" then found = true end end
+    end
+    check(not found and C:Directory().Poisons == nil, "crafting: nobody's Poisons in search or the directory")
+
+    -- a guildie posts a group: a pop-up fades in above the chat box
+    local T = ns.GroupToast
+    local function listing(id, who, t, extra)
+        local r = { id = id, rev = t, by = who, author = who, t = t, what = "Deadmines", need = "healer",
+            exp = t + 2700, size = 2, max = 5 }
+        for k, v in pairs(extra or {}) do r[k] = v end
+        return Sync:Apply(Sync.collections.lfg, r)
+    end
+    listing("lfg-t1", "Raider03-Realm", now)
+    local f = T.frame
+    check(f and f:IsShown() and f.text:GetText():find("Raider03", 1, true) and f.text:GetText():find("is forming a group for Deadmines", 1, true)
+        and f.sub:GetText() == "needs healer  2/5", "toast: a guildie's new group pops up")
+    check(not f.two and f:GetHeight() == 50 and f:GetWidth() >= T.MIN_W and f:GetWidth() <= T.MAX_W
+        and f.text:GetWidth() == f:GetWidth() - 62 and f.text:GetStringWidth() <= f.text:GetWidth(), "toast: wide enough for its line")
+    check(f:GetAlpha() == 0, "toast: starts see-through")
+    T:Step(0.15)
+    local half = f:GetAlpha()
+    T:Step(0.3)
+    check(half > 0.3 and half < 0.7 and f:GetAlpha() == 1 and f:IsShown(), "toast: fades in and stays")
+    T:Step(7.8)
+    check(f:GetAlpha() < 1 and f:GetAlpha() > 0 and f:IsShown(), "toast: fades out after a few seconds")
+    f.age = 1
+    f.hover = true
+    T:Step(30)
+    check(f:IsShown(), "toast: stays while hovered")
+    f.hover = false
+    T:Step(10)
+    check(not f:IsShown(), "toast: then fades away")
+    listing("lfg-t1", "Raider03-Realm", now, { rev = now + 1, size = 3 })
+    check(not f:IsShown(), "toast: once per group, not for every update")
+    listing("lfg-old", "Raider04-Realm", now - 600)
+    check(not f:IsShown(), "toast: not for groups caught up on at login")
+    listing("lfg-mine", "Jake-Realm", now)
+    check(not f:IsShown(), "toast: not for our own group")
+    ns.db.settings.groupToasts = false
+    listing("lfg-off", "Raider05-Realm", now)
+    check(not f:IsShown(), "toast: can be turned off in Settings")
+    ns.db.settings.groupToasts = true
+    -- clicking asks to join; right-click dismisses
+    listing("lfg-t2", "Raider06-Realm", now)
+    STUB.sent = {}
+    STUB.Script(f, "OnClick", "LeftButton")
+    check(ns.Social.requested["lfg-t2"] and STUB.sent[1] and STUB.sent[1].text == "Jlfg-t2" and STUB.sent[1].target == "Raider06"
+        and f.sub:GetText() == "Asked to join", "toast: click to ask to join")
+    T:Step(3)
+    check(not f:IsShown(), "toast: leaves soon after")
+    listing("lfg-long", "Raider07-Realm", now, { what = ("Farming Devilsaur leather in Un'Goro, all welcome!"):sub(1, 50) })
+    local _, st, _, sh = STUB.rect(f.sub)
+    local _, ft, _, fh = STUB.rect(f)
+    check(f.two and f:GetWidth() == T.MAX_W and f:GetHeight() == 64 and (st - sh) > (ft - fh),
+        "toast: a long title wraps to a second line, the rest still inside")
+    listing("lfg-t3", "Raider08-Realm", now)
+    check(not f.two and f:GetHeight() == 50, "toast: back to one line for a short one")
+    STUB.Script(f, "OnClick", "RightButton")
+    check(not f:IsShown(), "toast: right-click dismisses")
+    STUB.sent = {}
+
+    -- recent loot from the whole guild: everyone shares their own drops
+    local blue = STUB.Link(22001, "Shared Blue", "0070dd")
+    Home:OnLoot("Jake", blue)
+    local ours
+    for _, rec in pairs(Sync:Store("drops")) do if rec.item == blue and rec.author == "Jake-Realm" then ours = rec end end
+    check(ours and ours.q == 3, "drops: our own blue drop is shared")
+    local function drop(id, who, link, t, q)
+        return Sync:Apply(Sync.collections.drops, { id = id, rev = t, by = who, author = who, t = t, item = link, q = q or 3 })
+    end
+    check(drop("d1", "Raider09-Realm", STUB.Link(22002, "Far Away Epic"), now + 5, 4), "drops: a guildie's drop arrives")
+    local recent = Home:RecentLoot()
+    check(recent[1].player == "Raider09-Realm" and recent[1].itemID == 22002, "drops: a guildie's drop shows, though we weren't with them")
+    local partyBlue = STUB.Link(22003, "Party Blue", "0070dd")
+    Home:OnLoot("Raider10", partyBlue)
+    drop("d2", "Raider10-Realm", partyBlue, ns.Now() + 30)
+    local n = 0
+    for _, e in ipairs(Home:RecentLoot()) do if e.itemID == 22003 then n = n + 1 end end
+    check(n == 1, "drops: seen in our group and shared, it shows once")
+    check(not drop("d3", "Raider11-Realm", STUB.Link(22004, "Green", "1eff00"), now, 2)
+        and not Sync:Apply(Sync.collections.drops, { id = "d4", rev = now, by = "Raider12-Realm", author = "Raider11-Realm",
+            t = now, item = blue, q = 3 }) and not drop("d5", "Raider11-Realm", "not an item", now),
+        "drops: greens, someone else's and junk refused")
+    check(not drop("d6", "Raider11-Realm", STUB.Link(22005, "Yesterday"), now - 90000, 4), "drops: older than a day refused")
+    SlashCmdList.POGRAID("home")
+    Home:Refresh()
+    local shown = false
+    for _, row in ipairs(Home.lootCard.rows) do
+        if row.item and row.item.itemID == 22002 then shown = true end
+    end
+    check(shown, "drops: on the Home page")
+    Editor:ShowTab("boards")
 end
 
 -- Bug reports ----------------------------------------------------------------------------

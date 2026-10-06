@@ -950,7 +950,7 @@ function Editor:SendCurrent(selfTest)
     else
         ns.Print(("showing '%s' to the %s (%d part%s)"):format(b.name, (used:lower():gsub("_", " ")), parts, parts == 1 and "" or "s"))
         if parts > 8 then
-            ns.Print("big plan: the game paces addon messages, so it may take a few seconds to arrive")
+            ns.Print("big plan, it may take a few seconds to arrive")
         end
         if not (UnitIsGroupLeader("player") or UnitIsGroupAssistant("player")) then
             ns.Print("|cffff8040you are not leader or assistant, so other players will ignore this plan|r")

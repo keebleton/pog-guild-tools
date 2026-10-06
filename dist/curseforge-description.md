@@ -3,10 +3,10 @@
 A guild home base for **World of Warcraft: Forever**. Type **/pog** to open it.
 
 ## Home
-Your guild at a glance: guild logo and name, message of the day, who's online, level-ups and achievements, recent guild chat, a level spread chart and recent blue-and-better drops.
+Your guild at a glance: guild logo and name, message of the day, who's online, level-ups and achievements, recent guild chat, a level spread chart and the guild's recent blue-and-better drops.
 
 - **Message board.** Officers post announcements, everyone with Pog Guild Tools can comment in the thread. Posts can be pinned.
-- **Group finder.** Post what you're doing and who you need. Listings show how full the group is (2/5) and expire after 45 minutes. Guildies can request to join with one click, and you get a pop-up to invite them.
+- **Group finder.** Post what you're doing and who you need. Listings show how full the group is (2/5) and expire after 45 minutes. Guildies can request to join with one click, and you get a pop-up to invite them. When someone posts a group, a small pop-up lets you ask to join right away.
 
 ## Profiles
 A MySpace-style page for every guildie running Pog Guild Tools, one per account.
@@ -18,7 +18,7 @@ A MySpace-style page for every guildie running Pog Guild Tools, one per account.
 ## Raid leading
 - **Raid Plans.** Draw on the raid's own map, or sketch a room from scratch with walls, zones and pen strokes, then place raid markers, players, role groups, arrows and labels. Press "Show to raid" and it pops up on everyone's screen, with their own spot highlighted.
 - **Roster.** Build raid rosters from your guild with drag and drop: 10, 20 or 40 players, bench, tanks and healers marked by hand, available / tentative / out, composition counts, one-click invites, and automatic group arranging. Copy the roster for Discord.
-- **Attendance.** Records itself while you lead a raid: snapshots every few minutes and after every boss, bench credit, and each raider's attendance over the last 4 and 8 nights and all time.
+- **Attendance.** Records itself while an officer is in the raid, and counts by the week: raid with either team and the week counts. Arriving late or leaving early without a word counts half; raiders can say "I'll be late" or "I'll leave early" with one click (or /pog late) and get full credit. Officers' raid nights are shared, so both teams add up.
 - **Loot log.** Who got what, from which boss, on which night, with main spec / off spec tags. CSV and Discord export.
 
 ## Crafting
