@@ -13,7 +13,7 @@ local Home = {}
 ns.Home = Home
 
 local PAD, GAP, TITLE_H = 12, 8, 30
-local FRAME_W, FRAME_H = 902, 608
+local FRAME_W, FRAME_H = 902, ns.PAGE_H
 local HEADER_Y, HEADER_H = TITLE_H, 80
 local BODY_Y = HEADER_Y + HEADER_H + GAP
 local BODY_H = FRAME_H - PAD - BODY_Y
@@ -267,13 +267,25 @@ end
 ------------------------------------------------------------------------
 -- UI building blocks
 ------------------------------------------------------------------------
-local function card(page, title, x, y, w, h)
+-- `icon`: a small game icon before the title (left out if the client lacks it).
+local ICON = 14
+
+local function card(page, title, x, y, w, h, icon)
     local c = CreateFrame("Frame", nil, page)
     c:SetPoint("TOPLEFT", x, -y)
     c:SetSize(w, h)
     UI.Card(c)
     c.title = UI.SectionTitle(c, title)
-    c.title:SetPoint("LEFT", c, "TOPLEFT", 10, -HEAD_H / 2)
+    if icon and (not ns.Art or ns.Art.Has({ kind = "file", path = icon }) ~= false) then
+        c.icon = c:CreateTexture(nil, "ARTWORK")
+        c.icon:SetSize(ICON, ICON)
+        c.icon:SetPoint("LEFT", c, "TOPLEFT", 10, -HEAD_H / 2)
+        c.icon:SetTexture(icon)
+        c.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        c.title:SetPoint("LEFT", c, "TOPLEFT", 10 + ICON + 6, -HEAD_H / 2)
+    else
+        c.title:SetPoint("LEFT", c, "TOPLEFT", 10, -HEAD_H / 2)
+    end
     c.meta = UI.Text(c, 10)
     c.meta:SetPoint("RIGHT", c, "TOPRIGHT", -10, -HEAD_H / 2)
     c.meta:SetTextColor(0.5, 0.5, 0.55)
@@ -543,8 +555,9 @@ local POST_H = 58
 local COMMENT_H = 46
 
 function Home:BuildBoard(page)
-    local c = card(page, "Message board", MID_X, BODY_Y, MID_W, BODY_H)
+    local c = card(page, "Message board", MID_X, BODY_Y, MID_W, BODY_H, "Interface\\Icons\\INV_Scroll_03")
     self.boardCard = c
+    self.boardArt = ns.Art and ns.Art.CardArt(c) -- our spec's remastered talent art, faint
     c.newPost = headButton(c, "New post", 70, function()
         UI.Compose({ heading = "New post", label1 = "Title", label2 = "Message", max1 = ns.Social.MAX_TITLE,
             max2 = ns.Social.MAX_BODY }, function(title, body)
@@ -798,47 +811,59 @@ function Home.Invite(name)
 end
 
 function Home:BuildGroups(page)
-    local c = card(page, "Group finder", RIGHT_X, BODY_Y, RIGHT_W, HALF_H)
+    local c = card(page, "Group finder", RIGHT_X, BODY_Y, RIGHT_W, HALF_H, "Interface\\Icons\\INV_Misc_Spyglass_02")
     self.groupCard = c
-    c.post = headButton(c, "Post group", 74, function()
-        local mine = ns.Social:MyGroup()
-        UI.Compose({ heading = mine and "Update your group" or "Post a group", label1 = "Doing what?",
-            labelMid = "Looking for", label2 = "Description (optional)",
-            max1 = ns.Social.MAX_LFG, maxMid = ns.Social.MAX_LFG, max2 = ns.Social.MAX_LFG_DESC,
-            text1 = mine and mine.what or "", textMid = mine and mine.need or "", text2 = mine and mine.desc or "",
-            button = "Post" }, function(what, desc, need)
-            ns.Social:PostGroup(what, need, desc)
-            self:Refresh()
-        end)
+    c.post = headButton(c, "Post group", 74, function() self:PostGroupDialog() end)
+    rowList(c, 40, true, function(row) self:GroupTooltip(row) end, function(row) self:GroupMenu(row) end)
+end
+
+-- Post (or update) our group listing. `what` fills in "Doing what?" for a
+-- new one (the Dungeons tab passes the dungeon). Also used by the Dungeons tab.
+function Home:PostGroupDialog(what)
+    local mine = ns.Social:MyGroup()
+    UI.Compose({ heading = mine and "Update your group" or "Post a group", label1 = "Doing what?",
+        labelMid = "Looking for", label2 = "Description (optional)",
+        max1 = ns.Social.MAX_LFG, maxMid = ns.Social.MAX_LFG, max2 = ns.Social.MAX_LFG_DESC,
+        text1 = mine and mine.what or what or "", textMid = mine and mine.need or "", text2 = mine and mine.desc or "",
+        button = "Post" }, function(text, desc, need)
+        ns.Social:PostGroup(text, need, desc)
+        self:Refresh()
+        if ns.Dungeons then ns.Dungeons:Changed() end
     end)
-    rowList(c, 40, true, function(row) self:GroupTooltip(row) end, function(row)
-        local g = row.item
-        if not g then return end
-        local mine = g.author == ns.Sync:Me()
-        local menu = { { text = display(g.author) .. ", " .. g.what, header = true } }
-        if not mine then
-            if ns.Social.requested[g.id] then
-                menu[#menu + 1] = { text = "Request sent", disabled = true }
-            elseif ns.Social:IsFull(g) then
-                menu[#menu + 1] = { text = "Group is full", disabled = true }
-            else
-                menu[#menu + 1] = { text = "Request to join", color = { 0.5, 0.9, 0.55 },
-                    func = function() ns.Social:RequestJoin(g) end }
-            end
-            menu[#menu + 1] = { text = "Whisper " .. display(g.author), func = function() whisper(g.author) end }
+end
+
+-- Clicking a listing (row.item): join, whisper, answer requests, close.
+function Home:GroupMenu(row)
+    local g = row.item
+    if not g then return end
+    local mine = g.author == ns.Sync:Me()
+    local menu = { { text = display(g.author) .. ", " .. g.what, header = true } }
+    if not mine then
+        if ns.Social.requested[g.id] then
+            menu[#menu + 1] = { text = "Request sent", disabled = true }
+        elseif ns.Social:IsFull(g) then
+            menu[#menu + 1] = { text = "Group is full", disabled = true }
         else
-            for who in pairs(ns.Social.requests) do
-                menu[#menu + 1] = { text = "Invite " .. display(who), color = { 0.5, 0.9, 0.55 },
-                    func = function() ns.Social:Answer(who, true) end }
-                menu[#menu + 1] = { text = "   No thanks, " .. display(who), func = function() ns.Social:Answer(who, false) end }
-            end
+            menu[#menu + 1] = { text = "Request to join", color = { 0.5, 0.9, 0.55 },
+                func = function() ns.Social:RequestJoin(g) end }
         end
-        if ns.Social:CanRemove(g) then
-            menu[#menu + 1] = { text = g.author == ns.Sync:Me() and "Close my group" or "Remove listing",
-                color = { 0.95, 0.4, 0.4 }, func = function() ns.Social:Remove("lfg", g); self:Refresh() end }
+        menu[#menu + 1] = { text = "Whisper " .. display(g.author), func = function() whisper(g.author) end }
+    else
+        for who in pairs(ns.Social.requests) do
+            menu[#menu + 1] = { text = "Invite " .. display(who), color = { 0.5, 0.9, 0.55 },
+                func = function() ns.Social:Answer(who, true) end }
+            menu[#menu + 1] = { text = "   No thanks, " .. display(who), func = function() ns.Social:Answer(who, false) end }
         end
-        UI.ShowMenu(row, menu)
-    end)
+    end
+    if ns.Social:CanRemove(g) then
+        menu[#menu + 1] = { text = g.author == ns.Sync:Me() and "Close my group" or "Remove listing",
+            color = { 0.95, 0.4, 0.4 }, func = function()
+                ns.Social:Remove("lfg", g)
+                self:Refresh()
+                if ns.Dungeons then ns.Dungeons:Changed() end
+            end }
+    end
+    UI.ShowMenu(row, menu)
 end
 
 -- Hovering a listing: everything about it, description last.
@@ -915,7 +940,8 @@ function Home:Build(page)
         GameTooltip:Show()
     end)
 
-    self.onlineCard = card(page, "Online now", LEFT_X, BODY_Y + HALF_H + GAP, LEFT_W, HALF_H)
+    self.onlineCard = card(page, "Online now", LEFT_X, BODY_Y + HALF_H + GAP, LEFT_W, HALF_H,
+        "Interface\\Icons\\Spell_Holy_PrayerOfHealing02")
     rowList(self.onlineCard, LINE_H, false, function(row)
         if row.item then ns.Roster:ShowTooltip(row.item, row) end
     end, function(row)
@@ -937,13 +963,23 @@ function Home:Build(page)
     self:BuildBoard(page)
     self:BuildGroups(page)
 
-    self.lootCard = card(page, "Recent loot", RIGHT_X, BODY_Y + HALF_H + GAP, RIGHT_W, HALF_H)
+    self.lootCard = card(page, "Recent loot", RIGHT_X, BODY_Y + HALF_H + GAP, RIGHT_W, HALF_H,
+        "Interface\\Icons\\INV_Misc_Bag_10")
     rowList(self.lootCard, LINE_H, false, function(row)
         if not row.item or not GameTooltip then return end
         GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
         pcall(GameTooltip.SetHyperlink, GameTooltip, row.item.link)
         GameTooltip:Show()
     end)
+end
+
+-- The message board shows our current spec's remastered talent art (the
+-- classic picture where there's no remastered one; our first tree before we
+-- pick a spec).
+function Home:RefreshArt()
+    if not self.boardArt then return end
+    local class = select(2, UnitClass("player"))
+    self.boardArt:Show(ns.Art.ModernTreeArt(class, ns.Art.MySpec() or 1))
 end
 
 function Home:Refresh()
@@ -1001,9 +1037,14 @@ local function tick()
 end
 ns.On("PLAYER_LOGIN", function() C_Timer.After(30, tick) end)
 
+ns.On("PLAYER_SPECIALIZATION_CHANGED", function(unit)
+    if (unit == nil or unit == "player") and Home.page and Home.page:IsShown() then Home:RefreshArt() end
+end)
+
 ns.Editor:RegisterTab("home", "Home", 0,
     function(page) Home:Build(page) end,
     function()
         ns.Roster:RequestGuild()
+        Home:RefreshArt()
         Home:Refresh()
     end)

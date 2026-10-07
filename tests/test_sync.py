@@ -40,6 +40,9 @@ ns.Comm.SendChunked = function(kind, payload, ...)
     end
     return orig(kind, payload, ...)
 end
+-- gear shares itself at login (tested in test_pograid and the stress test);
+-- these counts are about the records each test makes
+ns.Gear.Publish = function() end
 STUB.Fire("ADDON_LOADED", "PogRaid")
 STUB.Fire("PLAYER_LOGIN")
 ns.Roster:ScanGuild()

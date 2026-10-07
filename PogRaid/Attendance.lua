@@ -739,6 +739,7 @@ function Att:Build(page)
     tbl:SetPoint("TOPLEFT", RX, -LIST_Y)
     tbl:SetSize(RW, LIST_H)
     UI.Card(tbl)
+    self.tableArt = ns.Art and ns.Art.Page("attendance", tbl) -- faint game art (Art.PAGES)
     self.tableHint = UI.ScrollHint(tbl, 2 + ROW_H + 2, 2)
     tbl:EnableMouseWheel(true)
     tbl:SetScript("OnMouseWheel", function(_, d)
@@ -1031,4 +1032,4 @@ end)
 
 ns.Editor:RegisterTab("attendance", "Attendance", 2,
     function(page) Att:Build(page) end,
-    function() Att:Refresh() end)
+    function() Att:Refresh() end, "raid")

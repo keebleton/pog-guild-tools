@@ -16,7 +16,7 @@ local Settings = {}
 ns.Settings = Settings
 
 local PAD, GAP, TITLE_H = 12, 8, 30
-local FRAME_W, FRAME_H = 902, 608
+local FRAME_W, FRAME_H = 902, ns.PAGE_H
 local LEFT_W = 262
 local RX = PAD + LEFT_W + PAD
 local RW = FRAME_W - RX - PAD
@@ -119,6 +119,7 @@ function Settings:Build(page)
     who:SetPoint("TOPLEFT", RX, -TOP)
     who:SetSize(RW, height)
     UI.Card(who)
+    self.whoArt = ns.Art and ns.Art.Page("settings", who) -- faint game art (Art.PAGES)
     local t3 = UI.SectionTitle(who, "Who has Pog Guild Tools")
     t3:SetPoint("TOPLEFT", 12, -12)
     who.mine = UI.Text(who, 10)

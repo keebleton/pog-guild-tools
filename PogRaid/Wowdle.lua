@@ -352,6 +352,7 @@ function Wowdle:Build(view, top, height)
     side:SetPoint("TOPLEFT", SIDE_X, -top)
     side:SetSize(SIDE_W, height)
     UI.Card(side)
+    self.sideArt = ns.Art and ns.Art.Page("wowdle", side) -- faint game art (Art.PAGES)
     self.side = side
     side.title = UI.SectionTitle(side, "Today in the guild")
     side.title:SetPoint("TOPLEFT", 14, -12)

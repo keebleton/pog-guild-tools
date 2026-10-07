@@ -72,7 +72,7 @@ end
 
 function Loot.Quality(link)
     local hex = link and link:match("|c%x%x(%x%x%x%x%x%x)")
-    local q = hex and QUALITY_BY_COLOR[hex:lower()]
+    local q = hex and QUALITY_BY_COLOR[hex:lower()] or tonumber(link and link:match("|cnIQ(%d+):"))
     if q then return q end
     local id = Loot.ItemID(link)
     if id and C_Item and C_Item.GetItemQualityByID then
@@ -393,6 +393,7 @@ function Loot:Build(page)
     tbl:SetPoint("TOPLEFT", RX, -LIST_Y)
     tbl:SetSize(RW, LIST_H)
     UI.Card(tbl)
+    self.tableArt = ns.Art and ns.Art.Page("loot", tbl) -- faint game art (Art.PAGES)
     self.tableHint = UI.ScrollHint(tbl, 2 + ROW_H + 2, 2)
     tbl:EnableMouseWheel(true)
     tbl:SetScript("OnMouseWheel", function(_, d)
@@ -641,4 +642,4 @@ end)
 
 ns.Editor:RegisterTab("loot", "Loot", 3,
     function(page) Loot:Build(page) end,
-    function() Loot:Refresh() end)
+    function() Loot:Refresh() end, "raid")

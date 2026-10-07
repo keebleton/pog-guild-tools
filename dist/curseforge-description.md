@@ -13,7 +13,16 @@ A MySpace-style page for every guildie running Pog Guild Tools, one per account.
 - **Make it yours.** A nickname, a status line, About Me, favorites, main role, a portrait from thousands of classic icons, a theme color and a profile song that plays when guildies visit. Set it once and all your characters share it.
 - **Kudos.** Recognize guildies for Clutch heals, Great tank, Carried me, GGWP and more, with a few words saying why. Their page shows the latest kudos they've received.
 - **Professions.** See someone's two main professions and browse their recipes right from their page.
+- **Character.** See their character in 3D right on their page, and Inspect to see what they were most recently wearing, even when they're offline or across the world. Click an item to add it to your own wishlist.
 - **Most played with.** Fills itself with the guildies you group with most.
+
+## LFG
+- **Find a group.** Tick the dungeons you want, pick your role, add a note, and the guild sees you're looking. Dungeons in your level range stand out.
+- **Groups at a glance.** Every group listing as a tile with how full it is and what it needs, and a Join button right on it. People after the same dungeons as you are listed first.
+
+## Wishlist
+- **Plan your gear.** A character sheet of the gear you're after, one item per slot, with your character in the middle wearing it. Shift-click items in from your bags, chat or any loot window.
+- **Browse by slot.** Pick Head, Chest, Trinket or any slot to see every item for it, best item level first, and where it drops. Items tick themselves off when you get them.
 
 ## Raid leading
 - **Raid Plans.** Draw on the raid's own map, or sketch a room from scratch with walls, zones and pen strokes, then place raid markers, players, role groups, arrows and labels. Press "Show to raid" and it pops up on everyone's screen, with their own spot highlighted.

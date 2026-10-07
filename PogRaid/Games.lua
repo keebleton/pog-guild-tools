@@ -10,7 +10,7 @@ local Games = {}
 ns.Games = Games
 
 local PAD, GAP, TITLE_H, BAR_H = 12, 8, 30, 26
-local FRAME_W, FRAME_H = 902, 608
+local FRAME_W, FRAME_H = 902, ns.PAGE_H
 local INNER_W = FRAME_W - 2 * PAD
 local ROW1_Y = TITLE_H
 local STATUS_Y = ROW1_Y + BAR_H + GAP

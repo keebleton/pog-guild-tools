@@ -29,8 +29,9 @@
 --
 -- Layout (902 x 608 window):
 --   [search      ]  [portrait  name, info, status          buttons, song]
---   [members     ]  [About me, characters, favorites]  [Most played with ]
---   [            ]  [Professions                    ]  [Kudos (latest)   ]
+--   [members     ]  [About me, characters, favorites]  [Character: model ]
+--   [            ]  [Professions                    ]  [   Inspect       ]
+--   [            ]  [Most played with               ]  [Kudos (latest)   ]
 --   [My profile  ]
 local _, ns = ...
 local UI = ns.UI
@@ -342,8 +343,10 @@ function Profiles:HasAddon(name)
     local versions = ns.db.versions or {}
     local seen = ns.Version and ns.Version.seen or {}
     local profs = Sync:Store("profs") or {}
+    local gear = Sync:Store("gear") or {}
     for _, c in ipairs(self:Linked(name)) do
-        if versions[c] or seen[c] or self:Get(c) or (profs[c] and not profs[c].deleted) then return true end
+        if versions[c] or seen[c] or self:Get(c) or (profs[c] and not profs[c].deleted)
+            or (gear[c] and not gear[c].deleted) then return true end
     end
     return false
 end
@@ -623,7 +626,7 @@ end
 -- UI
 ------------------------------------------------------------------------
 local PAD, GAP, TITLE_H, BAR_H = 12, 8, 30, 26
-local FRAME_W, FRAME_H = 902, 608
+local FRAME_W, FRAME_H = 902, ns.PAGE_H
 local LEFT_W = 262
 local RX = PAD + LEFT_W + PAD
 local RW = FRAME_W - RX - PAD
@@ -637,20 +640,22 @@ local BODY_Y = TITLE_H + BANNER_H + GAP
 local BODY_H = FRAME_H - PAD - BODY_Y
 local COL_W = (RW - GAP) / 2
 local COL2_X = RX + COL_W + GAP
-local ABOUT_H = 240
+local ABOUT_H = 166
 local TOP5_H = 100
-local KUDOS_H = BODY_H - TOP5_H - GAP
-local PROFS_H = BODY_H - ABOUT_H - GAP
+local PROFS_H = BODY_H - ABOUT_H - TOP5_H - 2 * GAP
+local TOP_Y = BODY_Y + ABOUT_H + GAP + PROFS_H + GAP  -- Most played with, under Professions
+local CHAR_H = 248                   -- the current character's model, Inspect under it
+local KUDOS_H = BODY_H - CHAR_H - GAP
 local PORTRAIT = 72
 local TILE_W, TILE_ICON = 54, 34
 local TILE_GAP = 6
-local INFO_ROW_H = 20
+local INFO_ROW_H = 18
 local INFO_H = 3 * INFO_ROW_H + 10   -- bottom of the About me card: characters + two favorites
 local KUDOS_ROW_H = 38
 local BOOK_ROW_H = 20
 
 Profiles.layout = { RX = RX, RW = RW, BODY_Y = BODY_Y, BODY_H = BODY_H, COL_W = COL_W, COL2_X = COL2_X,
-    ABOUT_H = ABOUT_H, TOP5_H = TOP5_H, LIST_Y = LIST_Y, LIST_H = LIST_H, BANNER_H = BANNER_H, INFO_H = INFO_H }
+    ABOUT_H = ABOUT_H, TOP5_H = TOP5_H, CHAR_H = CHAR_H, TOP_Y = TOP_Y, LIST_Y = LIST_Y, LIST_H = LIST_H, BANNER_H = BANNER_H, INFO_H = INFO_H }
 
 local function card(page, title, x, y, w, h)
     local c = CreateFrame("Frame", nil, page)
@@ -706,6 +711,7 @@ function Profiles:Build(page)
     self:BuildBanner(page)
     self:BuildAbout(page)
     self:BuildProfessions(page)
+    self:BuildCharacter(page)
     self:BuildTop(page)
     self:BuildKudos(page)
     self.none = UI.Text(page, 12)
@@ -795,7 +801,7 @@ local function anyOnline(self, name)
     end
 end
 
--- One row per account (its Main) that runs Pog Raid, online first, filtered
+-- One row per account (its Main) that runs Pog Raid, filtered
 -- by the search box (which matches any of the account's characters or its
 -- nickname).
 function Profiles:Members()
@@ -811,13 +817,29 @@ function Profiles:Members()
             end
         end
     end
-    local online = {}
-    for _, m in ipairs(out) do online[m] = anyOnline(self, m) ~= nil end
+    -- set-up profiles first, then everyone else, each alphabetical by the
+    -- name shown (nickname or main)
+    local online, custom, shown = {}, {}, {}
+    for _, m in ipairs(out) do
+        online[m] = anyOnline(self, m) ~= nil
+        custom[m] = self:Customized(m)
+        shown[m] = self:Name(m):lower()
+    end
     table.sort(out, function(a, b)
-        if online[a] ~= online[b] then return online[a] end
+        if custom[a] ~= custom[b] then return custom[a] end
+        if shown[a] ~= shown[b] then return shown[a] < shown[b] end
         return a < b
     end)
     return out, online
+end
+
+-- Someone has set something on their profile (not just the automatic parts).
+function Profiles:Customized(name)
+    local content = self:Content(name)
+    for _, f in ipairs(CONTENT) do
+        if content[f] ~= nil then return true end
+    end
+    return false
 end
 
 function Profiles:RefreshList()
@@ -1082,8 +1104,19 @@ function Profiles:BuildAbout(page)
     c.text:SetHeight(ABOUT_H - HEAD_H - 8 - INFO_H - 12)
     c.text:SetJustifyH("LEFT")
     c.text:SetJustifyV("TOP")
-    if c.text.SetMaxLines then c.text:SetMaxLines(7) end
+    if c.text.SetMaxLines then c.text:SetMaxLines(math.floor((ABOUT_H - HEAD_H - 8 - INFO_H - 12) / 13)) end
     c.text:SetTextColor(0.88, 0.88, 0.91)
+    -- a long About me is cut short: hover for all of it
+    c.textHit = CreateFrame("Frame", nil, c)
+    c.textHit:SetAllPoints(c.text)
+    c.textHit:EnableMouse(true)
+    c.textHit:SetScript("OnEnter", function(f)
+        if not GameTooltip or not (c.text.IsTruncated and c.text:IsTruncated()) then return end
+        GameTooltip:SetOwner(f, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(c.text:GetText(), 0.9, 0.9, 0.93, true)
+        GameTooltip:Show()
+    end)
+    c.textHit:SetScript("OnLeave", hideTip)
     -- a divider, then one row each, centred in the space left
     local div = c:CreateTexture(nil, "ARTWORK")
     div:SetPoint("BOTTOMLEFT", 8, INFO_H)
@@ -1169,6 +1202,67 @@ function Profiles:RefreshAbout()
         row.value:SetText(v or (i == 1 and "just this one" or "-"))
         if v then row.value:SetTextColor(0.9, 0.9, 0.93) else row.value:SetTextColor(0.45, 0.45, 0.5) end
     end
+end
+
+------------------------------------------------------------------------
+-- Character: the account's current character (Gear.lua), Inspect for more
+------------------------------------------------------------------------
+local INSPECT_W, INSPECT_H = 92, 22
+
+function Profiles:BuildCharacter(page)
+    local c = CreateFrame("Frame", nil, page)
+    c:SetPoint("TOPLEFT", COL2_X, -BODY_Y)
+    c:SetSize(COL_W, CHAR_H)
+    UI.Card(c)
+    self.charCard = c
+    local mw, mh = COL_W - 16, CHAR_H - 8 - INSPECT_H - 24
+    c.model = ns.Wishlist and ns.Wishlist.Model(c, 8, 8, mw, mh)
+    if c.model then
+        c.model.zoom = 1 -- the game's own framing: a small card needs the whole height
+        -- the art fills the card 8px in all round, the Inspect button on it too
+        c.artArea = CreateFrame("Frame", nil, c)
+        c.artArea:SetPoint("TOPLEFT", 8, -8)
+        c.artArea:SetSize(COL_W - 16, CHAR_H - 16)
+        c.backdrop = ns.Wishlist.Backdrop(c, c.model, c.artArea)
+    end
+    c.pic = portrait(c, 64) -- when the model can't show them
+    c.pic:SetPoint("CENTER", c, "TOPLEFT", COL_W / 2, -(8 + mh / 2))
+    c.open = CreateFrame("Button", nil, c)
+    c.open:SetPoint("TOPLEFT", 8, -8)
+    c.open:SetSize(mw, mh)
+    c.open:SetFrameLevel(c:GetFrameLevel() + 3)
+    c.open:SetScript("OnClick", function() self:Inspect() end)
+    -- Inspect: a magnifying glass and the word, centred together
+    local btn = UI.Button(c, "Inspect", INSPECT_W, INSPECT_H, function() self:Inspect() end)
+    btn:SetPoint("BOTTOM", 0, 16) -- 8px inside the art, which is 8px inside the card
+    btn.glass = btn:CreateTexture(nil, "ARTWORK")
+    btn.glass:SetTexture("Interface\\Common\\UI-Searchbox-Icon")
+    btn.glass:SetSize(14, 14)
+    local tw = math.floor(btn.label:GetStringWidth() + 0.5)
+    local x0 = math.floor((INSPECT_W - (14 + 5 + tw)) / 2)
+    btn.glass:SetPoint("LEFT", x0, 0)
+    btn.label:ClearAllPoints()
+    btn.label:SetPoint("LEFT", x0 + 14 + 5, 0)
+    btn.label:SetJustifyH("LEFT")
+    c.inspect = btn
+end
+
+function Profiles:RefreshCharacter()
+    local c = self.charCard
+    local Gear = ns.Gear
+    local who, rec = self.viewing, nil
+    if Gear then who, rec = Gear:Current(self:Linked(self.viewing)) end
+    self.charFor = who
+    local p = G().players[who]
+    if c.backdrop then c.backdrop:SetClass(p and p.class) end
+    local shows = Gear and Gear:Dress(c.model, who) or false
+    c.pic:SetShown(not shows)
+    if not shows then c.pic:Set(self.viewing) end
+    c.inspect:SetEnabledState(Gear ~= nil and (rec ~= nil or Gear:UnitOf(who) ~= nil))
+end
+
+function Profiles:Inspect()
+    if ns.Gear and self.charFor then ns.Gear:Inspect(self.charFor) end
 end
 
 ------------------------------------------------------------------------
@@ -1375,7 +1469,7 @@ end
 -- Most played with
 ------------------------------------------------------------------------
 function Profiles:BuildTop(page)
-    local c = card(page, "Most played with", COL2_X, BODY_Y, COL_W, TOP5_H)
+    local c = card(page, "Most played with", RX, TOP_Y, COL_W, TOP5_H)
     self.topCard = c
     c.tiles = {}
     local inner = COL_W - 16
@@ -1447,7 +1541,7 @@ end
 -- message). No counts: nobody sees how many anyone has, or hasn't, got.
 ------------------------------------------------------------------------
 function Profiles:BuildKudos(page)
-    local c = card(page, "Kudos", COL2_X, BODY_Y + TOP5_H + GAP, COL_W, KUDOS_H)
+    local c = card(page, "Kudos", COL2_X, BODY_Y + CHAR_H + GAP, COL_W, KUDOS_H)
     self.kudosCard = c
     c.give = UI.Button(c, "Give kudos", 80, 18, function(x) UI.ShowMenu(x, self:KudosMenu()) end)
     c.give:SetPoint("RIGHT", c, "TOPRIGHT", -5, -HEAD_H / 2)
@@ -1588,7 +1682,7 @@ function Profiles:RefreshAll()
     self.viewing = self.viewing or me()
     local book = guild and self.bookFor ~= nil
     self.banner:SetShown(guild)
-    for _, f in ipairs({ self.aboutCard, self.profCard, self.topCard, self.kudosCard }) do f:SetShown(guild and not book) end
+    for _, f in ipairs({ self.aboutCard, self.profCard, self.charCard, self.topCard, self.kudosCard }) do f:SetShown(guild and not book) end
     if self.book then self.book:SetShown(book) end
     self.mine:SetShown(guild)
     self.none:SetShown(not guild)
@@ -1610,6 +1704,7 @@ function Profiles:RefreshAll()
     end
     self:RefreshAbout()
     self:RefreshProfessions()
+    self:RefreshCharacter()
     self:RefreshTop()
     self:RefreshKudos()
 end

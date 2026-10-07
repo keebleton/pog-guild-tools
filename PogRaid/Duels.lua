@@ -365,6 +365,7 @@ function Duels:Build(view, top, height)
     board:SetPoint("TOPLEFT", RX, -top)
     board:SetSize(RW, height)
     UI.Card(board)
+    self.boardArt = ns.Art and ns.Art.Page("duels", board) -- faint game art (Art.PAGES)
     board:EnableMouseWheel(true)
     board:SetScript("OnMouseWheel", function(_, d)
         self.offset = (self.offset or 0) - d * 3

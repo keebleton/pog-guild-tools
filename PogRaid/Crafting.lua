@@ -30,7 +30,7 @@ Crafting.NO_RECIPES = { Fishing = true, Herbalism = true, Skinning = true, Archa
 Crafting.SKIP = { Poisons = true, Lockpicking = true }
 
 local PAD, TITLE_H = 12, 30
-local FRAME_W, FRAME_H = 902, 608
+local FRAME_W, FRAME_H = 902, ns.PAGE_H
 local LEFT_W = 262
 local RX = PAD + LEFT_W + PAD
 local RW = FRAME_W - RX - PAD
@@ -442,6 +442,7 @@ function Crafting:Build(page)
     right:SetPoint("TOPLEFT", RX, -TOP)
     right:SetSize(RW, height)
     UI.Card(right)
+    self.rightArt = ns.Art and ns.Art.Page("crafting", right) -- faint game art (Art.PAGES)
     local search = UI.EditBox(right, RW - 24, BAR_H)
     search:SetPoint("TOPLEFT", 12, -12)
     search.placeholder = UI.Text(search, 11)

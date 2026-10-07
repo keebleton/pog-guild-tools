@@ -24,6 +24,13 @@ def ring(dx, dy, thick=11.0):
     d = math.hypot(dx, dy)
     return min(R - d + 0.5, d - (R - thick) + 0.5)
 
+# Soft radial glow (behind character models, and their shadow): full in the
+# middle, fading smoothly to nothing at the edge.
+def glow(dx, dy):
+    t = max(0.0, 1.0 - math.hypot(dx, dy) / R)
+    return t * t * (3 - 2 * t)
+
 write_tga(os.path.join(OUT, "disc.tga"), disc)
+write_tga(os.path.join(OUT, "glow.tga"), glow)
 write_tga(os.path.join(OUT, "ring.tga"), ring)
 print("ok", os.listdir(OUT))

@@ -79,6 +79,7 @@ function M:GetEffectiveScale() return 1 end
 function M:SetScale(s) self.__scale = s end
 function M:GetScale() return self.__scale end
 function M:GetFrameLevel() return self.__level end
+function M:GetParent() return self.__parent end
 function M:SetFrameLevel(l) self.__level = l end
 
 -- visibility / scripts -------------------------------------------------
@@ -117,13 +118,33 @@ function M:CreateFontString() return new("FontString", self) end
 function M:SetFont(font, size) self.__font, self.__fontSize = font, size end
 function M:SetText(t)
     if self.__kind == "FontString" and not self.__font then error("FontString:SetText(): Font not set") end
+    local was = self.__text
     self.__text = t
+    -- like the game: an edit box runs OnTextChanged (userInput false) when its text changes
+    if self.__kind == "EditBox" and was ~= t and self.__scripts and self.__scripts.OnTextChanged then
+        self.__scripts.OnTextChanged(self, false)
+    end
 end
 function M:GetText() return self.__text end
+-- models (DressUpModel): SetUnit dresses in the unit's gear, TryOn adds an item
+function M:SetUnit(unit) self.__unit, self.__tried, self.__dressed = unit, {}, (self.__dressed or 0) + 1 end
+function M:TryOn(link) table.insert(self.__tried, link) end
+function M:SetFacing(f) self.__facing = f end
+function M:SetCustomRace(race, gender) self.__unit, self.__race, self.__gender, self.__tried = nil, race, gender, {} end
+function M:Undress() self.__tried = {} end
+function M:ClearModel() self.__unit, self.__race, self.__tried = nil, nil, {} end
 function M:SetTextColor(r, g, b, a) self.__textColor = { r, g, b, a } end
 function M:SetJustifyH(j) self.__justifyH = j end
 function M:GetStringWidth() return #(self.__text or "") * 6 end
 function M:SetTexture(t) self.__texture = t end
+function M:GetTexture() return self.__texture end
+function M:SetVertexColor(r, g, b, a) self.__vertex = { r, g, b, a } end
+function M:SetTexCoord(...)
+    if self.__mask then error("Texture:SetTexCoord(): can't be used on a texture with a mask") end
+    self.__coord = { ... }
+end
+function M:SetMask(path) self.__mask = path end
+function M:SetAtlas(name) self.__atlas = name end
 function M:SetColorTexture(r, g, b, a) self.__color = { r, g, b, a } end
 function M:SetStartPoint(_, _, x, y) self.__start = { x, y } end
 function M:SetEndPoint(_, _, x, y) self.__end = { x, y } end
@@ -213,6 +234,12 @@ RAID_CLASS_COLORS = { HUNTER = { r = 0.67, g = 0.83, b = 0.45 }, MAGE = { r = 0.
 function GetTime() return STUB.now end
 function GetCursorPosition() return STUB.cursorX, STUB.cursorY end
 function IsMouseButtonDown(b) return STUB.mouseDown[b] or false end
+STUB.race, STUB.sex = 7, 2 -- gnome, male
+function UnitRace(unit) if unit == "player" then return "Gnome", "Gnome", STUB.race end end
+function UnitSex(unit) if unit == "player" then return STUB.sex end end
+function UnitIsVisible(unit) return UnitExists(unit) end
+function GetInventoryItemID(unit, slot) return unit == "player" and STUB.worn and STUB.worn[slot] or nil end
+function GetInventorySlotInfo(name) return 1, "slot-" .. name end
 function IsShiftKeyDown() return STUB.shift or false end
 function GetBuildInfo() return "1.60.1", "70009", "Sep 24 2026", 16001 end
 STUB.instance = { "Stormwind", "none" }

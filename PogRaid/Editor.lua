@@ -100,7 +100,7 @@ end
 ------------------------------------------------------------------------
 function Editor:Build()
     local f = CreateFrame("Frame", "PogRaidEditor", UIParent)
-    f:SetSize(FRAME_W, FRAME_H + PAGE_Y)
+    f:SetSize(FRAME_W, ns.PAGE_H + PAGE_Y)
     f:SetFrameStrata("HIGH")
     f:SetToplevel(true)
     f:EnableMouse(true)
@@ -136,15 +136,106 @@ function Editor:Build()
     close:SetPoint("RIGHT", -PAD + 7, 0)
     self.closeBtn = close
     table.sort(self.tabs, function(a, b) return a.order < b.order end)
-    self.tabButtons = {}
-    local list = {}
-    for i, tab in ipairs(self.tabs) do
-        local b = UI.Tab(bar, tab.label, TAB_W, BAND_H, function() self:ShowTab(tab.key) end)
-        self.tabButtons[tab.key] = b
-        list[i] = b
+    -- one button per tab, except a group's tabs share one (its menu picks)
+    local top = {}
+    for _, tab in ipairs(self.tabs) do
+        if tab.group then
+            local g = self.groups[tab.group]
+            g.members = g.members or {}
+            table.insert(g.members, tab)
+            if not g.listed then
+                g.listed = true
+                top[#top + 1] = { order = g.order, group = g }
+            end
+        else
+            top[#top + 1] = { order = tab.order, tab = tab }
+        end
     end
-    self:LayoutTabs(bar, list)
+    table.sort(top, function(a, b) return a.order < b.order end)
+    self.tabButtons, self.topButtons = {}, {}
+    for i, entry in ipairs(top) do
+        local b
+        if entry.group then
+            local g = entry.group
+            b = UI.Tab(bar, g.label, TAB_W, BAND_H, function() self:GroupClick(g) end)
+            g.button = b
+            for _, tab in ipairs(g.members) do self.tabButtons[tab.key] = b end
+        else
+            local tab = entry.tab
+            b = UI.Tab(bar, tab.label, TAB_W, BAND_H, function() self:ShowTab(tab.key) end)
+            self.tabButtons[tab.key] = b
+        end
+        self.topButtons[i] = b
+    end
+    self:LayoutTabs(bar, self.topButtons)
     UI.RestorePosition(f, "editor", 0)
+end
+
+-- Groups: several tabs behind one top button ("Raid"). Its pages sit under a
+-- row of sub-tabs (like the Games tab's), one per page. The button opens the
+-- group's last used page (or its default).
+Editor.groups = {}
+
+function Editor:RegisterGroup(key, label, order, default)
+    self.groups[key] = { key = key, label = label, order = order, default = default }
+end
+
+local function lastOf(g)
+    local saved = ns.db and ns.db.frames.groupTabs and ns.db.frames.groupTabs[g.key] or g.default
+    for _, tab in ipairs(g.members) do
+        if tab.key == saved then return tab end
+    end
+    return g.members[1]
+end
+
+function Editor:GroupClick(g)
+    self:ShowTab(lastOf(g).key)
+end
+
+local SUB_GAP = 32    -- between sub-tab labels
+local SUB_LIFT = 4    -- label this far above the row's middle, clear of its underline
+
+-- The first underline starts at the page margin; labels are SUB_GAP apart.
+function Editor:BuildSubTabs(g)
+    local row = CreateFrame("Frame", nil, self.frame)
+    row:SetPoint("TOPLEFT", 0, -(PAGE_Y + TITLE_H))
+    row:SetSize(FRAME_W, BAR_H)
+    row.tabs = {}
+    local center
+    for i, tab in ipairs(g.members) do
+        local t = UI.Tab(row, tab.label, 80, BAR_H, function() self:ShowTab(tab.key) end)
+        local tw = t.label:GetStringWidth()
+        local w = math.floor(tw + SUB_GAP + 0.5)
+        t:SetWidth(w)
+        t.underline:SetWidth(tw + 16)
+        t.label:ClearAllPoints()
+        t.label:SetPoint("CENTER", 0, SUB_LIFT)
+        if not center then
+            center = PAD + (tw + 16) / 2
+        else
+            center = center + row.tabs[i - 1].label:GetStringWidth() / 2 + SUB_GAP + tw / 2
+        end
+        -- whole-pixel centres keep the text crisp
+        t:SetPoint("TOP", row, "TOPLEFT", math.floor(center + 0.5), 0)
+        t.key = tab.key
+        row.tabs[i] = t
+    end
+    g.sub = row
+    return row
+end
+
+-- The sub-tab row shows on its group's pages, marking the open one.
+function Editor:RefreshGroups(want)
+    for key, g in pairs(self.groups) do
+        if g.members then
+            local on = want.group == key
+            if on and not g.sub then self:BuildSubTabs(g) end
+            if g.sub then
+                g.sub:SetShown(on)
+                for _, t in ipairs(g.sub.tabs) do t:SetSelected(t.key == want.key) end
+            end
+        end
+    end
 end
 
 -- The same gap between every pair of tab labels, and between the last one
@@ -176,9 +267,9 @@ end
 -- time it is shown. Pages use the same PAD/GAP grid as the boards page.
 Editor.tabs = {}
 
--- order: position in the tab row, left to right.
-function Editor:RegisterTab(key, label, order, build, onShow)
-    table.insert(self.tabs, { key = key, label = label, order = order, build = build, onShow = onShow })
+-- order: position in the tab row, left to right (within its group, if any).
+function Editor:RegisterTab(key, label, order, build, onShow, group)
+    table.insert(self.tabs, { key = key, label = label, order = order, build = build, onShow = onShow, group = group })
 end
 
 function Editor:ShowTab(key)
@@ -190,12 +281,22 @@ function Editor:ShowTab(key)
     want = want or self.tabs[1]
     for _, tab in ipairs(self.tabs) do
         if tab ~= want and tab.page then tab.page:Hide() end
-        self.tabButtons[tab.key]:SetSelected(tab == want)
     end
+    for _, b in ipairs(self.topButtons) do b:SetSelected(b == self.tabButtons[want.key]) end
+    if want.group then
+        ns.db.frames.groupTabs = ns.db.frames.groupTabs or {}
+        ns.db.frames.groupTabs[want.group] = want.key
+    end
+    self:RefreshGroups(want)
     if not want.page then
         want.page = CreateFrame("Frame", nil, self.frame)
-        want.page:SetPoint("TOPLEFT", 0, -PAGE_Y)
-        want.page:SetSize(FRAME_W, FRAME_H)
+        if want.group then
+            want.page:SetPoint("TOPLEFT", 0, -(PAGE_Y + ns.SUB_H))
+            want.page:SetSize(FRAME_W, ns.RAID_H)
+        else
+            want.page:SetPoint("TOPLEFT", 0, -PAGE_Y)
+            want.page:SetSize(FRAME_W, ns.PAGE_H)
+        end
         want.build(want.page)
     end
     want.page:Show()
@@ -975,9 +1076,11 @@ function Editor:Toggle(tab)
     self:ShowTab(tab)
 end
 
+Editor:RegisterGroup("raid", "Raid", 2, "attendance")
+
 Editor:RegisterTab("boards", "Raid Plans", 9,
     function(page) Editor:BuildBoards(page) end,
-    function() Editor:OnShowBoards() end)
+    function() Editor:OnShowBoards() end, "raid")
 
 function Editor:ResetPosition()
     if self.frame then UI.RestorePosition(self.frame, "editor", 0) end

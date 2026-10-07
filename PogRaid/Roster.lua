@@ -754,6 +754,7 @@ function Roster:Build(page)
     pool:SetPoint("TOPLEFT", PAD, -LIST_Y)
     pool:SetSize(POOL_W, LIST_H)
     UI.Card(pool)
+    self.poolArt = ns.Art and ns.Art.Page("roster", pool) -- faint game art (Art.PAGES)
     self.poolHint = UI.ScrollHint(pool, 2, 2)
     pool:EnableMouseWheel(true)
     pool:SetScript("OnMouseWheel", function(_, delta)
@@ -1146,4 +1147,4 @@ ns.Editor:RegisterTab("roster", "Roster", 1,
         if not Roster:Current() then Roster:New() end
         Roster:RequestGuild()
         Roster:Refresh()
-    end)
+    end, "raid")

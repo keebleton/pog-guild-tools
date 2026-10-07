@@ -1,8 +1,14 @@
 -- PogRaid core: saved data, event dispatch, slash commands, API probe.
 local ADDON, ns = ...
 
-ns.VERSION = "0.13.1"
+ns.VERSION = "0.14.0"
 ns.MEDIA = "Interface\\AddOns\\" .. ADDON .. "\\Media\\"
+
+-- Page grid: every tab's page is PAGE_H tall. The Raid tab's pages (Roster,
+-- Attendance, Loot, Raid Plans) are RAID_H tall under a row of sub-tabs.
+ns.SUB_H = 34                    -- the sub-tab row and the gap under it
+ns.RAID_H = 608
+ns.PAGE_H = ns.RAID_H + ns.SUB_H
 
 -- Colours used by arrows, circles and text. Index is what goes over the wire.
 ns.COLORS = {
@@ -275,6 +281,10 @@ function ns.Probe()
         yesno(C_TradeSkillUI and C_TradeSkillUI.GetAllRecipeIDs), yesno(ns.registered.TRADE_SKILL_SHOW)))
     local ok, n = pcall(GetNumGuildTradeSkill or function() return nil end)
     ns.Print(("built-in guild professions: %s"):format(ok and n and (n .. " entries") or "not available"))
+    local okModel, model = pcall(CreateFrame, "DressUpModel")
+    ns.Print(("character models: %s, other players' models: %s"):format(yesno(okModel and model),
+        yesno(okModel and model and model.SetCustomRace ~= nil)))
+    if okModel and model then model:Hide() end
     for _, line in ipairs(ns.Bug:Performance()) do ns.Print(line) end
     ns.Comm.Ping()
 end
@@ -326,6 +336,8 @@ SlashCmdList.POGRAID = function(msg)
         end
     elseif cmd == "probe" then
         ns.Probe()
+    elseif cmd == "art" then
+        if ns.Art then ns.Art:Toggle() end
     elseif cmd == "check" then
         ns.Comm.CheckRaid()
     elseif cmd == "test" then
@@ -336,6 +348,6 @@ SlashCmdList.POGRAID = function(msg)
         ns.Viewer:ResetPosition()
         ns.Print("window positions reset")
     else
-        ns.Print("/pog opens the window. Also: home, roster, attendance, loot, crafting, games, gems, wowdle, duels, plans, settings, minimap, probe, bug, sync, check, test, reset")
+        ns.Print("/pog opens the window. Also: home, roster, attendance, loot, crafting, games, gems, wowdle, duels, plans, settings, minimap, probe, art, bug, sync, check, test, reset")
     end
 end

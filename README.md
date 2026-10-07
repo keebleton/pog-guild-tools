@@ -44,6 +44,18 @@ The dashboard `/pog` opens on. A header with the guild logo on a dark round plat
 
 The board and group finder are shared between everyone in the guild running Pog Guild Tools (Sync.lua): changes go out on the guild addon channel as they happen, and people who log in later catch up by comparing a fingerprint of what each addon holds and trading only the differences. Data is kept per guild. `tests/test_sync.py` runs four clients side by side to test this.
 
+## LFG
+
+Everything about getting a group together. On the left, **You**: your role (Tank, Heals or DPS, with the game's role icons; your profile's main role until you pick) and an optional note, then every dungeon by level, the ones in your level range standing out. Click the dungeons you want (each gets a tick) and you're looking (four hours, or until **Stop looking**; changing anything renews it). **Post a group** sits at the top left.
+
+On the right, **Groups**: the guild's group listings (the same ones as Home's group finder) as tiles, with what it is, who leads it and what they need, how full it is and the time left. **Join** asks to join; your own has **Manage** (answer requests, close it). Below, **Looking for group**: everyone looking, with their role, level, dungeons and note; the ones after the same dungeons as you come first, those dungeons marked. Click someone to whisper or invite them. Who's looking is shared with the guild (collection `lfd`, one record per player).
+
+## Wishlist
+
+A character sheet of the gear you're after, one item per slot (17 slots: no shirt or tabard), with your character in the middle wearing it (drag to turn), on your class's dressing room art. One list per character. The **Search...** box at the top left finds gear by name (best item level first); shift-click an item from bags, chat or a loot window into it to add it straight away: it goes into its slot (a second ring or trinket takes the other slot; otherwise it replaces what's there). Only gear can be added.
+
+The left side lists each kind of slot (rings together, trinkets together). Pick one, or click an empty slot on the sheet, to see every item for it from DungeonJournal, best item level first, with where it drops (boss and dungeon, or the quest); click an item to add it or take it off. Items in your bags or equipped get a green tick (also when you add something you already have). Click an item on the sheet to mark it got or not yet, browse its slot, or remove it; shift-click links it in chat. What you still want is shared with the guild (collection `wish`, one record of item IDs per player) for dungeon buddy matching later.
+
 ## Profiles
 
 A page for every guild member running Pog Guild Tools, MySpace style, one per account. The list on the left shows guild accounts confirmed to have Pog Guild Tools (their addon has been heard, or they've shared a profile or professions), one row each, online first, with a search box that finds any of their characters. Click anyone, or pick View profile from a name's menu on Home, Roster or Crafting.
@@ -52,6 +64,7 @@ A page for every guild member running Pog Guild Tools, MySpace style, one per ac
 - **Banner:** portrait, name, level, class, rank, main role (DPS, Tank or Heals), status line, online (or online on another of their characters), and their profile song (Play / Stop).
 - **About me**, their characters and two favorites (raid, dungeon).
 - **Professions:** their two main professions (no Cooking, First Aid or Fishing) with skill and recipe count. Click one to browse their recipes, with a search box.
+- **Character:** their current character (the one they last played with Pog Guild Tools) as a 3D model, on their class's dressing room backdrop (or a glow in their class color). **Inspect** (or click the model) opens their character sheet: what they were most recently wearing, slot by slot, with where each item drops; click an item to add it to your wishlist, shift-click to link it. Everyone's addon shares their own character's gear (collection `gear`: item IDs, race and sex), at login and shortly after their gear changes, since the game only lets you inspect people standing next to you. The model is drawn live for you and anyone you target or group with; for others it's built from their race and gear where the client allows (`/pog probe` says), otherwise their portrait shows.
 - **Most played with:** the five guild accounts you group with most (counted every minute across all your characters, guild members only, at least 10 minutes together). Automatic.
 - **Kudos:** the latest kudos someone was given, each with its kind, who gave it and their message (hover for the whole message). No counts are shown, so nobody sees how many anyone has; you see your own total on your page. Give kudos on someone's page picks a kind (Clutch heals, Great tank, Big damage, Carried me, Helpful, Generous, Great leader, GGWP) and asks for a few words (required); each kind once a week per person (the week turns over at the Tuesday reset), and one given this week can be taken back from the same menu. Your own characters can't give each other kudos.
 
