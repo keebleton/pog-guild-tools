@@ -1,11 +1,10 @@
 -- Pog Raid home: the dashboard /pog opens on. Useful to anyone in the guild.
 --
--- Layout (902 x 608 window):
---   [logo  Guild name ................................  level spread ]
---   [      MOTD / stats                                              ]
---   [Activity|Chat ]  [Message board          ]  [Group finder       ]
---   [              ]  [                       ]  [                   ]
---   [Online now    ]  [                       ]  [Recent loot        ]
+-- Layout (902 x 642 page), three columns from the top:
+--   [logo Guild name]  [Message board          ]  [Group finder       ]
+--   [  message, 66  ]  [                       ]  [                   ]
+--   [Activity       ]  [                       ]  [                   ]
+--   [Online now     ]  [Guild chat             ]  [Recent loot        ]
 local _, ns = ...
 local UI = ns.UI
 
@@ -14,10 +13,13 @@ ns.Home = Home
 
 local PAD, GAP, TITLE_H = 12, 8, 30
 local FRAME_W, FRAME_H = 902, ns.PAGE_H
-local HEADER_Y, HEADER_H = TITLE_H, 80
-local BODY_Y = HEADER_Y + HEADER_H + GAP
+local BODY_Y = TITLE_H
 local BODY_H = FRAME_H - PAD - BODY_Y
 local HALF_H = (BODY_H - GAP) / 2
+-- the guild's own card tops the left column; Activity fills the rest of
+-- that half, so Online now lines up with Guild chat and Recent loot
+local HEADER_Y, HEADER_H = BODY_Y, 88
+local FEED_Y, FEED_H = BODY_Y + HEADER_H + GAP, HALF_H - HEADER_H - GAP
 local LEFT_W, MID_W = 262, 342
 local LEFT_X = PAD
 local MID_X = LEFT_X + LEFT_W + GAP
@@ -25,39 +27,25 @@ local RIGHT_X = MID_X + MID_W + GAP
 local RIGHT_W = FRAME_W - PAD - RIGHT_X
 local HEAD_H = 26
 local LINE_H = 20
-local CHART_W, CHART_H = 240, 64
--- banner: logo | name + message | stat tiles | level spread. Tiles are
--- right-aligned against the chart; the text gets whatever is left, so it
--- grows back when the launch countdown retires.
-local TEXT_X = 88
-local TILE_W = 92
-local TILES_RIGHT = (FRAME_W - 2 * PAD) - 10 - CHART_W - 20
+-- the guild card, like the game's guild window: the guild name, the message
+-- of the day (up to two lines), "66 members, 4 online". No logo: it's in the
+-- window's corner (Jake).
+local TEXT_X = 14
+-- the guild's banner hangs from the card's top-right edge, like the
+-- Communities window's (its pennant, taller): background and border tinted
+-- in the guild's colours, its emblem on it (the game fills these in: no
+-- tabard gives the default horned helm). The text stops short of it.
+local BANNER_W, BANNER_H, BANNER_R, BANNER_UP = 58, 76, 14, 4
+local TEXT_W = LEFT_W - TEXT_X - BANNER_R - BANNER_W - 10
 
--- World of Warcraft: Forever launch (November 4, 2026). Counted to the start
--- of that day on the player's clock; the tile retires a week after.
-Home.LAUNCH = { year = 2026, month = 11, day = 4 }
-Home.LAUNCH_SHOW_AFTER = 7 * 86400
-
-function Home:LaunchTime()
-    return time({ year = self.LAUNCH.year, month = self.LAUNCH.month, day = self.LAUNCH.day, hour = 0 })
-end
-
--- Tile text for the countdown, or nil once it should disappear.
-function Home:Countdown()
-    local left = self:LaunchTime() - ns.Now()
-    if left <= -Home.LAUNCH_SHOW_AFTER then return nil end
-    if left <= 0 then return "Live!" end
-    if left < 86400 then return math.ceil(left / 3600) .. "h" end
-    return math.ceil(left / 86400) .. "d"
-end
-local BUCKETS = 12            -- level spread: 12 bars of 5 levels (1-5 ... 56-60)
+local BUCKETS = 12            -- members by level: 12 groups of 5 levels (1-5 ... 56-60)
 
 Home.FEED_MAX = 60
 Home.CHAT_MAX = 100
 Home.LOOT_MAX = 100
 Home.LOOT_MIN_QUALITY = 3   -- Recent loot shows blue (Rare) and up
 
-Home.layout = { HEADER_H = HEADER_H, BODY_Y = BODY_Y, BODY_H = BODY_H, HALF_H = HALF_H, LEFT_X = LEFT_X,
+Home.layout = { HEADER_H = HEADER_H, FEED_H = FEED_H, BODY_Y = BODY_Y, BODY_H = BODY_H, HALF_H = HALF_H, LEFT_X = LEFT_X,
     LEFT_W = LEFT_W, MID_X = MID_X, MID_W = MID_W, RIGHT_X = RIGHT_X, RIGHT_W = RIGHT_W }
 
 local function G() return ns.db.guild end
@@ -227,9 +215,20 @@ function Home:OnlineList()
     return out
 end
 
+-- The message of the day: the text GUILD_MOTD last brought (the game sends it
+-- at login and on every change; asking right after a change can still give
+-- the old one), else what the game has (also when the event brought a blank:
+-- at login it can, before the message is in).
 function Home:MOTD()
-    if C_GuildInfo and C_GuildInfo.GetMOTD then return C_GuildInfo.GetMOTD() end
-    return GetGuildRosterMOTD and GetGuildRosterMOTD() or ""
+    if self.heardMOTD and self.heardMOTD ~= "" then return self.heardMOTD end
+    local motd
+    if C_GuildInfo and C_GuildInfo.GetMOTD then
+        motd = C_GuildInfo.GetMOTD()
+    elseif GetGuildRosterMOTD then
+        motd = GetGuildRosterMOTD()
+    end
+    if type(motd) ~= "string" or secret(motd) then return "" end
+    return motd
 end
 
 function Home:InfoText()
@@ -237,7 +236,7 @@ function Home:InfoText()
     return GetGuildInfoText and GetGuildInfoText() or ""
 end
 
--- Guild members per level bucket, for the level spread chart.
+-- Guild members per level bucket (5 levels each), and how many there are.
 function Home:LevelSpread()
     local counts = {}
     for i = 1, BUCKETS do counts[i] = 0 end
@@ -252,40 +251,28 @@ function Home:LevelSpread()
     return counts, members
 end
 
--- Numbers for the banner tiles: members, online, level-ups in the last day.
+-- The banner's counts: members, online.
 function Home:StatValues()
     local _, members = self:LevelSpread()
-    local online = #self:OnlineList()
-    local now = ns.Now()
-    local dings = 0
-    for _, e in ipairs(G().feed) do
-        if e.kind == "level" and now - e.t < 86400 then dings = dings + 1 end
-    end
-    return members, online, dings
+    return members, #self:OnlineList()
+end
+
+-- "66 members, 4 online"
+function Home:CountsText()
+    local members, online = self:StatValues()
+    return ("%d member%s, %d online"):format(members, members == 1 and "" or "s", online)
 end
 
 ------------------------------------------------------------------------
 -- UI building blocks
 ------------------------------------------------------------------------
--- `icon`: a small game icon before the title (left out if the client lacks it).
-local ICON = 14
-
-local function card(page, title, x, y, w, h, icon)
+local function card(page, title, x, y, w, h)
     local c = CreateFrame("Frame", nil, page)
     c:SetPoint("TOPLEFT", x, -y)
     c:SetSize(w, h)
     UI.Card(c)
     c.title = UI.SectionTitle(c, title)
-    if icon and (not ns.Art or ns.Art.Has({ kind = "file", path = icon }) ~= false) then
-        c.icon = c:CreateTexture(nil, "ARTWORK")
-        c.icon:SetSize(ICON, ICON)
-        c.icon:SetPoint("LEFT", c, "TOPLEFT", 10, -HEAD_H / 2)
-        c.icon:SetTexture(icon)
-        c.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        c.title:SetPoint("LEFT", c, "TOPLEFT", 10 + ICON + 6, -HEAD_H / 2)
-    else
-        c.title:SetPoint("LEFT", c, "TOPLEFT", 10, -HEAD_H / 2)
-    end
+    c.title:SetPoint("LEFT", c, "TOPLEFT", 10, -HEAD_H / 2)
     c.meta = UI.Text(c, 10)
     c.meta:SetPoint("RIGHT", c, "TOPRIGHT", -10, -HEAD_H / 2)
     c.meta:SetTextColor(0.5, 0.5, 0.55)
@@ -293,7 +280,7 @@ local function card(page, title, x, y, w, h, icon)
     line:SetPoint("TOPLEFT", 1, -HEAD_H)
     line:SetPoint("TOPRIGHT", -1, -HEAD_H)
     line:SetHeight(1)
-    line:SetColorTexture(1, 1, 1, 0.06)
+    UI.Line(line, 0.06)
     c.empty = UI.Text(c, 11)
     c.empty:SetPoint("TOP", 0, -HEAD_H - 18)
     c.empty:SetWidth(w - 24)
@@ -323,7 +310,7 @@ local function rowList(c, rowH, two, onEnter, onClick)
         row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         local hl = row:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints()
-        hl:SetColorTexture(1, 1, 1, 0.05)
+        UI.Hover(hl, 0.05)
         row.right = UI.Text(row, 10)
         row.right:SetPoint("TOPRIGHT", -8, two and -5 or -(rowH - 10) / 2)
         row.right:SetJustifyH("RIGHT")
@@ -359,12 +346,14 @@ local function rowList(c, rowH, two, onEnter, onClick)
     end)
 end
 
-local function fillRows(c, items, fill, emptyText)
+-- items are newest first. `bottomUp`: the newest on the bottom row, like the
+-- game's chat window (a short list sits at the bottom; the wheel goes back).
+local function fillRows(c, items, fill, emptyText, bottomUp)
     c.offset = math.max(0, math.min(c.offset, #items - c.visible))
     c.hint = c.hint or UI.ScrollHint(c, HEAD_H + 4, 4)
-    c.hint:Set(c.offset, c.visible, #items)
+    c.hint:Set(bottomUp and math.max(0, #items - c.visible) - c.offset or c.offset, c.visible, #items)
     for i, row in ipairs(c.rows) do
-        local item = items[i + c.offset]
+        local item = items[bottomUp and (c.offset + c.visible - i + 1) or (i + c.offset)]
         row.item = item
         if item then
             fill(row, item)
@@ -378,44 +367,58 @@ local function fillRows(c, items, fill, emptyText)
 end
 
 ------------------------------------------------------------------------
--- Header: logo, guild name, MOTD, stats, level spread
+-- The guild card: logo, guild name, message of the day, counts
 ------------------------------------------------------------------------
 function Home:BuildHeader(page)
     local h = CreateFrame("Frame", nil, page)
-    h:SetPoint("TOPLEFT", PAD, -HEADER_Y)
-    h:SetSize(FRAME_W - 2 * PAD, HEADER_H)
+    h:SetPoint("TOPLEFT", LEFT_X, -HEADER_Y)
+    h:SetSize(LEFT_W, HEADER_H)
     UI.Card(h)
     self.header = h
 
-    -- logo on a dark round plate
-    local plate = h:CreateTexture(nil, "ARTWORK", nil, 1)
-    plate:SetTexture(ns.MEDIA .. "disc")
-    plate:SetVertexColor(0.13, 0.14, 0.17, 1)
-    plate:SetSize(62, 62)
-    plate:SetPoint("LEFT", 12, 0)
-    local logo = h:CreateTexture(nil, "ARTWORK", nil, 2)
-    logo:SetTexture(ns.MEDIA .. "logo")
-    logo:SetSize(58, 58)
-    logo:SetPoint("CENTER", plate, "CENTER", 0, 1)
-    h.plate, h.logo = plate, logo
+    -- the banner, drawn above the card's edge (its own frame level)
+    local b = CreateFrame("Frame", nil, h)
+    b:SetSize(BANNER_W, BANNER_H)
+    b:SetPoint("TOPRIGHT", h, "TOPRIGHT", -BANNER_R, BANNER_UP)
+    b:SetFrameLevel(h:GetFrameLevel() + 5)
+    b.bg = b:CreateTexture(nil, "BACKGROUND")
+    b.bg:SetAllPoints()
+    b.border = b:CreateTexture(nil, "BORDER")
+    b.border:SetAllPoints()
+    b.emblem = b:CreateTexture(nil, "ARTWORK")
+    b.emblem:SetSize(BANNER_W - 14, BANNER_W - 14)
+    b.emblem:SetPoint("TOP", 0, -10)
+    local shown = UI.HasAtlas("communities-guildbanner-background")
+    if shown then
+        b.bg:SetAtlas("communities-guildbanner-background")
+        b.border:SetAtlas("communities-guildbanner-border")
+    end
+    b:SetShown(shown)
+    h.banner = b
 
-    h.name = UI.Text(h, 18)
-    h.name:SetPoint("TOPLEFT", TEXT_X, -13)
-    h.name:SetWidth(200)
+    -- the guild's name, big (gold in the classic look), its message, its counts
+    h.name = UI.Text(h, 22)
+    h.name:SetPoint("TOPLEFT", TEXT_X, -11)
+    h.name:SetWidth(TEXT_W)
     h.name:SetJustifyH("LEFT")
     h.name:SetWordWrap(false)
-    -- the message gets two lines instead of being cut off
-    h.motd = UI.Text(h, 11)
-    h.motd:SetPoint("TOPLEFT", TEXT_X, -38)
-    h.motd:SetSize(200, 28)
+    if UI.classic then h.name:SetTextColor(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3]) end
+    -- the message gets two lines instead of being cut off; the counts follow it
+    h.motd = UI.Text(h, 12)
+    h.motd:SetPoint("TOPLEFT", TEXT_X, -39)
+    h.motd:SetWidth(TEXT_W)
     h.motd:SetJustifyH("LEFT")
     h.motd:SetJustifyV("TOP")
     if h.motd.SetMaxLines then h.motd:SetMaxLines(2) end
     h.motd:SetTextColor(0.55, 0.9, 0.55)
+    h.counts = UI.Text(h, 11)
+    h.counts:SetPoint("TOPLEFT", h.motd, "BOTTOMLEFT", 0, -5)
+    h.counts:SetJustifyH("LEFT")
+    h.counts:SetTextColor(0.72, 0.72, 0.76)
     -- hovering the message shows it in full, with the guild info text
     local hover = CreateFrame("Frame", nil, h)
     hover:SetPoint("TOPLEFT", h.motd, "TOPLEFT", 0, 2)
-    hover:SetSize(200, 30)
+    hover:SetSize(TEXT_W, 30)
     hover:EnableMouse(true)
     hover:SetScript("OnEnter", function(f)
         if not GameTooltip then return end
@@ -431,121 +434,32 @@ function Home:BuildHeader(page)
         GameTooltip:Show()
     end)
     hover:SetScript("OnLeave", hideTip)
-
-    -- stat tiles: small label over a big number, thin dividers between
-    h.tiles = {}
-    for i, label in ipairs({ "Members", "Online", "Dings today", "Launch in" }) do
-        local tile = CreateFrame("Frame", nil, h)
-        tile:SetSize(TILE_W, HEADER_H)
-        local div = tile:CreateTexture(nil, "ARTWORK")
-        div:SetPoint("TOPLEFT", 0, -16)
-        div:SetPoint("BOTTOMLEFT", 0, 16)
-        div:SetWidth(1)
-        div:SetColorTexture(1, 1, 1, 0.07)
-        tile.label = UI.SectionTitle(tile, label)
-        tile.label:SetPoint("TOP", 0, -21)
-        tile.value = UI.Text(tile, 22)
-        tile.value:SetPoint("TOP", tile.label, "BOTTOM", 0, -5)
-        h.tiles[i] = tile
-    end
-    local launch = h.tiles[4]
-    launch.value:SetTextColor(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3])
-    launch:EnableMouse(true)
-    launch:SetScript("OnEnter", function(f)
-        if not GameTooltip then return end
-        GameTooltip:SetOwner(f, "ANCHOR_BOTTOM")
-        GameTooltip:AddLine("World of Warcraft: Forever", 1, 1, 1)
-        GameTooltip:AddLine("Launches November 4, 2026", 0.8, 0.8, 0.85)
-        GameTooltip:Show()
-    end)
-    launch:SetScript("OnLeave", hideTip)
     h.hover = hover
 
-    -- level spread chart
-    local chart = CreateFrame("Frame", nil, h)
-    chart:SetSize(CHART_W, CHART_H)
-    chart:SetPoint("RIGHT", -10, 0)
-    self.chart = chart
-    chart.label = UI.SectionTitle(chart, "Level spread")
-    chart.label:SetPoint("TOPLEFT", 0, 0)
-    local barW = math.floor((CHART_W - (BUCKETS - 1) * 3) / BUCKETS)
-    local chartX = (CHART_W - (BUCKETS * barW + (BUCKETS - 1) * 3)) / 2
-    chart.bars = {}
-    for i = 1, BUCKETS do
-        local b = CreateFrame("Frame", nil, chart)
-        b:SetSize(barW, 38)
-        b:SetPoint("BOTTOMLEFT", chartX + (i - 1) * (barW + 3), 12)
-        b.track = b:CreateTexture(nil, "BACKGROUND")
-        b.track:SetAllPoints()
-        b.track:SetColorTexture(1, 1, 1, 0.02)
-        b.fill = b:CreateTexture(nil, "ARTWORK")
-        b.fill:SetPoint("BOTTOMLEFT")
-        b.fill:SetPoint("BOTTOMRIGHT")
-        b.fill:SetColorTexture(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3], 0.85)
-        b:EnableMouse(true)
-        b:SetScript("OnEnter", function(f)
-            if not GameTooltip then return end
-            GameTooltip:SetOwner(f, "ANCHOR_BOTTOM")
-            GameTooltip:AddLine(("Levels %d-%d"):format((i - 1) * 5 + 1, i * 5), 1, 1, 1)
-            GameTooltip:AddLine(("%d member%s"):format(f.count or 0, f.count == 1 and "" or "s"), 0.8, 0.8, 0.85)
-            GameTooltip:Show()
-        end)
-        b:SetScript("OnLeave", hideTip)
-        chart.bars[i] = b
-    end
-    local base = chart:CreateTexture(nil, "BORDER")
-    base:SetHeight(1)
-    base:SetPoint("BOTTOMLEFT", chartX, 12)
-    base:SetPoint("BOTTOMRIGHT", -chartX, 12)
-    base:SetColorTexture(1, 1, 1, 0.12)
-    local low = UI.Text(chart, 9)
-    low:SetPoint("BOTTOMLEFT", chartX, 0)
-    low:SetTextColor(0.5, 0.5, 0.55)
-    low:SetText("1")
-    local high = UI.Text(chart, 9)
-    high:SetPoint("BOTTOMRIGHT", -chartX, 0)
-    high:SetTextColor(0.5, 0.5, 0.55)
-    high:SetText("60")
 end
 
 function Home:RefreshHeader()
     local h = self.header
     local inGuild = IsInGuild()
-    h.name:SetText(inGuild and (GetGuildInfo("player") or "Your guild") or "Pog Guild Tools")
+    -- the guild's name in angle brackets, as the game writes it under names
+    h.name:SetText(inGuild and ("<" .. (GetGuildInfo("player") or "Your guild") .. ">") or "Pog Guild Tools")
     local motd = inGuild and self:MOTD() or ""
     h.motd:SetText(motd ~= "" and motd or (inGuild and "No message of the day." or "You are not in a guild."))
     -- a real message is green; the placeholder stays quiet
     if motd ~= "" then h.motd:SetTextColor(0.55, 0.9, 0.55) else h.motd:SetTextColor(0.5, 0.5, 0.55) end
-    local members, online, dings = self:StatValues()
-    local values = { inGuild and members, inGuild and online, inGuild and dings, self:Countdown() }
-    -- lay out the tiles that have something to show, right-aligned
-    local shown = {}
-    for i, tile in ipairs(h.tiles) do
-        local v = values[i]
-        tile:SetShown(v ~= nil and v ~= false)
-        if tile:IsShown() then
-            tile.value:SetText(tostring(v))
-            shown[#shown + 1] = tile
-        end
+    h.counts:SetText(inGuild and self:CountsText() or "")
+    self:RefreshBanner()
+end
+
+-- The banner in the guild's colours and emblem (the game's own helper; it
+-- shows the default horned helm when the guild has no tabard yet).
+function Home:RefreshBanner()
+    local b = self.header and self.header.banner
+    if not b or not b:IsShown() then return end
+    if SetLargeGuildTabardTextures and IsInGuild() then
+        pcall(SetLargeGuildTabardTextures, "player", b.emblem, b.bg, b.border)
     end
-    local x = TILES_RIGHT - #shown * TILE_W
-    for i, tile in ipairs(shown) do
-        tile:ClearAllPoints()
-        tile:SetPoint("TOPLEFT", x + (i - 1) * TILE_W, 0)
-    end
-    local textW = x - 16 - TEXT_X
-    h.name:SetWidth(textW)
-    h.motd:SetWidth(textW)
-    h.hover:SetWidth(textW)
-    h.textW = textW
-    local counts = self:LevelSpread()
-    local most = 1
-    for _, n in ipairs(counts) do most = math.max(most, n) end
-    for i, b in ipairs(self.chart.bars) do
-        b.count = counts[i]
-        b.fill:SetHeight(math.max(counts[i] > 0 and 2 or 0, 38 * counts[i] / most))
-        b.fill:SetShown(counts[i] > 0)
-    end
+    b.emblem:SetShown(IsInGuild() and true or false)
 end
 
 ------------------------------------------------------------------------
@@ -555,7 +469,7 @@ local POST_H = 58
 local COMMENT_H = 46
 
 function Home:BuildBoard(page)
-    local c = card(page, "Message board", MID_X, BODY_Y, MID_W, BODY_H, "Interface\\Icons\\INV_Scroll_03")
+    local c = card(page, "Message board", MID_X, BODY_Y, MID_W, HALF_H)
     self.boardCard = c
     self.boardArt = ns.Art and ns.Art.CardArt(c) -- our spec's remastered talent art, faint
     c.newPost = headButton(c, "New post", 70, function()
@@ -569,7 +483,7 @@ function Home:BuildBoard(page)
     -- list of posts
     c.posts = {}
     c.offset = 0
-    c.visible = math.floor((BODY_H - HEAD_H - 8) / POST_H)
+    c.visible = math.floor((HALF_H - HEAD_H - 8) / POST_H)
     for i = 1, c.visible do
         local b = CreateFrame("Button", nil, c)
         b:SetHeight(POST_H)
@@ -577,12 +491,12 @@ function Home:BuildBoard(page)
         b:SetPoint("TOPRIGHT", -2, -(HEAD_H + 4 + (i - 1) * POST_H))
         local hl = b:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints()
-        hl:SetColorTexture(1, 1, 1, 0.05)
+        UI.Hover(hl, 0.05)
         local sep = b:CreateTexture(nil, "ARTWORK")
         sep:SetPoint("BOTTOMLEFT", 8, 0)
         sep:SetPoint("BOTTOMRIGHT", -8, 0)
         sep:SetHeight(1)
-        sep:SetColorTexture(1, 1, 1, 0.06)
+        UI.Line(sep, 0.06)
         b.pin = UI.Text(b, 9)
         b.pin:SetPoint("TOPRIGHT", -8, -8)
         b.pin:SetTextColor(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3])
@@ -655,12 +569,12 @@ function Home:BuildBoard(page)
     t.body:SetJustifyH("LEFT")
     t.body:SetJustifyV("TOP")
     if t.body.SetMaxLines then t.body:SetMaxLines(7) end
-    t.body:SetTextColor(0.9, 0.9, 0.93)
+    t.body:SetTextColor(UI.TEXT[1], UI.TEXT[2], UI.TEXT[3])
     local div = t:CreateTexture(nil, "ARTWORK")
     div:SetPoint("TOPLEFT", 8, -166)
     div:SetPoint("TOPRIGHT", -8, -166)
     div:SetHeight(1)
-    div:SetColorTexture(1, 1, 1, 0.08)
+    UI.Line(div, 0.08)
     t.count = UI.Text(t, 10)
     t.count:SetPoint("TOPLEFT", 10, -172)
     t.count:SetTextColor(0.6, 0.6, 0.65)
@@ -727,6 +641,16 @@ function Home:RefreshBoard()
     local c = self.boardCard
     local canPost = ns.Social:CanPost()
     local post = self:OpenPost()
+    -- a post opens over guild chat, taking the whole column; the art fits again
+    local h = post and BODY_H or HALF_H
+    if c:GetHeight() ~= h then
+        c:SetHeight(h)
+        if self.boardArt then
+            self.boardArt.key = nil
+            self:RefreshArt()
+        end
+    end
+    self.chatCard:SetShown(post == nil)
     c.title:SetShown(post == nil)
     c.back:SetShown(post ~= nil)
     c.newPost:SetShown(post == nil and canPost)
@@ -742,7 +666,7 @@ function Home:RefreshBoard()
         t.meta:SetText(("%s, %s ago"):format(colorName(post.author), Home.Ago(post.t)))
         t.body:SetText(post.body or "")
         local comments = ns.Social:Comments(post.id)
-        t.count:SetText(#comments == 1 and "1 comment" or (#comments .. " comments"))
+        t.count:SetText(#comments > 0 and "Comments" or "No comments yet")
         c.threadOffset = math.max(0, math.min(c.threadOffset or 0, #comments - t.visible))
         if c.postHint then c.postHint:Set(0, 1, 0) end
         c.threadHint = c.threadHint or UI.ScrollHint(t, 190, 40)
@@ -772,10 +696,8 @@ function Home:RefreshBoard()
         if p then
             b.title:SetText(p.title)
             b.title:SetTextColor(p.pinned and UI.ACCENT[1] or 1, p.pinned and UI.ACCENT[2] or 1, p.pinned and UI.ACCENT[3] or 1)
-            b.pin:SetText(p.pinned and "PINNED" or "")
-            local n = #ns.Social:Comments(p.id)
-            b.meta:SetText(("%s, %s ago, %s"):format(colorName(p.author), Home.Ago(p.t),
-                n == 1 and "1 comment" or (n .. " comments")))
+            b.pin:SetText(p.pinned and "Pinned" or "")
+            b.meta:SetText(("%s, %s ago"):format(colorName(p.author), Home.Ago(p.t)))
             b.snippet:SetText(p.body or "")
             b:Show()
         else
@@ -811,8 +733,15 @@ function Home.Invite(name)
 end
 
 function Home:BuildGroups(page)
-    local c = card(page, "Group finder", RIGHT_X, BODY_Y, RIGHT_W, HALF_H, "Interface\\Icons\\INV_Misc_Spyglass_02")
+    local c = card(page, "Group finder", RIGHT_X, BODY_Y, RIGHT_W, HALF_H)
     self.groupCard = c
+    -- the card opens the LFG tab (a listing still opens its own menu)
+    c:EnableMouse(true)
+    c:SetScript("OnMouseUp", function(_, button)
+        if button == "LeftButton" and ns.Editor.tabButtons.lfg then ns.Editor:ShowTab("lfg") end
+    end)
+    c:SetScript("OnEnter", function(f) f.bg:SetColorTexture(UI.CARD[1] + 0.03, UI.CARD[2] + 0.03, UI.CARD[3] + 0.03, UI.CARD[4] or 1) end)
+    c:SetScript("OnLeave", function(f) f.bg:SetColorTexture(UI.CARD[1], UI.CARD[2], UI.CARD[3], UI.CARD[4] or 1) end)
     c.post = headButton(c, "Post group", 74, function() self:PostGroupDialog() end)
     rowList(c, 40, true, function(row) self:GroupTooltip(row) end, function(row) self:GroupMenu(row) end)
 end
@@ -914,16 +843,7 @@ function Home:Build(page)
     self.page = page
     self:BuildHeader(page)
 
-    -- Activity and Chat share the top-left slot; the header toggles them.
-    self.feedCard = card(page, "", LEFT_X, BODY_Y, LEFT_W, HALF_H)
-    self.chatCard = card(page, "", LEFT_X, BODY_Y, LEFT_W, HALF_H)
-    for _, c in ipairs({ self.feedCard, self.chatCard }) do
-        c.title:Hide()
-        c.modeFeed = UI.Tab(c, "ACTIVITY", 72, HEAD_H, function() self.leftMode = "feed"; self:Refresh() end, 10)
-        c.modeFeed:SetPoint("TOPLEFT", 2, 0)
-        c.modeChat = UI.Tab(c, "CHAT", 48, HEAD_H, function() self.leftMode = "chat"; self:Refresh() end, 10)
-        c.modeChat:SetPoint("LEFT", c.modeFeed, "RIGHT", 0, 0)
-    end
+    self.feedCard = card(page, "Activity", LEFT_X, FEED_Y, LEFT_W, FEED_H)
     rowList(self.feedCard, LINE_H, false, function(row)
         local e = row.item
         if e and e.kind == "ach" and GameTooltip then
@@ -932,16 +852,8 @@ function Home:Build(page)
             GameTooltip:Show()
         end
     end)
-    rowList(self.chatCard, LINE_H, false, function(row)
-        if not row.item or not GameTooltip then return end
-        GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
-        GameTooltip:AddLine(display(row.item.name), classColor(row.item.name))
-        GameTooltip:AddLine(row.item.text, 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
 
-    self.onlineCard = card(page, "Online now", LEFT_X, BODY_Y + HALF_H + GAP, LEFT_W, HALF_H,
-        "Interface\\Icons\\Spell_Holy_PrayerOfHealing02")
+    self.onlineCard = card(page, "Online now", LEFT_X, BODY_Y + HALF_H + GAP, LEFT_W, HALF_H)
     rowList(self.onlineCard, LINE_H, false, function(row)
         if row.item then ns.Roster:ShowTooltip(row.item, row) end
     end, function(row)
@@ -961,14 +873,25 @@ function Home:Build(page)
     end)
 
     self:BuildBoard(page)
-    self:BuildGroups(page)
-
-    self.lootCard = card(page, "Recent loot", RIGHT_X, BODY_Y + HALF_H + GAP, RIGHT_W, HALF_H,
-        "Interface\\Icons\\INV_Misc_Bag_10")
-    rowList(self.lootCard, LINE_H, false, function(row)
+    -- guild chat under the message board, newest at the bottom; the wheel goes back
+    self.chatCard = card(page, "Guild chat", MID_X, BODY_Y + HALF_H + GAP, MID_W, HALF_H)
+    rowList(self.chatCard, LINE_H, false, function(row)
         if not row.item or not GameTooltip then return end
         GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
-        pcall(GameTooltip.SetHyperlink, GameTooltip, row.item.link)
+        GameTooltip:AddLine(display(row.item.name), classColor(row.item.name))
+        GameTooltip:AddLine(row.item.text, 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    self.chatCard:SetScript("OnMouseWheel", function(c, d)
+        c.offset = c.offset + d * 2
+        Home:Refresh()
+    end)
+    self:BuildGroups(page)
+
+    self.lootCard = card(page, "Recent loot", RIGHT_X, BODY_Y + HALF_H + GAP, RIGHT_W, HALF_H)
+    rowList(self.lootCard, LINE_H, false, function(row)
+        if not row.item or not GameTooltip then return end
+        UI.ItemTip(row, row.item.link)
         GameTooltip:Show()
     end)
 end
@@ -987,13 +910,6 @@ function Home:Refresh()
     local inGuild = IsInGuild()
     self:RefreshHeader()
 
-    local chatMode = self.leftMode == "chat"
-    self.feedCard:SetShown(not chatMode)
-    self.chatCard:SetShown(chatMode)
-    for _, c in ipairs({ self.feedCard, self.chatCard }) do
-        c.modeFeed:SetSelected(not chatMode)
-        c.modeChat:SetSelected(chatMode)
-    end
     fillRows(self.feedCard, G().feed, function(row, e)
         row.text:SetText(self:FeedText(e))
         row.right:SetText(Home.Ago(e.t))
@@ -1001,10 +917,9 @@ function Home:Refresh()
     fillRows(self.chatCard, G().chat, function(row, m)
         row.text:SetText(colorName(m.name) .. ": " .. m.text)
         row.right:SetText(Home.Ago(m.t))
-    end, "No guild chat yet.")
+    end, "No guild chat yet.", true)
 
     local online = self:OnlineList()
-    self.onlineCard.meta:SetText(inGuild and tostring(#online) or "")
     fillRows(self.onlineCard, online, function(row, name)
         local p = G().players[name]
         row.text:SetText(colorName(name))
@@ -1014,7 +929,7 @@ function Home:Refresh()
     self:RefreshBoard()
     self:RefreshGroups()
 
-    self.lootCard.meta:SetText("blue and up")
+    self.lootCard.meta:SetText("")
     fillRows(self.lootCard, self:RecentLoot(), function(row, e)
         row.text:SetText(("%s  %s"):format(colorName(e.player), e.link))
         row.right:SetText(Home.Ago(e.t))
@@ -1026,7 +941,12 @@ end
 ------------------------------------------------------------------------
 ns.On("CHAT_MSG_GUILD", function(text, sender) Home:OnChat(text, sender) end)
 ns.On("CHAT_MSG_GUILD_ACHIEVEMENT", function(text, sender) Home:OnAchievement(text, sender) end)
-ns.On("GUILD_MOTD", function() Home:Changed() end)
+-- the tabard can change (or load late): repaint the banner
+ns.On("PLAYER_GUILD_UPDATE", function() Home:RefreshBanner() end)
+ns.On("GUILD_MOTD", function(motd)
+    if type(motd) == "string" and not secret(motd) then Home.heardMOTD = motd end
+    Home:Changed()
+end)
 ns.On("CHAT_MSG_LOOT", function(msg) Home:OnLoot(ns.Loot:ParseChat(msg)) end)
 ns.On("ENCOUNTER_LOOT_RECEIVED", function(_, _, itemLink, _, playerName) Home:OnLoot(playerName, itemLink) end)
 

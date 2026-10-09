@@ -7,9 +7,9 @@
 -- one that shared most recently) as a model; Inspect opens a bigger window
 -- with the same character sheet as the wishlist.
 --
--- The model: someone near you (target, group) is drawn live; anyone else is
--- built from their race and sex wearing their shared items, where the client
--- can do that (SetCustomRace); otherwise only the sheet shows.
+-- The model: someone near you (target, group) is drawn live. Forever can't
+-- draw anyone else with skin (no SetCustomRace; models by display ID come out
+-- white), so then the profile shows their portrait and their gear icons.
 local _, ns = ...
 local UI = ns.UI
 local Sync = ns.Sync
@@ -170,10 +170,6 @@ function Gear:Dress(m, name)
     m.shows = false
     if unit and pcall(m.SetUnit, m, unit) then
         m.shows = true
-    elseif rec and m.SetCustomRace and pcall(m.SetCustomRace, m, rec.race, rec.sex == 3 and 1 or 0) then
-        pcall(m.Undress, m)
-        for _, id in pairs(Gear.Unpack(rec.items)) do pcall(m.TryOn, m, "item:" .. id) end
-        m.shows = true
     else
         pcall(m.ClearModel, m)
     end
@@ -217,6 +213,10 @@ function Gear:BuildWindow()
     f:SetToplevel(true)
     f:EnableMouse(true)
     UI.Panel(f)
+    -- the game's metal window, like its own Inspect: their name in the strip,
+    -- their class in the portrait ring (else the dialog border)
+    f.metal = UI.PortraitFrame(f, "", ns.MEDIA .. "logo", function() f:Hide() end)
+    if not f.metal then UI.Window(f) end
     f:Hide()
     f:SetScript("OnHide", function() UI.HideMenu() end)
     tinsert(UISpecialFrames, "PogRaidInspect")
@@ -229,22 +229,30 @@ function Gear:BuildWindow()
     local band = bar:CreateTexture(nil, "BACKGROUND")
     band:SetPoint("TOPLEFT", 1, -1)
     band:SetPoint("BOTTOMRIGHT", -1, 0)
-    band:SetColorTexture(0.095, 0.1, 0.115, 1)
     local divider = bar:CreateTexture(nil, "BORDER")
     divider:SetPoint("BOTTOMLEFT", 1, 0)
     divider:SetPoint("BOTTOMRIGHT", -1, 0)
     divider:SetHeight(1)
-    divider:SetColorTexture(UI.BORDER[1], UI.BORDER[2], UI.BORDER[3], 1)
-    f.title = UI.Text(bar, 14)
-    f.title:SetPoint("LEFT", PAD, 0)
     f.info = UI.Text(bar, 11)
-    f.info:SetPoint("LEFT", f.title, "RIGHT", 10, 0)
     f.info:SetTextColor(0.6, 0.6, 0.65)
-    f.close = UI.Tab(bar, "X", 28, BAND_H, function() f:Hide() end)
-    f.close:SetPoint("RIGHT", -PAD + 7, 0)
     f.when = UI.Text(bar, 11)
-    f.when:SetPoint("RIGHT", f.close, "LEFT", -10, 0)
     f.when:SetTextColor(0.55, 0.55, 0.6)
+    if f.metal then
+        f.title = f.metal.title
+        f.close = f.metal.close
+        UI.Band(band, divider)
+        f.info:SetPoint("LEFT", UI.PORTRAIT_CLEAR, 0)
+        f.when:SetPoint("RIGHT", -PAD, 0)
+        UI.MakeMovable(f, f.metal.strip, function() UI.SavePosition(f, "inspect") end)
+    else
+        f.title = UI.Text(bar, 14)
+        f.title:SetPoint("LEFT", PAD, 0)
+        UI.Band(band, divider, f.title)
+        f.info:SetPoint("LEFT", f.title, "RIGHT", 10, 0)
+        f.close = UI.CloseButton(bar, 28, BAND_H, function() f:Hide() end)
+        f.close:SetPoint("RIGHT", -PAD + 7, 0)
+        f.when:SetPoint("RIGHT", f.close, "LEFT", -10, 0)
+    end
 
     f.sheet = D.Sheet(f, function(b, button) self:SlotClick(b, button) end, true)
     f.sheet:SetPoint("TOPLEFT", PAD, -(BAND_H + PAD))
@@ -256,6 +264,19 @@ function Gear:BuildWindow()
     UI.RestorePosition(f, "inspect", 0)
     self.window = f
     return f
+end
+
+-- A window's portrait: the class's round icon (the game's own circles), else our logo.
+Gear.CLASS_CIRCLES = "Interface\\TargetingFrame\\UI-Classes-Circles"
+function Gear.SetClassPortrait(tex, class)
+    local c = class and CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[class]
+    if c then
+        tex:SetTexture(Gear.CLASS_CIRCLES)
+        tex:SetTexCoord(c[1], c[2], c[3], c[4])
+    else
+        tex:SetTexture(ns.MEDIA .. "logo")
+        tex:SetTexCoord(0, 1, 0, 1)
+    end
 end
 
 function Gear:Inspect(name)
@@ -274,7 +295,8 @@ function Gear:RefreshWindow()
     local p = ns.db.guild.players[name]
     local c = p and p.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[p.class]
     f.title:SetText(Ambiguate(name, "short"))
-    if c then f.title:SetTextColor(c.r, c.g, c.b) else f.title:SetTextColor(0.92, 0.92, 0.94) end
+    if f.metal then Gear.SetClassPortrait(f.metal.portrait.icon, p and p.class) end
+    if c then f.title:SetTextColor(c.r, c.g, c.b) else f.title:SetTextColor(UI.TEXT[1], UI.TEXT[2], UI.TEXT[3]) end
     f.info:SetText(self:Describe(name))
     f.when:SetText(self:When(name))
     if f.backdrop then f.backdrop:SetClass(p and p.class) end
@@ -348,6 +370,10 @@ ns.On("PLAYER_EQUIPMENT_CHANGED", function()
     if f and f:IsShown() and f.name and Gear:UnitOf(f.name) == "player" then
         if f.sheet.model then f.sheet.model.dressed = nil end
         Gear:RefreshWindow()
+    end
+    local P = ns.Profiles
+    if P and P.charCard and P.charCard:IsVisible() and P.charFor and Gear:UnitOf(P.charFor) == "player" then
+        P:RefreshCharacter()
     end
 end)
 ns.On("ITEM_DATA_LOAD_RESULT", function() Gear:RefreshWindow() end)

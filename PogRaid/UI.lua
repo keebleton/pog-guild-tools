@@ -14,6 +14,312 @@ UI.CARD = { 0.09, 0.095, 0.11, 1 }     -- cards: a lighter fill instead of an ou
 UI.TITLE = { 0.55, 0.56, 0.62 }        -- small capital section titles
 UI.BUTTON_BORDER = { 0.30, 0.30, 0.34, 1 }
 UI.ACCENT = { 0.40, 0.80, 1.00 }
+UI.SEL_FILL = { 0.12, 0.26, 0.34, 1 } -- a selected button
+UI.BAND = { 0.095, 0.1, 0.115, 1 }     -- the title band
+UI.TEXT = { 0.92, 0.92, 0.94 }         -- body text
+UI.BACKING = { 0.135, 0.13, 0.122 }    -- behind a classic window (UI.SetTheme)
+UI.SURFACE = "Interface\\FrameGeneral\\UI-Background-Marble" -- the theme's texture over its colours
+UI.SURFACE_TINT = 1                    -- how strongly it's laid on
+
+------------------------------------------------------------------------
+-- Classic look (Settings, on by default): the game's own gold, window
+-- borders, red buttons, check boxes, list highlights and sounds, all from the
+-- client's files (nothing shipped). Set once at load, before anything is
+-- built (UI.SetClassic); switching it reloads the UI.
+------------------------------------------------------------------------
+UI.classic = false
+local CLASSIC = {
+    BG = { 0.05, 0.045, 0.04, 0.97 },
+    BORDER = { 0.34, 0.29, 0.20, 1 },
+    BUTTON_BORDER = { 0.42, 0.36, 0.25, 1 },
+    CARD = { 0.085, 0.082, 0.078, 1 },
+    TITLE = { 0.86, 0.70, 0.30 },
+    ACCENT = { 1, 0.82, 0 },
+    SEL_FILL = { 0.24, 0.17, 0.04, 1 },
+    BAND = { 0.02, 0.018, 0.015, 0.55 },
+    TAB_TEXT = { 0.86, 0.70, 0.22 },
+    TAB_HOVER = { 1, 0.86, 0.30 },
+}
+UI.FILES = {
+    marble = "Interface\\FrameGeneral\\UI-Background-Marble",
+    stone = "Interface\\FrameGeneral\\UI-Background-Rock",
+    dark = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+    dialog = "Interface\\DialogFrame\\UI-DialogBox-Border",
+    tooltip = "Interface\\Tooltips\\UI-Tooltip-Border",
+    red = "Interface\\Buttons\\UI-Panel-Button-",
+    check = "Interface\\Buttons\\UI-CheckBox-",
+    close = "Interface\\Buttons\\UI-Panel-MinimizeButton-",
+    questBar = "Interface\\QuestFrame\\UI-QuestTitleHighlight",
+    parchment = "Interface\\ACHIEVEMENTFRAME\\UI-Achievement-Parchment-Horizontal",
+    letter = "Interface\\Stationery\\StationeryTest1",
+}
+
+-- Tokens are changed in place, so tables already handed out follow.
+function UI.SetClassic(on)
+    UI.classic = on and true or false
+    if not UI.classic then return end
+    for k, v in pairs(CLASSIC) do
+        local t = UI[k]
+        for i = 1, 4 do t[i] = v[i] end
+    end
+end
+
+------------------------------------------------------------------------
+-- Themes (Settings > Theme; Jake, Oct 2026): the classic look in a few
+-- moods, plus the plain modern look. Each sets what's behind the window
+-- (backing), the cards a shade darker, their soft edge, the title band and
+-- the body text (never pure white: Jake liked the pale yellow of the game's
+-- "Apprentice" text). Set once at load (UI.SetTheme); switching reloads.
+------------------------------------------------------------------------
+-- Each classic theme has its own surface: a smooth, mottled tile from the
+-- client (Jake liked marble's feel; planks, bricks and quilting didn't land),
+-- laid additively over the theme's colours at `tint` strength (brighter tiles
+-- turned down), behind the window, on the cards and on the band. All are
+-- long-standing client files.
+local FG = "Interface\\FrameGeneral\\"
+UI.THEMES = {
+    { key = "stone", name = "Stone", surface = FG .. "UI-Background-Marble", tint = 1, -- grey marble (Jake's favourite)
+        backing = { 0.135, 0.13, 0.122 }, card = { 0.085, 0.082, 0.078, 1 },
+        edge = { 0.27, 0.26, 0.24, 0.7 }, band = { 0.06, 0.058, 0.055, 1 }, text = { 0.88, 0.82, 0.64 } },
+    { key = "ember", name = "Ember", surface = FG .. "UI-Background-Marble", tint = 1, -- marble over red-brown
+        backing = { 0.16, 0.07, 0.05 }, card = { 0.11, 0.045, 0.03, 1 },
+        edge = { 0.42, 0.18, 0.10, 0.8 }, band = { 0.08, 0.03, 0.02, 1 }, text = { 0.94, 0.80, 0.62 } },
+    { key = "sandstone", name = "Sandstone", surface = FG .. "UI-Background-Rock", tint = 0.5, -- soft warm stone
+        backing = { 0.10, 0.086, 0.068 }, card = { 0.05, 0.04, 0.03, 1 },
+        edge = { 0.38, 0.33, 0.25, 0.75 }, band = { 0.02, 0.018, 0.01, 1 }, text = { 0.90, 0.85, 0.70 } },
+    { key = "leather", name = "Leather", surface = "Interface\\Collections\\CollectionsBackgroundTile", tint = 0.55,
+        backing = { 0.10, 0.055, 0.015 }, card = { 0.05, 0.015, 0, 1 }, -- the Collections window's tan leather
+        edge = { 0.40, 0.27, 0.11, 0.8 }, band = { 0.01, 0, 0, 1 }, text = { 0.93, 0.84, 0.66 } },
+    { key = "night", name = "Night", surface = FG .. "UIFrameOribosBackground", tint = 1, -- smooth mottled deep blue
+        backing = { 0.075, 0.08, 0.105 }, card = { 0.035, 0.04, 0.055, 1 },
+        edge = { 0.22, 0.25, 0.32, 0.7 }, band = { 0, 0, 0.01, 1 }, text = { 0.82, 0.84, 0.90 } },
+    { key = "plain", name = "Plain (modern)", plain = true },
+}
+UI.theme = "plain"
+UI.DEFAULT_THEME = "night" -- Jake's pick, Oct 2026
+
+function UI.Theme(key)
+    for _, t in ipairs(UI.THEMES) do
+        if t.key == key then return t end
+    end
+end
+
+function UI.SetTheme(key)
+    local t = UI.Theme(key) or UI.Theme(UI.DEFAULT_THEME)
+    UI.theme = t.key
+    UI.SetClassic(not t.plain)
+    if t.plain then return end
+    local function put(name, v)
+        local dst = UI[name]
+        for i = 1, 4 do dst[i] = v[i] end
+    end
+    put("BACKING", t.backing)
+    put("CARD", t.card)
+    put("BAND", t.band)
+    put("TEXT", t.text)
+    UI.CARD_EDGE = t.edge
+    UI.SURFACE, UI.SURFACE_TINT = t.surface, t.tint or 1
+end
+
+-- The accent as a chat colour code, for marking words inside a line.
+function UI.AccentCode()
+    return ("|cff%02x%02x%02x"):format(UI.ACCENT[1] * 255, UI.ACCENT[2] * 255, UI.ACCENT[3] * 255)
+end
+
+-- Does the client have this file? (Unknown when it can't say: assume yes.)
+function UI.HasFile(path)
+    if not GetFileIDFromPath then return true end
+    for _, p in ipairs({ path, path .. ".blp" }) do
+        local ok, id = pcall(GetFileIDFromPath, p)
+        if ok and id then return true end
+    end
+    return false
+end
+
+-- The game's interface sounds, with the classic look only.
+function UI.Sound(name)
+    if not UI.classic or not (PlaySound and SOUNDKIT and SOUNDKIT[name]) then return end
+    pcall(PlaySound, SOUNDKIT[name])
+end
+
+-- A hover highlight (a soft gold glow), a divider line and a selected row
+-- (the quest log's bar): white tints in the plain look.
+function UI.Hover(tex, a)
+    if UI.classic then
+        tex:SetColorTexture(1, 0.82, 0, (a or 0.05) * 1.4)
+        if tex.SetBlendMode then tex:SetBlendMode("ADD") end
+    else
+        tex:SetColorTexture(1, 1, 1, a or 0.05)
+    end
+end
+
+function UI.Line(tex, a)
+    if UI.classic then
+        tex:SetColorTexture(0.86, 0.70, 0.30, (a or 0.06) * 2.2)
+    else
+        tex:SetColorTexture(1, 1, 1, a or 0.06)
+    end
+end
+
+function UI.SelBar(tex, a)
+    if UI.classic and UI.HasFile(UI.FILES.questBar) then
+        tex:SetTexture(UI.FILES.questBar)
+        if tex.SetBlendMode then tex:SetBlendMode("ADD") end
+        tex:SetAlpha(0.85)
+    else
+        tex:SetColorTexture(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3], a or 0.12)
+    end
+end
+
+-- A window's classic dress: stone behind everything and the game's border
+-- just outside its edge (so nothing inside moves). kind: "dialog" (windows
+-- and pop-ups) or "tooltip" (menus and small boxes).
+local EDGES = {
+    dialog = { size = 32, out = 10 },
+    tooltip = { size = 16, out = 3 },
+}
+-- Behind a window: a mid grey with the game's marble laid over it (Jake: "a
+-- slightly textured grey"). It's what shows between the cards, so it sits
+-- just a shade lighter than them and the breaks stay gentle (like the
+-- Dungeon Journal's panels on their content panel), not dark gutters.
+-- Without marble: dimmed stone, else the dark dialog background.
+-- The theme's surface tile, else marble, else nil (no texture).
+function UI.Surface()
+    if UI.SURFACE and UI.HasFile(UI.SURFACE) then return UI.SURFACE end
+    if UI.HasFile(UI.FILES.marble) then return UI.FILES.marble end
+end
+
+local function stone(f)
+    f.stone = f:CreateTexture(nil, "BACKGROUND", nil, 1)
+    f.stone:SetAllPoints()
+    local surface = UI.Surface()
+    if surface then
+        if f.bg then f.bg:SetColorTexture(UI.BACKING[1], UI.BACKING[2], UI.BACKING[3], 1) end
+        f.stone:SetTexture(surface, "REPEAT", "REPEAT")
+        if f.stone.SetBlendMode then f.stone:SetBlendMode("ADD") end
+        f.stone:SetVertexColor(UI.SURFACE_TINT, UI.SURFACE_TINT, UI.SURFACE_TINT)
+    else
+        f.stone:SetTexture(UI.HasFile(UI.FILES.stone) and UI.FILES.stone or UI.FILES.dark, "REPEAT", "REPEAT")
+        f.stone:SetVertexColor(0.55, 0.55, 0.55)
+    end
+    if f.stone.SetHorizTile then f.stone:SetHorizTile(true) end
+    if f.stone.SetVertTile then f.stone:SetVertTile(true) end
+end
+
+function UI.Window(f, kind)
+    if not UI.classic then return end
+    kind = kind or "dialog"
+    for _, e in ipairs(f.edges or {}) do e:Hide() end
+    if kind == "dialog" then stone(f) end
+    local e = EDGES[kind]
+    local ok, b = pcall(CreateFrame, "Frame", nil, f, "BackdropTemplate")
+    if not ok or not b or not b.SetBackdrop then return end
+    b:SetPoint("TOPLEFT", -e.out, e.out)
+    b:SetPoint("BOTTOMRIGHT", e.out, -e.out)
+    b:SetFrameLevel(f:GetFrameLevel() + 30)
+    b:SetBackdrop({ edgeFile = UI.FILES[kind], edgeSize = e.size })
+    f.frameBorder = b
+end
+
+-- The game's metal window (as on Professions or the Spellbook): a round
+-- portrait in the top-left corner, the title centred in a strip along the
+-- top, the square red X at its right. The strip sits just above the window,
+-- so nothing inside moves. Drawn by the client's own layout (NineSliceUtil,
+-- "PortraitFrameTemplate"); returns nil (use UI.Window) when it isn't there.
+-- Returns { edge, strip, title, close, portrait }; drag the window by `strip`.
+UI.TITLE_STRIP, UI.PORTRAIT = 21, 62
+UI.PORTRAIT_CLEAR = 66 -- band content starts here, clear of the portrait (it hangs 34px into the window)
+function UI.PortraitFrame(f, title, portrait, onClose)
+    if not (UI.classic and NineSliceUtil and NineSliceUtil.ApplyLayoutByName) then return nil end
+    local ok, edge = pcall(CreateFrame, "Frame", nil, f, "NineSlicePanelTemplate")
+    if not ok or not edge then return nil end
+    edge:SetPoint("TOPLEFT", 0, UI.TITLE_STRIP)
+    edge:SetPoint("BOTTOMRIGHT", 0, 0)
+    edge:SetFrameLevel(f:GetFrameLevel() + 30)
+    if not pcall(NineSliceUtil.ApplyLayoutByName, edge, "PortraitFrameTemplate") then
+        edge:Hide()
+        return nil
+    end
+    for _, e in ipairs(f.edges or {}) do e:Hide() end
+    stone(f)
+    -- the strip: a dark fill, the title, the X; it's the drag handle too
+    local fill = f:CreateTexture(nil, "BACKGROUND")
+    fill:SetPoint("BOTTOMLEFT", f, "TOPLEFT", 0, 0)
+    fill:SetPoint("BOTTOMRIGHT", f, "TOPRIGHT", 0, 0)
+    fill:SetHeight(UI.TITLE_STRIP)
+    fill:SetColorTexture(UI.BG[1], UI.BG[2], UI.BG[3], 1)
+    local strip = CreateFrame("Frame", nil, f)
+    strip:SetPoint("BOTTOMLEFT", f, "TOPLEFT", 0, 0)
+    strip:SetPoint("BOTTOMRIGHT", f, "TOPRIGHT", 0, 0)
+    strip:SetHeight(UI.TITLE_STRIP)
+    strip:SetFrameLevel(f:GetFrameLevel() + 31)
+    local text = UI.Text(strip, 12)
+    text:SetPoint("CENTER", 0, 0)
+    text:SetText(title or "")
+    text:SetTextColor(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3])
+    local close = UI.CloseButton(strip, 22, 22, onClose)
+    close:SetPoint("RIGHT", strip, "RIGHT", -2, 0)
+    close:SetFrameLevel(strip:GetFrameLevel() + 1)
+    close.inStrip = true
+    -- the portrait, under the corner's ring: our logo on a dark disc, kept round
+    local p = CreateFrame("Frame", nil, f)
+    p:SetSize(UI.PORTRAIT, UI.PORTRAIT)
+    p:SetPoint("TOPLEFT", f, "TOPLEFT", -5, UI.TITLE_STRIP + 7)
+    p:SetFrameLevel(f:GetFrameLevel() + 29)
+    p.plate = p:CreateTexture(nil, "BACKGROUND")
+    p.plate:SetAllPoints()
+    p.plate:SetTexture(ns.MEDIA .. "disc")
+    p.plate:SetVertexColor(0.08, 0.08, 0.1, 1)
+    p.icon = p:CreateTexture(nil, "ARTWORK")
+    p.icon:SetPoint("TOPLEFT", 4, -4)
+    p.icon:SetPoint("BOTTOMRIGHT", -4, 4)
+    p.icon:SetTexture(portrait)
+    -- what the frame adds around the window still counts for staying on screen
+    if f.SetClampRectInsets then f:SetClampRectInsets(-16, 6, UI.TITLE_STRIP + 18, -6) end
+    return { edge = edge, strip = strip, title = text, close = close, portrait = p }
+end
+
+-- A window's title band (Editor, Inspect, gallery): its fill, the line under
+-- it and its title.
+function UI.Band(band, divider, title)
+    band:SetColorTexture(UI.BAND[1], UI.BAND[2], UI.BAND[3], UI.BAND[4])
+    local surface = UI.classic and band.GetParent and UI.Surface()
+    if surface then
+        -- a solid header strip, textured and lit like the cards (it looked flat)
+        local bar = band:GetParent()
+        local marble = bar:CreateTexture(nil, "BACKGROUND", nil, 1)
+        marble:SetAllPoints(band)
+        marble:SetTexture(surface, "REPEAT", "REPEAT")
+        if marble.SetHorizTile then marble:SetHorizTile(true) end
+        if marble.SetVertTile then marble:SetVertTile(true) end
+        if marble.SetBlendMode then marble:SetBlendMode("ADD") end
+        marble:SetVertexColor(UI.SURFACE_TINT, UI.SURFACE_TINT, UI.SURFACE_TINT)
+        local shade = bar:CreateTexture(nil, "BACKGROUND", nil, 2)
+        shade:SetAllPoints(band)
+        shade:SetColorTexture(1, 1, 1, 1)
+        local ok = CreateColor and shade.SetGradient and pcall(shade.SetGradient, shade, "VERTICAL",
+            CreateColor(0, 0, 0, 0.35), CreateColor(1, 1, 1, 0.08))
+        if not ok then shade:Hide() end
+        band.marble, band.shade = marble, shade
+    end
+    if UI.classic then
+        divider:SetColorTexture(0.86, 0.70, 0.30, 0.35)
+        if title then title:SetTextColor(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3]) end
+    else
+        divider:SetColorTexture(UI.BORDER[1], UI.BORDER[2], UI.BORDER[3], 1)
+    end
+end
+
+-- Faint parchment behind a card meant for reading (classic look only).
+function UI.Parchment(card, alpha)
+    if not UI.classic then return end
+    local t = card:CreateTexture(nil, "BACKGROUND", nil, 1)
+    t:SetAllPoints()
+    t:SetTexture(UI.HasFile(UI.FILES.parchment) and UI.FILES.parchment or UI.FILES.letter)
+    t:SetAlpha(alpha or 0.2)
+    card.parchment = t
+    return t
+end
 
 function UI.Border(f, color, layer)
     local c = color or UI.BORDER
@@ -36,22 +342,61 @@ function UI.SetBorderColor(f, c)
 end
 
 -- A card: filled, no outline. Edges stay empty so SetBorderColor is harmless.
+-- Classic look: a card is grey stone a shade darker than what's behind it,
+-- lit from above, with the game's soft tooltip edge toned down nearly to its
+-- own colour (Jake: flat panels looked flat, borders harsh; the Dungeon
+-- Journal's gentle breaks were the model): the grey fill, the marble laid
+-- over it additively, a soft falloff (a touch lighter at the top, darker at
+-- the bottom), all under sublevel 1 where card art draws; the edge on a
+-- child frame. UI.CARD_EDGE = nil drops the edges. A card given its own
+-- colour stays flat.
+UI.CARD_SHADE_TOP, UI.CARD_SHADE_BOTTOM = 0.06, 0.30
+UI.CARD_EDGE = { 0.27, 0.26, 0.24, 0.7 }
+
 function UI.Card(f, color)
     local c = color or UI.CARD
-    f.bg = f:CreateTexture(nil, "BACKGROUND")
+    local surface = UI.classic and not color and UI.Surface()
+    local stoneCard = surface and true or false
+    f.bg = f:CreateTexture(nil, "BACKGROUND", nil, stoneCard and -2 or 0)
     f.bg:SetAllPoints()
     f.bg:SetColorTexture(c[1], c[2], c[3], c[4] or 1)
     f.edges = {}
+    if not stoneCard then return end
+    f.marble = f:CreateTexture(nil, "BACKGROUND", nil, -1)
+    f.marble:SetAllPoints()
+    f.marble:SetTexture(surface, "REPEAT", "REPEAT")
+    if f.marble.SetHorizTile then f.marble:SetHorizTile(true) end
+    if f.marble.SetVertTile then f.marble:SetVertTile(true) end
+    if f.marble.SetBlendMode then f.marble:SetBlendMode("ADD") end
+    f.marble:SetVertexColor(UI.SURFACE_TINT, UI.SURFACE_TINT, UI.SURFACE_TINT)
+    f.shade = f:CreateTexture(nil, "BACKGROUND", nil, 0)
+    f.shade:SetAllPoints()
+    f.shade:SetColorTexture(1, 1, 1, 1)
+    local ok = CreateColor and f.shade.SetGradient and pcall(f.shade.SetGradient, f.shade, "VERTICAL",
+        CreateColor(0, 0, 0, UI.CARD_SHADE_BOTTOM), CreateColor(1, 1, 1, UI.CARD_SHADE_TOP))
+    if not ok then f.shade:Hide() end
+    if UI.CARD_EDGE then
+        local made, edge = pcall(CreateFrame, "Frame", nil, f, "BackdropTemplate")
+        if made and edge and edge.SetBackdrop then
+            edge:SetAllPoints()
+            edge:SetBackdrop({ edgeFile = UI.FILES.tooltip, edgeSize = 12 })
+            local e = UI.CARD_EDGE
+            if edge.SetBackdropBorderColor then edge:SetBackdropBorderColor(e[1], e[2], e[3], e[4]) end
+            f.softEdge = edge
+        end
+    end
 end
 
--- Small, dim, capitalised label for a section ("MESSAGE BOARD").
-function UI.SectionTitle(parent, text)
+-- A section's label ("Message board"), in the title colour, as the game
+-- writes them: no capitals (Jake). `size`: 12, or smaller for table columns.
+UI.TITLE_SIZE, UI.COLUMN_SIZE = 12, 11
+function UI.SectionTitle(parent, text, size)
     local fs = parent:CreateFontString(nil, "OVERLAY")
-    fs:SetFont(UI.FONT, 10, "")
+    fs:SetFont(UI.FONT, size or UI.TITLE_SIZE, "")
     fs:SetShadowOffset(1, -1)
     fs:SetShadowColor(0, 0, 0, 0.8)
     fs:SetTextColor(UI.TITLE[1], UI.TITLE[2], UI.TITLE[3])
-    if text then fs:SetText(text:upper()) end
+    if text then fs:SetText(text) end
     return fs
 end
 
@@ -90,7 +435,7 @@ end
 function UI.Text(parent, size, layer)
     local fs = parent:CreateFontString(nil, layer or "OVERLAY")
     fs:SetFont(UI.FONT, size or 12, "")
-    fs:SetTextColor(0.92, 0.92, 0.94)
+    fs:SetTextColor(UI.TEXT[1], UI.TEXT[2], UI.TEXT[3])
     fs:SetShadowOffset(1, -1)
     fs:SetShadowColor(0, 0, 0, 0.8)
     return fs
@@ -102,7 +447,8 @@ function UI.Button(parent, text, w, h, onClick)
     UI.Panel(b, UI.BUTTON, UI.BUTTON_BORDER)
     local hl = b:CreateTexture(nil, "HIGHLIGHT")
     hl:SetAllPoints()
-    hl:SetColorTexture(1, 1, 1, 0.07)
+    UI.Hover(hl, 0.07)
+    b.hl = hl
     b.label = UI.Text(b, 11)
     b.label:SetPoint("LEFT", 6, 0)
     b.label:SetPoint("RIGHT", -6, 0)
@@ -116,7 +462,7 @@ function UI.Button(parent, text, w, h, onClick)
     function b:SetSelected(on)
         self.selected = on
         if on then
-            self.bg:SetColorTexture(0.12, 0.26, 0.34, 1)
+            self.bg:SetColorTexture(UI.SEL_FILL[1], UI.SEL_FILL[2], UI.SEL_FILL[3], UI.SEL_FILL[4])
             UI.SetBorderColor(self, { UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3], 1 })
         else
             self.bg:SetColorTexture(UI.BUTTON[1], UI.BUTTON[2], UI.BUTTON[3], UI.BUTTON[4])
@@ -124,13 +470,83 @@ function UI.Button(parent, text, w, h, onClick)
         end
     end
     function b:SetPrimary()
+        if UI.classic then
+            UI.RedButton(self)
+            return
+        end
         self.bg:SetColorTexture(0.10, 0.36, 0.52, 1)
         UI.SetBorderColor(self, { 0.30, 0.62, 0.82, 1 })
     end
     function b:SetEnabledState(on)
         self:SetEnabled(on)
         self.label:SetAlpha(on and 1 or 0.4)
+        if self.red then self:SetRed(on and "Up" or "Disabled") end
     end
+    return b
+end
+
+-- The game's red panel button (as on Accept / Decline), in three slices so
+-- it stretches to any width: caps 12px, the art is 80x22 of a 128x32 file.
+local function slices(b, layer, file)
+    local l, m, r = b:CreateTexture(nil, layer), b:CreateTexture(nil, layer), b:CreateTexture(nil, layer)
+    for _, t in ipairs({ l, m, r }) do t:SetTexture(file) end
+    l:SetTexCoord(0, 0.09375, 0, 0.6875)
+    l:SetPoint("TOPLEFT")
+    l:SetPoint("BOTTOMLEFT")
+    l:SetWidth(12)
+    r:SetTexCoord(0.53125, 0.625, 0, 0.6875)
+    r:SetPoint("TOPRIGHT")
+    r:SetPoint("BOTTOMRIGHT")
+    r:SetWidth(12)
+    m:SetTexCoord(0.09375, 0.53125, 0, 0.6875)
+    m:SetPoint("TOPLEFT", l, "TOPRIGHT")
+    m:SetPoint("BOTTOMRIGHT", r, "BOTTOMLEFT")
+    return { l, m, r }
+end
+
+function UI.RedButton(b)
+    if b.red then return end
+    b.edges = b.edges or {}
+    b.bg:Hide()
+    for _, e in ipairs(b.edges) do e:Hide() end
+    b.hl:Hide()
+    b.red = slices(b, "BACKGROUND", UI.FILES.red .. "Up")
+    for _, t in ipairs(slices(b, "HIGHLIGHT", UI.FILES.red .. "Highlight")) do
+        if t.SetBlendMode then t:SetBlendMode("ADD") end
+    end
+    b.label:SetTextColor(1, 0.82, 0)
+    function b:SetRed(state)
+        self.redState = state
+        for _, t in ipairs(self.red) do t:SetTexture(UI.FILES.red .. state) end
+        local c = state == "Disabled" and { 0.5, 0.5, 0.5 } or { 1, 0.82, 0 }
+        self.label:SetTextColor(c[1], c[2], c[3])
+    end
+    b:HookScript("OnMouseDown", function(self) if self:IsEnabled() then self:SetRed("Down") end end)
+    b:HookScript("OnMouseUp", function(self) if self:IsEnabled() then self:SetRed("Up") end end)
+    b:SetRed(b:IsEnabled() and "Up" or "Disabled")
+end
+
+-- A button that reloads the UI. Addons can't call ReloadUI themselves on
+-- this client (the game blocks it: "Interface action failed because of an
+-- AddOn"), so this is the game's secure button running the /reload macro on
+-- the player's own click. Styled like UI.Button; nil if the client has no
+-- secure buttons (then the caller asks for /reload in chat). Not in combat.
+function UI.ReloadButton(parent, text, w, h)
+    local ok, b = pcall(CreateFrame, "Button", nil, parent, "SecureActionButtonTemplate")
+    if not ok or not b or not b.SetAttribute then return nil end
+    b:SetSize(w, h)
+    b:SetAttribute("type", "macro")
+    b:SetAttribute("macrotext", "/reload")
+    b:RegisterForClicks("AnyUp", "AnyDown")
+    UI.Panel(b, UI.BUTTON, UI.BUTTON_BORDER)
+    local hl = b:CreateTexture(nil, "HIGHLIGHT")
+    hl:SetAllPoints()
+    UI.Hover(hl, 0.07)
+    b.hl = hl
+    b.label = UI.Text(b, 11)
+    b.label:SetPoint("CENTER")
+    b.label:SetText(text or "")
+    if UI.classic then UI.RedButton(b) end
     return b
 end
 
@@ -155,6 +571,51 @@ function UI.ConfirmClick(btn, action)
     end)
 end
 
+-- Item tooltips: the game's "Currently equipped" comparison shows only while
+-- Shift is held. UI.ItemTip(owner, link, anchor) sets the tooltip (the caller
+-- adds lines and Shows it). Nothing is written to GameTooltip (taint): the
+-- comparison tooltips are hidden as they show, while the tooltip is ours, and
+-- pressing or letting go of Shift redraws it through the owner's OnEnter.
+local compareTips
+local function ourItemTip()
+    local o = GameTooltip and GameTooltip.GetOwner and GameTooltip:GetOwner()
+    return o and o.pogItemTip and o or nil
+end
+local function shiftDown() return IsShiftKeyDown and IsShiftKeyDown() end
+
+local function hookCompare()
+    compareTips = {}
+    for _, t in pairs(GameTooltip.shoppingTooltips or { _G.ShoppingTooltip1, _G.ShoppingTooltip2 }) do
+        if t and t.HookScript then
+            compareTips[#compareTips + 1] = t
+            t:HookScript("OnShow", function(self)
+                if ourItemTip() and not shiftDown() then self:Hide() end
+            end)
+        end
+    end
+    local watch = CreateFrame("Frame")
+    watch:RegisterEvent("MODIFIER_STATE_CHANGED")
+    watch:SetScript("OnEvent", function(_, _, key)
+        if type(key) ~= "string" or not key:find("SHIFT", 1, true) then return end
+        local o = GameTooltip:IsShown() and ourItemTip()
+        local onEnter = o and o:IsMouseOver() and o:GetScript("OnEnter")
+        if not onEnter then return end
+        onEnter(o)
+        if not shiftDown() then
+            for _, t in ipairs(compareTips) do t:Hide() end
+        end
+    end)
+end
+
+function UI.ItemTip(owner, link, anchor)
+    if not compareTips then hookCompare() end
+    owner.pogItemTip = true
+    GameTooltip:SetOwner(owner, anchor or "ANCHOR_RIGHT")
+    local ok = pcall(GameTooltip.SetHyperlink, GameTooltip, link)
+    if not ok then GameTooltip:AddLine(link) end
+    return ok
+end
+
 -- Square button holding a texture (raid markers, colour swatches).
 function UI.IconButton(parent, size, onClick)
     local b = UI.Button(parent, "", size, size, onClick)
@@ -169,7 +630,7 @@ function UI.EditBox(parent, w, h)
     e:SetSize(w, h)
     e:SetAutoFocus(false)
     e:SetFont(UI.FONT, 12, "")
-    e:SetTextColor(1, 1, 1)
+    e:SetTextColor(UI.TEXT[1], UI.TEXT[2], UI.TEXT[3])
     e:SetTextInsets(7, 7, 0, 0)
     UI.Panel(e, { 0.02, 0.02, 0.03, 1 }, UI.BUTTON_BORDER)
     e:SetScript("OnEscapePressed", e.ClearFocus)
@@ -229,6 +690,7 @@ local function buildMenu()
     menu:SetClampedToScreen(true)
     menu:EnableMouse(true)
     UI.Panel(menu, { 0.05, 0.05, 0.06, 0.98 }, UI.BORDER)
+    UI.Window(menu, "tooltip")
     menu.rows = {}
     menu:Hide()
     menu:SetScript("OnEvent", function(self)
@@ -237,6 +699,7 @@ local function buildMenu()
         end
     end)
     pcall(menu.RegisterEvent, menu, "GLOBAL_MOUSE_DOWN")
+    UI.menuFrame = menu
 end
 
 function UI.ShowMenu(anchor, entries)
@@ -254,7 +717,7 @@ function UI.ShowMenu(anchor, entries)
             row:SetHeight(ROW_H)
             local hl = row:CreateTexture(nil, "HIGHLIGHT")
             hl:SetAllPoints()
-            hl:SetColorTexture(1, 1, 1, 0.08)
+            UI.Hover(hl, 0.08)
             row.label = UI.Text(row, 11)
             row.label:SetPoint("LEFT", 6, 0)
             row.label:SetJustifyH("LEFT")
@@ -266,7 +729,7 @@ function UI.ShowMenu(anchor, entries)
         end
         row.func = entry.func
         row.label:SetText(entry.text)
-        local c = entry.color or (entry.header and { 0.55, 0.55, 0.6 }) or { 0.92, 0.92, 0.94 }
+        local c = entry.color or (entry.header and { 0.55, 0.55, 0.6 }) or UI.TEXT
         row.label:SetTextColor(c[1], c[2], c[3])
         row:SetEnabled(not (entry.disabled or entry.header))
         row.label:SetAlpha(entry.disabled and 0.45 or 1)
@@ -367,6 +830,7 @@ function UI.Picker(anchor, items, cols, size, onPick, rows, selected, tips)
         picker:SetClampedToScreen(true)
         picker:EnableMouse(true)
         UI.Panel(picker, { 0.05, 0.05, 0.06, 0.98 }, UI.BORDER)
+        UI.Window(picker, "tooltip")
         picker.cells = {}
         picker:Hide()
         picker:SetScript("OnEvent", function(self)
@@ -432,6 +896,7 @@ function UI.Prompt(anchorFrame, x, y, label, initial, onAccept)
         prompt:SetSize(220, 52)
         prompt:EnableMouse(true)
         UI.Panel(prompt, { 0.05, 0.05, 0.06, 0.98 }, UI.ACCENT)
+        UI.Window(prompt, "tooltip")
         prompt.label = UI.Text(prompt, 11)
         prompt.label:SetPoint("TOPLEFT", 8, -6)
         prompt.label:SetTextColor(0.7, 0.7, 0.75)
@@ -470,12 +935,19 @@ function UI.CopyBox(title, text)
         copy:SetPoint("CENTER")
         copy:EnableMouse(true)
         UI.Panel(copy)
+        copy.metal = UI.PortraitFrame(copy, "", ns.MEDIA .. "logo", function() copy:Hide() end)
+        if not copy.metal then UI.Window(copy) end
         tinsert(UISpecialFrames, "PogRaidCopy")
         UI.MakeMovable(copy, copy)
-        copy.title = UI.Text(copy, 12)
-        copy.title:SetPoint("TOPLEFT", 12, -10)
-        local close = UI.Tab(copy, "X", 28, 30, function() copy:Hide() end)
-        close:SetPoint("TOPRIGHT", -4, 0)
+        if copy.metal then
+            copy.title = copy.metal.title
+            UI.MakeMovable(copy, copy.metal.strip)
+        else
+            copy.title = UI.Text(copy, 12)
+            copy.title:SetPoint("TOPLEFT", 12, -10)
+            local close = UI.CloseButton(copy, 28, 30, function() copy:Hide() end)
+            close:SetPoint("TOPRIGHT", -4, 0)
+        end
         local hint = UI.Text(copy, 10)
         hint:SetPoint("BOTTOMLEFT", 12, 10)
         hint:SetTextColor(0.55, 0.55, 0.6)
@@ -491,7 +963,7 @@ function UI.CopyBox(title, text)
         edit:SetMultiLine(true)
         edit:SetAutoFocus(false)
         edit:SetFont(UI.FONT, 12, "")
-        edit:SetTextColor(1, 1, 1)
+        edit:SetTextColor(UI.TEXT[1], UI.TEXT[2], UI.TEXT[3])
         edit:SetWidth(436)
         edit:SetTextInsets(6, 6, 6, 6)
         area:SetScrollChild(edit)
@@ -535,6 +1007,7 @@ function UI.Compose(opts, onSubmit)
         compose:SetPoint("CENTER", 0, 80)
         compose:EnableMouse(true)
         UI.Panel(compose, { 0.05, 0.05, 0.06, 0.98 }, UI.ACCENT)
+        UI.Window(compose)
         tinsert(UISpecialFrames, "PogRaidCompose")
         UI.MakeMovable(compose, compose)
         compose.heading = UI.Text(compose, 13)
@@ -557,7 +1030,7 @@ function UI.Compose(opts, onSubmit)
         body:SetMultiLine(true)
         body:SetAutoFocus(false)
         body:SetFont(UI.FONT, 12, "")
-        body:SetTextColor(1, 1, 1)
+        body:SetTextColor(UI.TEXT[1], UI.TEXT[2], UI.TEXT[3])
         body:SetPoint("TOPLEFT", 6, -6)
         body:SetPoint("BOTTOMRIGHT", -6, 6)
         compose.field2 = body
@@ -696,6 +1169,111 @@ function UI.Tab(parent, text, w, h, onClick, size)
 end
 
 ------------------------------------------------------------------------
+-- Close: a window's X. The classic look uses the game's red one: the square
+-- atlas this client's windows have, else the round classic art (32px with the
+-- circle about 20 across), drawn centred on the button;
+-- the plain look, an X like the tabs. Either way the button is w x h, so
+-- whatever sits beside it stays put. `visualW`: how wide it looks.
+------------------------------------------------------------------------
+UI.CLOSE_ART, UI.CLOSE_VISUAL, UI.CLOSE_SQUARE = 32, 20, 22
+UI.CLOSE_ATLAS = { Up = "RedButton-Exit", Down = "RedButton-exit-pressed", Highlight = "RedButton-Highlight" }
+
+function UI.HasAtlas(name)
+    if not (C_Texture and C_Texture.GetAtlasInfo) then return false end
+    local ok, info = pcall(C_Texture.GetAtlasInfo, name)
+    return ok and type(info) == "table"
+end
+
+function UI.CloseButton(parent, w, h, onClick)
+    if not UI.classic then
+        local t = UI.Tab(parent, "X", w, h, onClick)
+        t.visualW = t.label:GetStringWidth()
+        return t
+    end
+    local b = CreateFrame("Button", nil, parent)
+    b:SetSize(w, h)
+    -- this client's square red X (its windows use it), else the round classic one
+    local square = UI.HasAtlas(UI.CLOSE_ATLAS.Up)
+    local size = square and UI.CLOSE_SQUARE or UI.CLOSE_ART
+    local function set(t, state)
+        if square then t:SetAtlas(UI.CLOSE_ATLAS[state]) else t:SetTexture(UI.FILES.close .. state) end
+    end
+    local function art(layer, state)
+        local t = b:CreateTexture(nil, layer)
+        t:SetSize(size, size)
+        t:SetPoint("CENTER")
+        set(t, state)
+        return t
+    end
+    b.tex = art("ARTWORK", "Up")
+    local glow = art("HIGHLIGHT", "Highlight")
+    if glow.SetBlendMode then glow:SetBlendMode("ADD") end
+    b:SetScript("OnMouseDown", function(self) set(self.tex, "Down") end)
+    b:SetScript("OnMouseUp", function(self) set(self.tex, "Up") end)
+    b:SetScript("OnClick", onClick)
+    b.square = square
+    b.visualW = square and UI.CLOSE_SQUARE or UI.CLOSE_VISUAL
+    return b
+end
+
+------------------------------------------------------------------------
+-- SubTab: a page's own tabs (Raid's Roster/Attendance/..., Games), drawn like
+-- the talent window's Primary / Secondary tabs (Jake): a dark tab with a thin
+-- muted edge; the open one warm gold with a bright gold edge and light text.
+-- Classic look only (nil otherwise: callers keep the underlined tabs). Its
+-- width follows its label. t:SetSelected(on).
+------------------------------------------------------------------------
+UI.SUBTAB_PAD, UI.SUBTAB_GAP, UI.SUBTAB_H, UI.SUBTAB_MIN = 14, 6, 26, 80
+UI.SUBTAB_COLORS = {
+    fill = { 0.07, 0.068, 0.064, 0.95 }, edge = { 0.30, 0.28, 0.24, 1 }, text = { 0.62, 0.60, 0.56 },
+    hoverEdge = { 0.48, 0.42, 0.30, 1 }, hoverText = { 0.85, 0.80, 0.66 },
+    selFill = { 0.30, 0.20, 0.04, 1 }, selEdge = { 0.95, 0.76, 0.22, 1 }, selText = { 0.98, 0.95, 0.88 },
+}
+function UI.SubTab(parent, text, onClick)
+    if not UI.classic then return nil end
+    local C = UI.SUBTAB_COLORS
+    local b = CreateFrame("Button", nil, parent)
+    b.label = UI.Text(b, 12)
+    b.label:SetPoint("CENTER", 0, 0)
+    b.label:SetText(text)
+    b:SetSize(math.max(UI.SUBTAB_MIN, math.floor(b.label:GetStringWidth() + 2 * UI.SUBTAB_PAD + 0.5)), UI.SUBTAB_H)
+    b.bg = b:CreateTexture(nil, "BACKGROUND")
+    b.bg:SetAllPoints()
+    -- the open tab's sheen: brighter gold toward the bottom, as on the talent tabs
+    b.glow = b:CreateTexture(nil, "BORDER")
+    b.glow:SetAllPoints()
+    b.glow:SetColorTexture(1, 1, 1, 1)
+    local ok = CreateColor and b.glow.SetGradient and pcall(b.glow.SetGradient, b.glow, "VERTICAL",
+        CreateColor(1, 0.78, 0.25, 0.32), CreateColor(1, 0.85, 0.40, 0.04))
+    if not ok then b.glow:SetColorTexture(1, 0.8, 0.3, 0.12) end
+    UI.Border(b)
+    local hl = b:CreateTexture(nil, "HIGHLIGHT")
+    hl:SetAllPoints()
+    UI.Hover(hl, 0.05)
+    local function paint(self, hover)
+        local f, e, t = C.fill, C.edge, C.text
+        if self.selected then
+            f, e, t = C.selFill, C.selEdge, C.selText
+        elseif hover then
+            e, t = C.hoverEdge, C.hoverText
+        end
+        self.bg:SetColorTexture(f[1], f[2], f[3], f[4])
+        UI.SetBorderColor(self, e)
+        self.label:SetTextColor(t[1], t[2], t[3])
+        self.glow:SetShown(self.selected and true or false)
+    end
+    function b:SetSelected(on)
+        self.selected = on and true or false
+        paint(self, false)
+    end
+    b:SetScript("OnEnter", function(self) paint(self, true) end)
+    b:SetScript("OnLeave", function(self) paint(self, false) end)
+    b:SetScript("OnClick", onClick)
+    b:SetSelected(false)
+    return b
+end
+
+------------------------------------------------------------------------
 -- Check: a small box and a label. get() -> bool, set(bool). Call
 -- :Update() to re-read the value; :SetEnabledState(on) greys it out.
 ------------------------------------------------------------------------
@@ -710,6 +1288,24 @@ function UI.Check(parent, label, get, set)
     c.mark:SetPoint("TOPLEFT", 3, -3)
     c.mark:SetPoint("BOTTOMRIGHT", -3, 3)
     c.mark:SetColorTexture(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3], 1)
+    if UI.classic then
+        -- the textures are 32px with the box drawn inside: 22 shows a 14px box
+        c.box.bg:Hide()
+        for _, e in ipairs(c.box.edges) do e:Hide() end
+        local function tex(layer, name)
+            local t = c.box:CreateTexture(nil, layer)
+            t:SetSize(22, 22)
+            t:SetPoint("CENTER")
+            t:SetTexture(UI.FILES.check .. name)
+            return t
+        end
+        c.frameTex = tex("BACKGROUND", "Up")
+        c.mark:Hide()
+        c.mark = tex("ARTWORK", "Check")
+        c.glow = tex("OVERLAY", "Highlight")
+        if c.glow.SetBlendMode then c.glow:SetBlendMode("ADD") end
+        c.glow:Hide()
+    end
     c.label = UI.Text(c, 12)
     c.label:SetPoint("LEFT", c.box, "RIGHT", 8, 0)
     c.label:SetText(label)
@@ -726,9 +1322,17 @@ function UI.Check(parent, label, get, set)
         if not self.enabled then return end
         set(not self.checked)
         self:Update()
+        UI.Sound(self.checked and "IG_MAINMENU_OPTION_CHECKBOX_ON" or "IG_MAINMENU_OPTION_CHECKBOX_OFF")
     end)
-    c:SetScript("OnEnter", function(self) if self.enabled then UI.SetBorderColor(self.box, UI.ACCENT) end end)
-    c:SetScript("OnLeave", function(self) UI.SetBorderColor(self.box, UI.BUTTON_BORDER) end)
+    c:SetScript("OnEnter", function(self)
+        if not self.enabled then return end
+        UI.SetBorderColor(self.box, UI.ACCENT)
+        if self.glow then self.glow:Show() end
+    end)
+    c:SetScript("OnLeave", function(self)
+        UI.SetBorderColor(self.box, UI.BUTTON_BORDER)
+        if self.glow then self.glow:Hide() end
+    end)
     c:Update()
     return c
 end

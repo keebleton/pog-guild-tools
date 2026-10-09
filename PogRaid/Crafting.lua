@@ -28,6 +28,14 @@ Crafting.MAX_RECIPES = 1000
 Crafting.NO_RECIPES = { Fishing = true, Herbalism = true, Skinning = true, Archaeology = true }
 -- rogue skills the skill list files with professions: not shared or shown
 Crafting.SKIP = { Poisons = true, Lockpicking = true }
+-- Not listed in the directory (still shared: profiles show gathering professions).
+Crafting.HIDDEN = { ["First Aid"] = true, Fishing = true, Herbalism = true, Mining = true, Skinning = true }
+-- Each profession's icon, for its tile.
+Crafting.ICONS = { Alchemy = 136240, Blacksmithing = 136241, Cooking = "Interface\\Icons\\INV_Misc_Food_15",
+    Enchanting = 136244, Engineering = 136243, Leatherworking = 136247, Tailoring = 136249 }
+-- The art behind the results for each profession (Jake's picks); others keep the page's own.
+Crafting.ART = { Alchemy = "Shaman: Elemental", Blacksmithing = "Warrior: Arms", Cooking = "Druid: Restoration",
+    Enchanting = "Priest: Discipline", Engineering = "Mage: Arcane", Leatherworking = "Druid: Feral", Tailoring = "Mage: Frost" }
 
 local PAD, TITLE_H = 12, 30
 local FRAME_W, FRAME_H = 902, ns.PAGE_H
@@ -372,7 +380,7 @@ local function rowList(parent, top, count)
         row:SetPoint("TOPRIGHT", -2, -(top + (i - 1) * ROW_H))
         local hl = row:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints()
-        hl:SetColorTexture(1, 1, 1, 0.05)
+        UI.Hover(hl, 0.05)
         row.dot = row:CreateTexture(nil, "ARTWORK")
         row.dot:SetTexture(ns.MEDIA .. "disc")
         row.dot:SetVertexColor(0.4, 0.85, 0.45, 1)
@@ -390,6 +398,8 @@ local function rowList(parent, top, count)
     return rows
 end
 
+local TILES_Y, TILE_H, TILE_GAP = 36, 92, 8 -- the profession tiles
+
 function Crafting:Build(page)
     self.page = page
     local height = FRAME_H - TOP - PAD
@@ -401,20 +411,38 @@ function Crafting:Build(page)
     UI.Card(left)
     local t1 = UI.SectionTitle(left, "Professions")
     t1:SetPoint("TOPLEFT", 12, -12)
-    left.visible = math.floor((height - 42) / ROW_H)
-    left.rows = rowList(left, 38, left.visible)
-    for _, row in ipairs(left.rows) do
-        row.dot:Hide()
-        row.name:ClearAllPoints()
-        row.name:SetPoint("LEFT", 12, 0)
-        row.sel = row:CreateTexture(nil, "BACKGROUND")
+    -- a tile per profession, two to a row: its icon, name, how many have it
+    local tw = math.floor((LEFT_W - 24 - TILE_GAP) / 2)
+    left.visible = 2 * math.floor((height - TILES_Y - 12 + TILE_GAP) / (TILE_H + TILE_GAP))
+    left.rows = {}
+    for i = 1, left.visible do
+        local col, line = (i - 1) % 2, math.floor((i - 1) / 2)
+        local row = CreateFrame("Button", nil, left)
+        row:SetSize(tw, TILE_H)
+        row:SetPoint("TOPLEFT", 12 + col * (tw + TILE_GAP), -(TILES_Y + line * (TILE_H + TILE_GAP)))
+        row.bg = row:CreateTexture(nil, "BACKGROUND", nil, 1)
+        row.bg:SetAllPoints()
+        row.bg:SetColorTexture(1, 1, 1, 0.035)
+        row.sel = row:CreateTexture(nil, "BACKGROUND", nil, 2)
         row.sel:SetAllPoints()
-        row.sel:SetColorTexture(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3], 0.12)
+        UI.SelBar(row.sel, 0.14)
+        local hl = row:CreateTexture(nil, "HIGHLIGHT")
+        hl:SetAllPoints()
+        UI.Hover(hl, 0.05)
         row.bar = row:CreateTexture(nil, "ARTWORK")
-        row.bar:SetPoint("TOPLEFT", 0, 0)
         row.bar:SetPoint("BOTTOMLEFT", 0, 0)
-        row.bar:SetWidth(2)
+        row.bar:SetSize(tw, 2)
         row.bar:SetColorTexture(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3], 1)
+        row.icon = row:CreateTexture(nil, "ARTWORK")
+        row.icon:SetSize(36, 36)
+        row.icon:SetPoint("TOP", 0, -math.floor((TILE_H - 36 - 7 - 12) / 2))
+        row.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        row.name = UI.Text(row, 12)
+        row.name:SetPoint("TOP", row.icon, "BOTTOM", 0, -7)
+        row.name:SetWidth(tw - 8)
+        row.name:SetJustifyH("CENTER")
+        row.name:SetWordWrap(false)
+        left.rows[i] = row
         row:SetScript("OnClick", function(r)
             if not r.item then return end
             self.selected = (self.selected == r.item and not self.member) and nil or r.item
@@ -426,10 +454,10 @@ function Crafting:Build(page)
     end
     left:EnableMouseWheel(true)
     left:SetScript("OnMouseWheel", function(_, d)
-        self.leftOffset = (self.leftOffset or 0) - d * 3
+        self.leftOffset = (self.leftOffset or 0) - d * 2
         self:Refresh()
     end)
-    left.hint = UI.ScrollHint(left, 38, 4)
+    left.hint = UI.ScrollHint(left, TILES_Y, 4)
     left.empty = UI.Text(left, 11)
     left.empty:SetPoint("TOP", 0, -60)
     left.empty:SetWidth(LEFT_W - 24)
@@ -459,15 +487,13 @@ function Crafting:Build(page)
     self.searchBox = search
     right.title = UI.SectionTitle(right, "")
     right.title:SetPoint("TOPLEFT", 12, -(12 + BAR_H + 12))
-    right.count = UI.Text(right, 10)
-    right.count:SetTextColor(0.55, 0.55, 0.6)
     right.back = UI.Button(right, "Back", 56, 18, function() self:ShowMember(nil) end)
     right.back:SetPoint("TOPRIGHT", -12, -(12 + BAR_H + 9))
     local line = right:CreateTexture(nil, "ARTWORK")
     line:SetPoint("TOPLEFT", 1, -(12 + BAR_H + 34))
     line:SetPoint("TOPRIGHT", -1, -(12 + BAR_H + 34))
     line:SetHeight(1)
-    line:SetColorTexture(1, 1, 1, 0.06)
+    UI.Line(line, 0.06)
     local listTop = 12 + BAR_H + 38
     local statusH = 34
     right.visible = math.floor((height - listTop - statusH) / ROW_H)
@@ -561,12 +587,17 @@ function Crafting:Refresh()
     -- professions list
     local profs = {}
     for name, members in pairs(dir) do
-        profs[#profs + 1] = { name = name, count = #members }
+        if not Crafting.HIDDEN[name] then profs[#profs + 1] = { name = name, count = #members } end
     end
     table.sort(profs, function(a, b) return a.name < b.name end)
-    if self.selected and not dir[self.selected] then self.selected = nil end
+    if self.selected and (not dir[self.selected] or Crafting.HIDDEN[self.selected]) then self.selected = nil end
+    if self.rightArt then
+        local art = self.selected and Crafting.ART[self.selected]
+        self.rightArt:Show(art and ns.Art.Find("Talent trees", art) or ns.Art.PickFor("crafting"))
+    end
     local left = self.left
     self.leftOffset = math.max(0, math.min(self.leftOffset or 0, #profs - left.visible))
+    self.leftOffset = self.leftOffset - self.leftOffset % 2 -- (whole rows of tiles)
     left.hint:Set(self.leftOffset, left.visible, #profs)
     for i, row in ipairs(left.rows) do
         local p = profs[i + self.leftOffset]
@@ -575,7 +606,7 @@ function Crafting:Refresh()
             local sel = self.selected == p.name
             row.name:SetText(p.name)
             row.name:SetTextColor(sel and 1 or 0.9, sel and 1 or 0.9, sel and 1 or 0.93)
-            row.right:SetText(tostring(p.count))
+            row.icon:SetTexture(Crafting.ICONS[p.name] or (ns.Profiles and ns.Profiles.PROF_ICONS[p.name]) or 134400)
             row.sel:SetShown(sel)
             row.bar:SetShown(sel)
             row:Show()
@@ -591,20 +622,13 @@ function Crafting:Refresh()
     local searching = self.search and self.search:match("%S")
     if self.member and not (self.selected and dir[self.selected]) then self.member = nil end
     right.back:SetShown(self.member ~= nil)
-    right.count:ClearAllPoints()
-    if self.member then
-        right.count:SetPoint("RIGHT", right.back, "LEFT", -10, 0)
-    else
-        right.count:SetPoint("TOPRIGHT", -12, -(12 + BAR_H + 13))
-    end
     self.searchBox.placeholder:SetText(self.member and ("Search %s's %s recipes"):format(display(self.member), self.selected)
         or Crafting.PLACEHOLDER)
     if self.member then
         local shared
         items, shared = self:MemberRecipes(self.member, self.selected, self.search)
         kind = "recipe"
-        right.title:SetText(("%s  |cff5a5a64/|r  %s"):format(self.selected:upper(), display(self.member):upper()))
-        right.count:SetText(#items == 1 and "1 recipe" or (#items .. " recipes"))
+        right.title:SetText(("%s  |cff5a5a64/|r  %s"):format(self.selected, display(self.member)))
         if Crafting.NO_RECIPES[self.selected] then
             right.empty:SetText(self.selected .. " has no recipes.")
         elseif not shared then
@@ -615,17 +639,14 @@ function Crafting:Refresh()
         end
     elseif searching then
         items, kind = self:Search(self.search), "recipe"
-        right.title:SetText("RECIPES")
-        right.count:SetText(#items == 1 and "1 recipe" or (#items .. " recipes"))
+        right.title:SetText("Recipes")
         right.empty:SetText("No guildie has shared a recipe like that yet.")
     elseif self.selected then
         items, kind = dir[self.selected], "member"
-        right.title:SetText(self.selected:upper())
-        right.count:SetText(#items == 1 and "1 member" or (#items .. " members"))
+        right.title:SetText(self.selected)
         right.empty:SetText("")
     else
-        right.title:SetText("RECIPES")
-        right.count:SetText("")
+        right.title:SetText("Recipes")
         right.empty:SetText("Search for something to craft, or pick a profession\nto see who has it.")
     end
     self.offset = math.max(0, math.min(self.offset or 0, #items - right.visible))

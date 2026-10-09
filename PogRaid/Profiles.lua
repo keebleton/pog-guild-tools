@@ -111,8 +111,8 @@ Profiles.PROF_ICONS = { Alchemy = 136240, Blacksmithing = 136241, Enchanting = 1
     Leatherworking = 136247, Tailoring = 136249, Herbalism = 136246, Mining = 136248, Skinning = 134366 }
 Profiles.SECONDARY = { Cooking = true, ["First Aid"] = true, Fishing = true, Archaeology = true }
 
-local CONTENT = { "status", "about", "role", "icon", "color", "song", "fav1", "fav2", "nick" }
-local FIELDS = { "status", "about", "role", "icon", "color", "song", "fav1", "fav2", "nick", "ed", "chars", "top" }
+local CONTENT = { "status", "about", "role", "icon", "color", "song", "fav1", "fav2", "nick", "off" }
+local FIELDS = { "status", "about", "role", "icon", "color", "song", "fav1", "fav2", "nick", "ed", "chars", "top", "off" }
 local FAVORITES = { { "fav1", "Favorite raid" }, { "fav2", "Favorite dungeon" } }
 
 local function G() return ns.db.guild end
@@ -165,7 +165,7 @@ Sync:Register({
     valid = function(rec)
         local M, F = Profiles.MAX_STATUS, Profiles.MAX_FAV
         return rec.by == rec.author and rec.id == rec.author
-            and sane(rec, { status = M, about = Profiles.MAX_ABOUT, role = 1, fav1 = F, fav2 = F, nick = Profiles.MAX_NICK,
+            and sane(rec, { status = M, about = Profiles.MAX_ABOUT, role = 1, off = 1, fav1 = F, fav2 = F, nick = Profiles.MAX_NICK,
                 chars = Profiles.MAX_CHARS * 49, top = Profiles.TOP * 81 })
             and whole(rec.icon, 1, 1e8) and whole(rec.color, 0, 99) and whole(rec.song, 0, 999)
             and whole(rec.ed, 0, 2 ^ 36)
@@ -505,6 +505,26 @@ end
 
 -- Most played with as shown on a profile: ours live, everyone else's as
 -- their account last shared it.
+-- Everyone we've grouped with, most time first: { { main, seconds } }.
+function Profiles:Together()
+    local _, totals = self:TopNames()
+    local out = {}
+    for m, sec in pairs(totals) do
+        if sec >= 60 then out[#out + 1] = { m, sec } end
+    end
+    table.sort(out, function(x, y)
+        if x[2] ~= y[2] then return x[2] > y[2] end
+        return x[1] < y[1]
+    end)
+    return out
+end
+
+function Profiles.Duration(sec)
+    if sec < 3600 then return math.floor(sec / 60) .. "m" end
+    local h, m = math.floor(sec / 3600), math.floor(sec % 3600 / 60)
+    return m > 0 and (h .. "h " .. m .. "m") or (h .. "h")
+end
+
 function Profiles:Top(name)
     if self:IsMine(name) then return (self:TopNames()) end
     local newest
@@ -671,7 +691,7 @@ local function card(page, title, x, y, w, h)
     line:SetPoint("TOPLEFT", 1, -HEAD_H)
     line:SetPoint("TOPRIGHT", -1, -HEAD_H)
     line:SetHeight(1)
-    line:SetColorTexture(1, 1, 1, 0.06)
+    UI.Line(line, 0.06)
     c.empty = UI.Text(c, 11)
     c.empty:SetPoint("TOP", 0, -HEAD_H - 18)
     c.empty:SetWidth(w - 24)
@@ -753,10 +773,10 @@ function Profiles:BuildList(page)
         row:SetPoint("TOPRIGHT", -2, -(4 + (i - 1) * MEMBER_H))
         row.sel = row:CreateTexture(nil, "BACKGROUND")
         row.sel:SetAllPoints()
-        row.sel:SetColorTexture(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3], 0.12)
+        UI.SelBar(row.sel, 0.12)
         local hl = row:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints()
-        hl:SetColorTexture(1, 1, 1, 0.05)
+        UI.Hover(hl, 0.05)
         row.pic = portrait(row, 24)
         row.pic:SetPoint("LEFT", 6, 0)
         row.dot = row:CreateTexture(nil, "OVERLAY")
@@ -955,8 +975,14 @@ function Profiles:RefreshBanner()
     if p.level then info[#info + 1] = ("Level %d %s"):format(p.level, className(p.class) or "") end
     if p.rank then info[#info + 1] = p.rank end
     local role = content.role and Profiles.ROLES[ROLE[content.role] or 0]
-    if role then
-        info[#info + 1] = ("|cff%02x%02x%02x%s|r"):format(role[3][1] * 255, role[3][2] * 255, role[3][3] * 255, role[2])
+    local off = content.off and Profiles.ROLES[ROLE[content.off] or 0]
+    local function colored(r) return ("|cff%02x%02x%02x%s|r"):format(r[3][1] * 255, r[3][2] * 255, r[3][3] * 255, r[2]) end
+    if role and off and off ~= role then
+        info[#info + 1] = colored(role) .. " |cff8a8a92(off spec|r " .. colored(off) .. "|cff8a8a92)|r"
+    elseif role then
+        info[#info + 1] = colored(role)
+    elseif off then
+        info[#info + 1] = "|cff8a8a92off spec|r " .. colored(off)
     end
     if not p.inGuild and p.rank == nil then info[#info + 1] = "not in the guild" end
     b.info:SetText(table.concat(info, ", "))
@@ -1022,6 +1048,14 @@ function Profiles:EditMenu()
     end
     menu[#menu + 1] = { text = (content.role == nil and "> " or "   ") .. "No main role",
         func = function() self:Save({ role = false }) end }
+    menu[#menu + 1] = { text = "Off spec", header = true }
+    local off = content.off and ROLE[content.off]
+    for i, r in ipairs(Profiles.ROLES) do
+        menu[#menu + 1] = { text = (off == i and "> " or "   ") .. r[2], color = r[3],
+            func = function() self:Save({ off = r[1] }) end }
+    end
+    menu[#menu + 1] = { text = (content.off == nil and "> " or "   ") .. "No off spec",
+        func = function() self:Save({ off = false }) end }
     return menu
 end
 
@@ -1098,6 +1132,7 @@ end
 function Profiles:BuildAbout(page)
     local c = card(page, "About me", RX, BODY_Y, COL_W, ABOUT_H)
     self.aboutCard = c
+    UI.Parchment(c)
     c.text = UI.Text(c, 11)
     c.text:SetPoint("TOPLEFT", 10, -(HEAD_H + 8))
     c.text:SetPoint("TOPRIGHT", -10, -(HEAD_H + 8))
@@ -1122,7 +1157,7 @@ function Profiles:BuildAbout(page)
     div:SetPoint("BOTTOMLEFT", 8, INFO_H)
     div:SetPoint("BOTTOMRIGHT", -8, INFO_H)
     div:SetHeight(1)
-    div:SetColorTexture(1, 1, 1, 0.06)
+    UI.Line(div, 0.06)
     local rowsTop = ABOUT_H - INFO_H + (INFO_H - 3 * INFO_ROW_H) / 2
     c.infoRows = {}
     local labels = { "Characters", FAVORITES[1][2], FAVORITES[2][2] }
@@ -1146,7 +1181,7 @@ function Profiles:BuildAbout(page)
     local chars = c.infoRows[1]
     local hl = chars:CreateTexture(nil, "HIGHLIGHT")
     hl:SetAllPoints()
-    hl:SetColorTexture(1, 1, 1, 0.05)
+    UI.Hover(hl, 0.05)
     chars:SetScript("OnEnter", function(row)
         if not GameTooltip or not self.viewing then return end
         GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
@@ -1200,7 +1235,7 @@ function Profiles:RefreshAbout()
     for i, row in ipairs(c.infoRows) do
         local v = values[i]
         row.value:SetText(v or (i == 1 and "just this one" or "-"))
-        if v then row.value:SetTextColor(0.9, 0.9, 0.93) else row.value:SetTextColor(0.45, 0.45, 0.5) end
+        if v then row.value:SetTextColor(UI.TEXT[1], UI.TEXT[2], UI.TEXT[3]) else row.value:SetTextColor(0.45, 0.45, 0.5) end
     end
 end
 
@@ -1208,33 +1243,22 @@ end
 -- Character: the account's current character (Gear.lua), Inspect for more
 ------------------------------------------------------------------------
 local INSPECT_W, INSPECT_H = 92, 22
+-- Their gear laid out like the game's character pane (slot IDs): a column
+-- down each side, the weapons along the bottom between them, Inspect above
+-- the weapons. In the middle: the model when it can show them (ourselves,
+-- target, group), else their class icon. It uses the art's full height.
+local MINI = { left = { 1, 2, 3, 15, 5, 4, 19, 9 }, right = { 10, 6, 7, 8, 11, 12, 13, 14 }, bottom = { 16, 17, 18 } }
+local MINI_ICON, MINI_PITCH, MINI_EDGE, MINI_ROW_GAP = 24, 27, 12, 8
+local SLOT_INV = { "HeadSlot", "NeckSlot", "ShoulderSlot", "ShirtSlot", "ChestSlot", "WaistSlot", "LegsSlot", "FeetSlot",
+    "WristSlot", "HandsSlot", "Finger0Slot", "Finger1Slot", "Trinket0Slot", "Trinket1Slot", "BackSlot", "MainHandSlot",
+    "SecondaryHandSlot", "RangedSlot", "TabardSlot" }
+local MINI_COLOR = { [0] = { 0.62, 0.62, 0.62 }, { 1, 1, 1 }, { 0.12, 1, 0 }, { 0, 0.44, 0.87 }, { 0.64, 0.21, 0.93 },
+    { 1, 0.5, 0 } }
+Profiles.MINI = MINI
 
-function Profiles:BuildCharacter(page)
-    local c = CreateFrame("Frame", nil, page)
-    c:SetPoint("TOPLEFT", COL2_X, -BODY_Y)
-    c:SetSize(COL_W, CHAR_H)
-    UI.Card(c)
-    self.charCard = c
-    local mw, mh = COL_W - 16, CHAR_H - 8 - INSPECT_H - 24
-    c.model = ns.Wishlist and ns.Wishlist.Model(c, 8, 8, mw, mh)
-    if c.model then
-        c.model.zoom = 1 -- the game's own framing: a small card needs the whole height
-        -- the art fills the card 8px in all round, the Inspect button on it too
-        c.artArea = CreateFrame("Frame", nil, c)
-        c.artArea:SetPoint("TOPLEFT", 8, -8)
-        c.artArea:SetSize(COL_W - 16, CHAR_H - 16)
-        c.backdrop = ns.Wishlist.Backdrop(c, c.model, c.artArea)
-    end
-    c.pic = portrait(c, 64) -- when the model can't show them
-    c.pic:SetPoint("CENTER", c, "TOPLEFT", COL_W / 2, -(8 + mh / 2))
-    c.open = CreateFrame("Button", nil, c)
-    c.open:SetPoint("TOPLEFT", 8, -8)
-    c.open:SetSize(mw, mh)
-    c.open:SetFrameLevel(c:GetFrameLevel() + 3)
-    c.open:SetScript("OnClick", function() self:Inspect() end)
-    -- Inspect: a magnifying glass and the word, centred together
-    local btn = UI.Button(c, "Inspect", INSPECT_W, INSPECT_H, function() self:Inspect() end)
-    btn:SetPoint("BOTTOM", 0, 16) -- 8px inside the art, which is 8px inside the card
+-- Inspect: a magnifying glass and the word, centred together.
+local function inspectButton(self, parent)
+    local btn = UI.Button(parent, "Inspect", INSPECT_W, INSPECT_H, function() self:Inspect() end)
     btn.glass = btn:CreateTexture(nil, "ARTWORK")
     btn.glass:SetTexture("Interface\\Common\\UI-Searchbox-Icon")
     btn.glass:SetSize(14, 14)
@@ -1244,6 +1268,84 @@ function Profiles:BuildCharacter(page)
     btn.label:ClearAllPoints()
     btn.label:SetPoint("LEFT", x0 + 14 + 5, 0)
     btn.label:SetJustifyH("LEFT")
+    return btn
+end
+
+function Profiles:BuildCharacter(page)
+    local c = CreateFrame("Frame", nil, page)
+    c:SetPoint("TOPLEFT", COL2_X, -BODY_Y)
+    c:SetSize(COL_W, CHAR_H)
+    UI.Card(c)
+    self.charCard = c
+    local mw, mh = COL_W - 16, CHAR_H - 8 - INSPECT_H - 24
+    local artH = CHAR_H - 16
+    local colsH = (#MINI.left - 1) * MINI_PITCH + MINI_ICON
+    local miniTop = math.floor((artH - colsH) / 2)
+    local lastY = miniTop + (#MINI.left - 1) * MINI_PITCH
+    local inspectY = lastY - 8 - INSPECT_H
+    -- the model: between the gear columns, down to Inspect
+    local modelX = MINI_EDGE + MINI_ICON + 4
+    local modelW, modelH = mw - 2 * modelX, inspectY - 2
+    c.model = ns.Wishlist and ns.Wishlist.Model(c, 8 + modelX, 8, modelW, modelH)
+    if c.model then
+        c.model.zoom = 1 -- the game's own framing: a small card needs the whole height
+        -- the art fills the card 8px in all round, the Inspect button on it too
+        c.artArea = CreateFrame("Frame", nil, c)
+        c.artArea:SetPoint("TOPLEFT", 8, -8)
+        c.artArea:SetSize(COL_W - 16, CHAR_H - 16)
+        c.backdrop = ns.Wishlist.Backdrop(c, c.model, c.artArea)
+    end
+    -- nothing shared and out of range: their portrait
+    c.pic = portrait(c, 64)
+    c.pic:SetPoint("CENTER", c, "TOPLEFT", COL_W / 2, -(8 + mh / 2))
+    c.open = CreateFrame("Button", nil, c)
+    c.open:SetPoint("TOPLEFT", 8 + modelX, -8)
+    c.open:SetSize(modelW, modelH)
+    c.open:SetFrameLevel(c:GetFrameLevel() + 3)
+    c.open:SetScript("OnClick", function() self:Inspect() end)
+    -- ... and their gear around it (hover for the item, click for Inspect)
+    c.mini = {}
+    local function icon(slotID, x, y)
+        local b = CreateFrame("Button", nil, c)
+        b:SetSize(MINI_ICON, MINI_ICON)
+        b:SetPoint("TOPLEFT", 8 + x, -(8 + y))
+        b:SetFrameLevel(c:GetFrameLevel() + 4)
+        b.border = b:CreateTexture(nil, "BACKGROUND")
+        b.border:SetPoint("TOPLEFT", -1, 1)
+        b.border:SetSize(MINI_ICON + 2, MINI_ICON + 2)
+        b.icon = b:CreateTexture(nil, "ARTWORK")
+        b.icon:SetAllPoints()
+        b.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        local hl = b:CreateTexture(nil, "HIGHLIGHT")
+        hl:SetAllPoints()
+        hl:SetColorTexture(1, 1, 1, 0.15)
+        b.slot = slotID
+        b:SetScript("OnClick", function() self:Inspect() end)
+        b:SetScript("OnEnter", function(btn)
+            if not btn.link or not GameTooltip then return end
+            UI.ItemTip(btn, btn.link)
+            GameTooltip:Show()
+        end)
+        b:SetScript("OnLeave", hideTip)
+        b:Hide()
+        c.mini[#c.mini + 1] = b
+    end
+    for i, s in ipairs(MINI.left) do icon(s, MINI_EDGE, miniTop + (i - 1) * MINI_PITCH) end
+    for i, s in ipairs(MINI.right) do icon(s, mw - MINI_EDGE - MINI_ICON, miniTop + (i - 1) * MINI_PITCH) end
+    local rowW = #MINI.bottom * MINI_ICON + (#MINI.bottom - 1) * MINI_ROW_GAP
+    for i, s in ipairs(MINI.bottom) do
+        icon(s, math.floor((mw - rowW) / 2) + (i - 1) * (MINI_ICON + MINI_ROW_GAP), lastY)
+    end
+    -- the middle: their class icon (no model), Inspect above the weapons
+    c.miniInspect = inspectButton(self, c)
+    c.miniInspect:SetPoint("TOP", c, "TOPLEFT", COL_W / 2, -(8 + inspectY))
+    c.miniInspect:SetFrameLevel(c:GetFrameLevel() + 4)
+    c.miniInspect:Hide()
+    c.classIcon = portrait(c, 48)
+    c.classIcon:SetPoint("CENTER", c, "TOPLEFT", COL_W / 2, -(8 + math.floor((miniTop + inspectY) / 2)))
+    c.classIcon:Hide()
+    local btn = inspectButton(self, c)
+    btn:SetPoint("BOTTOM", 0, 16) -- 8px inside the art, which is 8px inside the card
     c.inspect = btn
 end
 
@@ -1256,8 +1358,49 @@ function Profiles:RefreshCharacter()
     local p = G().players[who]
     if c.backdrop then c.backdrop:SetClass(p and p.class) end
     local shows = Gear and Gear:Dress(c.model, who) or false
-    c.pic:SetShown(not shows)
-    if not shows then c.pic:Set(self.viewing) end
+    -- their gear around the model (ours as we wear it now), or around their
+    -- class icon; nothing shown or shared: their portrait
+    local ids
+    if Gear and Gear:UnitOf(who) == "player" then
+        ids = Gear:Worn()
+    elseif rec then
+        ids = Gear.Unpack(rec.items)
+    end
+    c.pic:SetShown(not shows and not ids)
+    if not shows and not ids then c.pic:Set(self.viewing) end
+    c.inspect:SetShown(ids == nil)
+    c.miniInspect:SetShown(ids ~= nil)
+    c.classIcon:SetShown(ids ~= nil and not shows)
+    if ids and not shows then
+        local i = p and p.class and CLASS_ICON[p.class]
+        c.classIcon.icon:SetTexture(i and self.ICONS[i][1] or NO_ICON)
+        c.classIcon.ring:SetColorTexture(classColor(who))
+    end
+    for _, b in ipairs(c.mini) do
+        b:SetShown(ids ~= nil)
+        if ids then
+            local id = ids[b.slot]
+            if id then
+                b.link = Gear.Link(id)
+                local ok, tex = false, nil
+                if C_Item and C_Item.GetItemIconByID then ok, tex = pcall(C_Item.GetItemIconByID, id) end
+                b.icon:SetTexture(ok and tex or 134400)
+                b.icon:SetAlpha(1)
+                local col = MINI_COLOR[ns.Loot.Quality(b.link) or 1] or MINI_COLOR[1]
+                b.border:SetColorTexture(col[1], col[2], col[3], 0.9)
+            else
+                b.link = nil
+                local tex
+                if GetInventorySlotInfo and SLOT_INV[b.slot] then
+                    local ok, _, t = pcall(GetInventorySlotInfo, SLOT_INV[b.slot])
+                    if ok then tex = t end
+                end
+                b.icon:SetTexture(tex or "Interface\\PaperDoll\\UI-Backpack-EmptySlot")
+                b.icon:SetAlpha(0.45)
+                b.border:SetColorTexture(0.2, 0.2, 0.23, 1)
+            end
+        end
+    end
     c.inspect:SetEnabledState(Gear ~= nil and (rec ~= nil or Gear:UnitOf(who) ~= nil))
 end
 
@@ -1292,7 +1435,7 @@ function Profiles:BuildProfessions(page)
         t.bg:SetColorTexture(1, 1, 1, 0.03)
         local hl = t:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints()
-        hl:SetColorTexture(1, 1, 1, 0.05)
+        UI.Hover(hl, 0.05)
         t.pic = portrait(t, 44)
         t.pic:SetPoint("TOP", 0, -14)
         t.pic.ring:SetColorTexture(1, 1, 1, 0.12)
@@ -1377,7 +1520,7 @@ function Profiles:BuildBook(page)
     line:SetPoint("TOPLEFT", 1, -38)
     line:SetPoint("TOPRIGHT", -1, -38)
     line:SetHeight(1)
-    line:SetColorTexture(1, 1, 1, 0.06)
+    UI.Line(line, 0.06)
     -- two columns, read across
     local top = 42
     f.perCol = math.floor((BODY_H - top - 6) / BOOK_ROW_H)
@@ -1391,7 +1534,7 @@ function Profiles:BuildBook(page)
         row:SetPoint("TOPLEFT", 8 + col * colW, -(top + r * BOOK_ROW_H))
         local hl = row:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints()
-        hl:SetColorTexture(1, 1, 1, 0.05)
+        UI.Hover(hl, 0.05)
         row.text = UI.Text(row, 11)
         row.text:SetPoint("LEFT", 8, 0)
         row.text:SetPoint("RIGHT", -8, 0)
@@ -1450,7 +1593,7 @@ function Profiles:RefreshBook()
         row.recipe = e
         if e then
             row.text:SetText(e.name)
-            if e.unknown then row.text:SetTextColor(0.5, 0.5, 0.55) else row.text:SetTextColor(0.9, 0.9, 0.93) end
+            if e.unknown then row.text:SetTextColor(0.5, 0.5, 0.55) else row.text:SetTextColor(UI.TEXT[1], UI.TEXT[2], UI.TEXT[3]) end
             row:Show()
         else
             row:Hide()
@@ -1471,6 +1614,18 @@ end
 function Profiles:BuildTop(page)
     local c = card(page, "Most played with", RX, TOP_Y, COL_W, TOP5_H)
     self.topCard = c
+    -- your own: everyone you've grouped with, and for how long
+    c.all = UI.Button(c, "See all", 64, 18, function(b)
+        local menu = { { text = "Grouped with", header = true } }
+        for _, e in ipairs(self:Together()) do
+            local who, sec = e[1], e[2]
+            menu[#menu + 1] = { text = self:Name(who) .. "  |cff8a8a92" .. Profiles.Duration(sec) .. "|r",
+                color = { classColor(who) }, func = function() if self:HasAddon(who) then self:Open(who) end end }
+        end
+        if #menu == 1 then menu[2] = { text = "Nobody yet", disabled = true } end
+        UI.ShowMenu(b, menu)
+    end)
+    c.all:SetPoint("RIGHT", c, "TOPRIGHT", -5, -HEAD_H / 2)
     c.tiles = {}
     local inner = COL_W - 16
     local gap = (inner - Profiles.TOP * TILE_W) / (Profiles.TOP - 1)
@@ -1481,7 +1636,7 @@ function Profiles:BuildTop(page)
         t:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         local hl = t:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints()
-        hl:SetColorTexture(1, 1, 1, 0.05)
+        UI.Hover(hl, 0.05)
         t.pic = portrait(t, TILE_ICON)
         t.pic:SetPoint("TOP", 0, -4)
         t.name = UI.Text(t, 10)
@@ -1500,7 +1655,8 @@ function Profiles:RefreshTop()
     local c, name = self.topCard, self.viewing
     local mine = self:IsMine(name)
     local top = self:Top(name)
-    c.meta:SetText(mine and "by time grouped" or "")
+    c.meta:SetText("")
+    c.all:SetShown(mine)
     for i, t in ipairs(c.tiles) do
         local who = top[i]
         t.member = who
@@ -1525,8 +1681,7 @@ function Profiles:TileTooltip(tile)
     if self:IsMine(self.viewing) then
         local _, totals = self:TopNames()
         local sec = totals[self:Main(who)] or 0
-        local together = sec < 3600 and (math.floor(sec / 60) .. "m") or (math.floor(sec / 3600) .. "h")
-        GameTooltip:AddLine("Grouped " .. together, 0.6, 0.6, 0.65)
+        GameTooltip:AddLine("Grouped " .. Profiles.Duration(sec), 0.6, 0.6, 0.65)
     end
     if not self:HasAddon(who) then GameTooltip:AddLine("Doesn't have Pog Guild Tools yet", 0.6, 0.6, 0.65) end
     GameTooltip:Show()
@@ -1543,6 +1698,7 @@ end
 function Profiles:BuildKudos(page)
     local c = card(page, "Kudos", COL2_X, BODY_Y + CHAR_H + GAP, COL_W, KUDOS_H)
     self.kudosCard = c
+    UI.Parchment(c)
     c.give = UI.Button(c, "Give kudos", 80, 18, function(x) UI.ShowMenu(x, self:KudosMenu()) end)
     c.give:SetPoint("RIGHT", c, "TOPRIGHT", -5, -HEAD_H / 2)
     c.offset = 0
@@ -1597,8 +1753,8 @@ function Profiles:RefreshKudos()
     local c, name = self.kudosCard, self.viewing
     local mine = self:IsMine(name)
     local _, recent, total = self:Kudos(name)
-    -- only you see your own total
-    c.meta:SetText(mine and total > 0 and (total == 1 and "1 so far" or (total .. " so far")) or "")
+    -- only on your own profile: how many you've received (nobody else sees a count)
+    c.meta:SetText(mine and total > 0 and (total .. " received") or "")
     c.give:SetShown(not mine)
     c.offset = math.max(0, math.min(c.offset, #recent - c.visible))
     c.hint:Set(c.offset, c.visible, #recent)

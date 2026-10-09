@@ -324,10 +324,6 @@ function Gems:Build(view, top, height)
         local btn = UI.Button(view, a[2], aw, 26, function() self:Move(a[1]) end)
         btn:SetPoint("TOPLEFT", ax + (i - 1) * (aw + 6), -(top + BOARD_W + GAP))
     end
-    self.help = UI.Text(view, 10)
-    self.help:SetPoint("TOP", view, "TOPLEFT", PAD + BOARD_W / 2, -(top + BOARD_W + GAP + 34))
-    self.help:SetTextColor(0.5, 0.5, 0.55)
-    self.help:SetText("Arrow keys or WASD over the board, drag, or the buttons")
 
     -- side: score, best, new game, message, leaderboard
     local side = CreateFrame("Frame", nil, view)
@@ -362,7 +358,7 @@ function Gems:Build(view, top, height)
     line:SetPoint("TOPLEFT", 1, -142)
     line:SetPoint("TOPRIGHT", -1, -142)
     line:SetHeight(1)
-    line:SetColorTexture(1, 1, 1, 0.06)
+    UI.Line(line, 0.06)
     side.rows = {}
     for i = 1, math.floor((height - 150) / ROW_H) do
         local row = CreateFrame("Frame", nil, side)
@@ -434,7 +430,7 @@ function Gems:RefreshBoard()
             local p = ns.db.guild.players[rec.author]
             local cc = p and p.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[p.class]
             row.name:SetText(Ambiguate(rec.author, "short"))
-            if cc then row.name:SetTextColor(cc.r, cc.g, cc.b) else row.name:SetTextColor(0.9, 0.9, 0.93) end
+            if cc then row.name:SetTextColor(cc.r, cc.g, cc.b) else row.name:SetTextColor(UI.TEXT[1], UI.TEXT[2], UI.TEXT[3]) end
             row.score:SetText(tostring(rec.best))
             row.gem:SetTexture(Gems.Icon(rec.tier))
             row.mine:SetShown(rec.author == me)

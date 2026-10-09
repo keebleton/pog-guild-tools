@@ -345,9 +345,6 @@ function Loot:Build(page)
     self.status = UI.Text(page, 11)
     self.status:SetPoint("LEFT", page, "TOPLEFT", PAD + 2, -(ROW2_Y + BAR_H / 2))
     self.status:SetTextColor(0.6, 0.6, 0.65)
-    self.info = UI.Text(page, 11)
-    self.info:SetPoint("LEFT", page, "TOPLEFT", RX + 2, -(ROW2_Y + BAR_H / 2))
-    self.info:SetTextColor(0.6, 0.6, 0.65)
 
     -- Players list
     local list = CreateFrame("Frame", nil, page)
@@ -368,18 +365,15 @@ function Loot:Build(page)
         row:SetPoint("TOPLEFT", 2, -2 - (i - 1) * ROW_H)
         row.sel = row:CreateTexture(nil, "BACKGROUND")
         row.sel:SetAllPoints()
-        row.sel:SetColorTexture(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3], 0.18)
+        UI.SelBar(row.sel, 0.18)
         local hl = row:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints()
-        hl:SetColorTexture(1, 1, 1, 0.06)
+        UI.Hover(hl, 0.06)
         row.label = UI.Text(row, 12)
         row.label:SetPoint("LEFT", 8, 0)
         row.label:SetPoint("RIGHT", -40, 0)
         row.label:SetJustifyH("LEFT")
         row.label:SetWordWrap(false)
-        row.count = UI.Text(row, 11)
-        row.count:SetPoint("RIGHT", -8, 0)
-        row.count:SetTextColor(0.6, 0.6, 0.65)
         row:SetScript("OnClick", function(r)
             self.player = r.playerKey
             self.tableOffset = 0
@@ -408,9 +402,9 @@ function Loot:Build(page)
     line:SetPoint("BOTTOMLEFT")
     line:SetPoint("BOTTOMRIGHT")
     line:SetHeight(1)
-    line:SetColorTexture(1, 1, 1, 0.06)
+    UI.Line(line, 0.06)
     for _, col in ipairs(COLS) do
-        local fs = UI.SectionTitle(head, col.label)
+        local fs = UI.SectionTitle(head, col.label, UI.COLUMN_SIZE)
         place(fs, head, col)
     end
     self.rows = {}
@@ -425,7 +419,7 @@ function Loot:Build(page)
         stripe:SetColorTexture(1, 1, 1, i % 2 == 0 and 0.025 or 0)
         local hl = row:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints()
-        hl:SetColorTexture(1, 1, 1, 0.06)
+        UI.Hover(hl, 0.06)
         row.cells = {}
         for c, col in ipairs(COLS) do
             local fs = UI.Text(row, c == 3 and 12 or 11)
@@ -436,8 +430,7 @@ function Loot:Build(page)
         row:SetScript("OnClick", function(r) if r.entry then UI.ShowMenu(r, self:EntryMenu(r.entry)) end end)
         row:SetScript("OnEnter", function(r)
             if r.entry and GameTooltip then
-                GameTooltip:SetOwner(r, "ANCHOR_RIGHT")
-                pcall(GameTooltip.SetHyperlink, GameTooltip, r.entry.link)
+                UI.ItemTip(r, r.entry.link)
                 GameTooltip:Show()
             end
         end)
@@ -530,10 +523,6 @@ function Loot:Refresh()
     self.status:SetText(s and ("|cff66dd77Recording|r loot for " .. s.name) or "Not recording")
     self.nightBtn:SetLabel(self.night and nightName(self.night) or "All nights")
     local rows = self:Filtered()
-    local players = {}
-    for _, e in ipairs(rows) do players[e.player] = true end
-    self.info:SetText(("%d item%s, %d player%s"):format(#rows, #rows == 1 and "" or "s", ns.Count(players),
-        ns.Count(players) == 1 and "" or "s"))
     self:RefreshPlayers()
     self:RefreshTable()
 end
@@ -564,7 +553,6 @@ function Loot:RefreshPlayers()
             row.playerKey = nil
             row.label:SetText("All players")
             row.label:SetTextColor(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3])
-            row.count:SetText(tostring(#rows))
             row.sel:SetShown(self.player == nil)
             row:Show()
         elseif order[idx - 1] then
@@ -572,7 +560,6 @@ function Loot:RefreshPlayers()
             row.playerKey = k
             row.label:SetText(display(k))
             row.label:SetTextColor(classColor(k))
-            row.count:SetText(tostring(per[k]))
             row.sel:SetShown(self.player == k)
             row:Show()
         else

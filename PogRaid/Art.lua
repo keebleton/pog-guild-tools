@@ -126,7 +126,68 @@ local function build()
     for _, p in ipairs(PVP) do
         add(c, { kind = "file", path = "Interface\\PVPFrame\\PvpBg-" .. p[1], name = p[2] .. " (PvP window)" })
     end
+    -- the dungeon journal's own pictures: the client says which files they are
+    c = cat("Dungeon journal")
+    if EJ_GetNumTiers and EJ_SelectTier and EJ_GetInstanceByIndex and EJ_GetInstanceInfo then
+        local okT, tiers = pcall(EJ_GetNumTiers)
+        local okC, current = pcall(EJ_GetCurrentTier or function() end)
+        local seen = {}
+        for t = 1, (okT and tonumber(tiers) or 0) do
+            if pcall(EJ_SelectTier, t) then
+                for _, raid in ipairs({ false, true }) do
+                    for i = 1, 200 do
+                        local ok, id = pcall(EJ_GetInstanceByIndex, i, raid)
+                        if not ok or not id then break end
+                        local ok2, name, _, bg, _, lore = pcall(EJ_GetInstanceInfo, id)
+                        if ok2 and name and not seen[name] then
+                            seen[name] = true
+                            if bg and bg ~= 0 and bg ~= "" then add(c, { kind = "file", path = bg, name = name }) end
+                            if lore and lore ~= 0 and lore ~= "" then add(c, { kind = "file", path = lore, name = name .. " (lore)" }) end
+                        end
+                    end
+                end
+            end
+        end
+        if okC and current then pcall(EJ_SelectTier, current) end
+    end
+    c = cat("Faction crests")
+    for _, f in ipairs({ { "Interface\\Timer\\Alliance-Logo", "Alliance (battleground)" }, { "Interface\\Timer\\Horde-Logo", "Horde (battleground)" },
+        { "Interface\\TargetingFrame\\UI-PVP-Alliance", "Alliance (PvP flag)" }, { "Interface\\TargetingFrame\\UI-PVP-Horde", "Horde (PvP flag)" },
+        { "Interface\\FriendsFrame\\PlusManz-Alliance", "Alliance (small)" }, { "Interface\\FriendsFrame\\PlusManz-Horde", "Horde (small)" } }) do
+        add(c, { kind = "file", path = f[1], name = f[2] })
+    end
+    for _, a in ipairs({ { "AllianceEmblem", "Alliance emblem" }, { "HordeEmblem", "Horde emblem" } }) do
+        add(c, { kind = "atlas", atlas = a[1], name = a[2] })
+    end
+    c = cat("Stationery and parchment")
+    for _, f in ipairs({ { "StationeryTest1", "Plain letter" }, { "Stationery_ill1", "Illidari letter" },
+        { "Stationery_Chr1", "Winter Veil letter" }, { "Stationery_OG1", "Orgrimmar letter" }, { "Stationery_TB1", "Thunder Bluff letter" },
+        { "Stationery_UC1", "Undercity letter" }, { "Stationery_Val1", "Love letter" } }) do
+        add(c, { kind = "file", path = "Interface\\Stationery\\" .. f[1], name = f[2] })
+    end
+    for _, f in ipairs({ { "Interface\\ACHIEVEMENTFRAME\\UI-Achievement-Parchment-Horizontal", "Achievement parchment" },
+        { "Interface\\ACHIEVEMENTFRAME\\UI-Achievement-Parchment", "Achievement parchment (tall)" },
+        { "Interface\\Spellbook\\Spellbook-Page-1", "Spellbook page" }, { "Interface\\QuestFrame\\QuestBG", "Quest parchment" } }) do
+        add(c, { kind = "file", path = f[1], name = f[2] })
+    end
     return cats
+end
+
+-- An item typed into "Try your own": a file ID, an atlas name, or a file
+-- path (slashes either way).
+function Art.Custom(text)
+    text = tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if text == "" then return nil end
+    local item = { cat = "Custom", name = text }
+    local n = tonumber(text)
+    if n then
+        item.kind, item.path = "file", n
+    elseif C_Texture and C_Texture.GetAtlasInfo and select(2, pcall(C_Texture.GetAtlasInfo, text)) then
+        item.kind, item.atlas = "atlas", text
+    else
+        item.kind, item.path = "file", (text:gsub("/", "\\"))
+    end
+    return item
 end
 
 -- Does this client have it? true, false, or nil when it can't say.
@@ -136,6 +197,7 @@ function Art.Has(item)
         local ok, info = pcall(C_Texture.GetAtlasInfo, item.atlas)
         return ok and type(info) == "table"
     end
+    if type(item.path) == "number" then return true end -- a file ID the client gave us (or someone typed)
     if not GetFileIDFromPath then return nil end
     local path = item.kind == "quad" and (item.base .. item.parts[1]) or item.path
     for _, p in ipairs({ path, path .. ".blp" }) do
@@ -280,8 +342,19 @@ function Art.Cover(f, item, w, h)
         t:SetSize(w, h)
         t:SetPoint("TOPLEFT", 0, 0)
     else
+        -- a picture: taken as 4:3 unless it says, cropped to fit
+        local have, want = item.aspect or 4 / 3, w / h
+        local l, r, t_, b = 0, 1, 0, 1
+        if want > have then
+            local cut = (1 - have / want) / 2
+            t_, b = cut, 1 - cut
+        else
+            local cut = (1 - want / have) / 2
+            l, r = cut, 1 - cut
+        end
         local t = texOf(f, 1)
         t:SetTexture(item.path)
+        t:SetTexCoord(l, r, t_, b)
         t:SetSize(w, h)
         t:SetPoint("TOPLEFT", 0, 0)
     end
@@ -290,7 +363,7 @@ end
 -- Talent tree art inside a card, faint: drawn in the card's own background
 -- layer just above its fill, so the card's text and rows stay on top.
 -- art:Set(classFile, tree) or art:Random() (any class's tree).
-Art.CARD_ALPHA = 0.3
+Art.CARD_ALPHA = 0.7 -- page art, strong (Jake: was 0.3, which let the theme's surface through; full was too bright behind text)
 
 function Art.CardArt(card)
     card.artLayer, card.artSub, card.artAlpha = "BACKGROUND", 1, Art.CARD_ALPHA
@@ -328,6 +401,10 @@ function Art.Catalog()
 end
 
 function Art.Find(catName, name)
+    if catName == "Custom" then
+        local item = Art.Custom(name)
+        return item and Art.Has(item) ~= false and item or nil
+    end
     for _, c in ipairs(Art.Catalog()) do
         if c.name == catName then
             for _, item in ipairs(c.items) do
@@ -404,6 +481,8 @@ function Art:Build()
     f:SetToplevel(true)
     f:EnableMouse(true)
     UI.Panel(f)
+    f.metal = UI.PortraitFrame(f, "Art gallery", ns.MEDIA .. "logo", function() f:Hide() end)
+    if not f.metal then UI.Window(f) end
     f:Hide()
     tinsert(UISpecialFrames, "PogRaidArt")
     local bar = CreateFrame("Frame", nil, f)
@@ -414,20 +493,26 @@ function Art:Build()
     local band = bar:CreateTexture(nil, "BACKGROUND")
     band:SetPoint("TOPLEFT", 1, -1)
     band:SetPoint("BOTTOMRIGHT", -1, 0)
-    band:SetColorTexture(0.095, 0.1, 0.115, 1)
     local divider = bar:CreateTexture(nil, "BORDER")
     divider:SetPoint("BOTTOMLEFT", 1, 0)
     divider:SetPoint("BOTTOMRIGHT", -1, 0)
     divider:SetHeight(1)
-    divider:SetColorTexture(UI.BORDER[1], UI.BORDER[2], UI.BORDER[3], 1)
-    f.title = UI.Text(bar, 14)
-    f.title:SetPoint("LEFT", PAD, 0)
-    f.title:SetText("Art gallery")
-    f.close = UI.Tab(bar, "X", 28, BAND_H, function() f:Hide() end)
-    f.close:SetPoint("RIGHT", -PAD + 7, 0)
     f.meta = UI.Text(bar, 11)
-    f.meta:SetPoint("RIGHT", f.close, "LEFT", -10, 0)
     f.meta:SetTextColor(0.55, 0.55, 0.6)
+    if f.metal then
+        f.title, f.close = f.metal.title, f.metal.close
+        UI.Band(band, divider)
+        f.meta:SetPoint("RIGHT", -PAD, 0)
+        UI.MakeMovable(f, f.metal.strip, function() UI.SavePosition(f, "art") end)
+    else
+        f.title = UI.Text(bar, 14)
+        f.title:SetPoint("LEFT", PAD, 0)
+        f.title:SetText("Art gallery")
+        UI.Band(band, divider, f.title)
+        f.close = UI.CloseButton(bar, 28, BAND_H, function() f:Hide() end)
+        f.close:SetPoint("RIGHT", -PAD + 7, 0)
+        f.meta:SetPoint("RIGHT", f.close, "LEFT", -10, 0)
+    end
 
     -- categories
     local list = CreateFrame("Frame", nil, f)
@@ -442,10 +527,10 @@ function Art:Build()
         row:SetPoint("TOPRIGHT", -2, -(4 + (i - 1) * ROW_H))
         row.sel = row:CreateTexture(nil, "BACKGROUND")
         row.sel:SetAllPoints()
-        row.sel:SetColorTexture(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3], 0.12)
+        UI.SelBar(row.sel, 0.12)
         local hl = row:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints()
-        hl:SetColorTexture(1, 1, 1, 0.05)
+        UI.Hover(hl, 0.05)
         row.name = UI.Text(row, 11)
         row.name:SetPoint("LEFT", 10, 0)
         row.count = UI.Text(row, 10)
@@ -457,6 +542,26 @@ function Art:Build()
         end)
         list.rows[i] = row
     end
+    -- try your own: a file path, file ID or atlas name (from wago.tools, say)
+    list.ownTitle = UI.SectionTitle(list, "Try your own")
+    list.ownTitle:SetPoint("TOPLEFT", 12, -(GRID_H - 74))
+    local own = UI.EditBox(list, LIST_W - 20, 24)
+    own:SetPoint("TOPLEFT", 10, -(GRID_H - 58))
+    own.placeholder = UI.Text(own, 10)
+    own.placeholder:SetPoint("LEFT", 8, 0)
+    own.placeholder:SetTextColor(0.45, 0.45, 0.5)
+    own.placeholder:SetText("File path or ID")
+    own:SetScript("OnTextChanged", function(b) b.placeholder:SetShown(b:GetText() == "") end)
+    own:SetScript("OnEnterPressed", function(b)
+        b:ClearFocus()
+        self:TryOwn(b:GetText())
+    end)
+    list.own = own
+    list.ownNote = UI.Text(list, 10)
+    list.ownNote:SetPoint("TOPLEFT", 12, -(GRID_H - 28))
+    list.ownNote:SetWidth(LIST_W - 24)
+    list.ownNote:SetJustifyH("LEFT")
+    list.ownNote:SetTextColor(0.95, 0.45, 0.4)
     f.list = list
 
     -- tiles
@@ -482,7 +587,7 @@ function Art:Build()
         local hl = t:CreateTexture(nil, "HIGHLIGHT")
         hl:SetPoint("TOPLEFT", 0, 0)
         hl:SetSize(TILE_W, IMG_H)
-        hl:SetColorTexture(1, 1, 1, 0.08)
+        UI.Hover(hl, 0.08)
         t.label = UI.Text(t, 11)
         t.label:SetPoint("TOPLEFT", 0, -(IMG_H + 4))
         t.label:SetWidth(TILE_W)
@@ -550,6 +655,20 @@ function Art:Build()
     self.frame = f
 end
 
+-- Show something typed into "Try your own" big, ready for Use on.
+function Art:TryOwn(text)
+    local note = self.frame.list.ownNote
+    local item = Art.Custom(text)
+    note:SetText("")
+    if not item then return end
+    if Art.Has(item) == false then
+        note:SetText("Not in this client.")
+        return
+    end
+    self.preview = item
+    self:Refresh()
+end
+
 function Art:Toggle()
     for _, c in ipairs(Art.Catalog()) do
         if not c.found then
@@ -577,7 +696,7 @@ function Art:Refresh()
         row.name:SetText(c.name)
         row.count:SetText(tostring(#c.found))
         row.sel:SetShown(i == self.cat)
-        if #c.found == 0 then row.name:SetTextColor(0.45, 0.45, 0.5) else row.name:SetTextColor(0.9, 0.9, 0.93) end
+        if #c.found == 0 then row.name:SetTextColor(0.45, 0.45, 0.5) else row.name:SetTextColor(UI.TEXT[1], UI.TEXT[2], UI.TEXT[3]) end
     end
     local c = self.cats[self.cat]
     f.meta:SetText(("%d of %d in this client"):format(#c.found, #c.items))

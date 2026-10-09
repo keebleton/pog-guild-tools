@@ -1,7 +1,7 @@
 -- PogRaid core: saved data, event dispatch, slash commands, API probe.
 local ADDON, ns = ...
 
-ns.VERSION = "0.14.0"
+ns.VERSION = "0.15.0"
 ns.MEDIA = "Interface\\AddOns\\" .. ADDON .. "\\Media\\"
 
 -- Page grid: every tab's page is PAGE_H tall. The Raid tab's pages (Roster,
@@ -206,6 +206,9 @@ ns.On("ADDON_LOADED", function(name)
     if st.duelChallenges == nil then st.duelChallenges = true end
     if st.profileSongs == nil then st.profileSongs = true end
     if st.groupToasts == nil then st.groupToasts = true end
+    if st.theme == nil then st.theme = st.classic == false and "plain" or ns.UI.DEFAULT_THEME end
+    st.classic = nil
+    ns.UI.SetTheme(st.theme)
     if db.guild.maxLevelOnly == nil then db.guild.maxLevelOnly = false end
     -- v2: "max level only" used to default on, which hid every raider on the
     -- beta (nobody at cap yet). It was never a choice, so reset it.
@@ -282,8 +285,7 @@ function ns.Probe()
     local ok, n = pcall(GetNumGuildTradeSkill or function() return nil end)
     ns.Print(("built-in guild professions: %s"):format(ok and n and (n .. " entries") or "not available"))
     local okModel, model = pcall(CreateFrame, "DressUpModel")
-    ns.Print(("character models: %s, other players' models: %s"):format(yesno(okModel and model),
-        yesno(okModel and model and model.SetCustomRace ~= nil)))
+    ns.Print(("character models: %s"):format(yesno(okModel and model)))
     if okModel and model then model:Hide() end
     for _, line in ipairs(ns.Bug:Performance()) do ns.Print(line) end
     ns.Comm.Ping()

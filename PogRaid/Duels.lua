@@ -378,14 +378,14 @@ function Duels:Build(view, top, height)
     }
     board.cols = cols
     for _, c in ipairs(cols) do
-        local fs = UI.SectionTitle(board, c[1])
+        local fs = UI.SectionTitle(board, c[1], UI.COLUMN_SIZE)
         if c[3] == "RIGHT" then fs:SetPoint("RIGHT", board, "TOPLEFT", c[2], -14) else fs:SetPoint("LEFT", board, "TOPLEFT", c[2], -14) end
     end
     local line = board:CreateTexture(nil, "ARTWORK")
     line:SetPoint("TOPLEFT", 1, -28)
     line:SetPoint("TOPRIGHT", -1, -28)
     line:SetHeight(1)
-    line:SetColorTexture(1, 1, 1, 0.06)
+    UI.Line(line, 0.06)
     board.rows = {}
     board.visible = math.floor((height - 34) / ROW_H)
     for i = 1, board.visible do
@@ -514,6 +514,7 @@ function Popup:Build()
     f:SetPoint("TOP", 0, -210)
     f:EnableMouse(true)
     UI.Panel(f, { 0.05, 0.06, 0.07, 0.97 }, UI.ACCENT)
+    UI.Window(f)
     UI.MakeMovable(f, f)
     f.text = UI.Text(f, 12)
     f.text:SetPoint("TOPLEFT", 12, -10)

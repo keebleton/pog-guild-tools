@@ -30,6 +30,8 @@ function Viewer:Build()
     f:SetFrameStrata("HIGH")
     f:EnableMouse(true)
     UI.Panel(f)
+    local metal = UI.PortraitFrame(f, "", ns.MEDIA .. "logo", function() f:Hide() end)
+    if not metal then UI.Window(f) end
     f:Hide()
     tinsert(UISpecialFrames, "PogRaidViewer")
     self.frame = f
@@ -40,16 +42,24 @@ function Viewer:Build()
     bar:SetHeight(TITLE_H)
     UI.MakeMovable(f, bar, function() UI.SavePosition(f, "viewer") end)
 
-    self.title = UI.Text(bar, 13)
-    self.title:SetPoint("LEFT", PAD + 2, 0)
     self.from = UI.Text(bar, 11)
-    self.from:SetPoint("LEFT", self.title, "RIGHT", 8, 0)
     self.from:SetTextColor(0.55, 0.55, 0.6)
-
-    local close = UI.Tab(bar, "X", 28, TITLE_H, function() f:Hide() end)
-    close:SetPoint("RIGHT", -PAD + 7, 0)
     local size = UI.Button(bar, "Size", 44, 22, function() self:CycleScale() end)
-    size:SetPoint("RIGHT", close, "LEFT", -4, 0)
+    if metal then
+        -- the plan's name in the strip; who sent it in the bar, clear of the portrait
+        self.title = metal.title
+        self.from:SetPoint("LEFT", UI.PORTRAIT_CLEAR, 0)
+        size:SetPoint("RIGHT", -PAD, 0)
+        UI.MakeMovable(f, metal.strip, function() UI.SavePosition(f, "viewer") end)
+    else
+        self.title = UI.Text(bar, 13)
+        if UI.classic then self.title:SetTextColor(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3]) end
+        self.title:SetPoint("LEFT", PAD + 2, 0)
+        self.from:SetPoint("LEFT", self.title, "RIGHT", 8, 0)
+        local close = UI.CloseButton(bar, 28, TITLE_H, function() f:Hide() end)
+        close:SetPoint("RIGHT", -PAD + 7, 0)
+        size:SetPoint("RIGHT", close, "LEFT", -4, 0)
+    end
 
     local canvas = ns.CreateCanvas(f, CANVAS_W, CANVAS_H)
     canvas.frame:SetPoint("TOPLEFT", PAD, -TITLE_H)

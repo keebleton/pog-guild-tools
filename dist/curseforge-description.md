@@ -1,27 +1,27 @@
 # Pog Guild Tools
 
-A guild home base for **World of Warcraft: Forever**. Type **/pog** to open it.
+A guild home base for **World of Warcraft: Forever**. Type **/pog** to open it. It looks like part of the game: the game's own window frame, gold lettering, buttons and sounds, in a choice of themes.
 
 ## Home
-Your guild at a glance: guild logo and name, message of the day, who's online, level-ups and achievements, recent guild chat, a level spread chart and the guild's recent blue-and-better drops.
+Your guild at a glance: your guild's name and banner (in your tabard's colours), message of the day, who's online, level-ups and achievements, guild chat and the guild's recent blue-and-better drops.
 
 - **Message board.** Officers post announcements, everyone with Pog Guild Tools can comment in the thread. Posts can be pinned.
 - **Group finder.** Post what you're doing and who you need. Listings show how full the group is (2/5) and expire after 45 minutes. Guildies can request to join with one click, and you get a pop-up to invite them. When someone posts a group, a small pop-up lets you ask to join right away.
 
 ## Profiles
 A MySpace-style page for every guildie running Pog Guild Tools, one per account.
-- **Make it yours.** A nickname, a status line, About Me, favorites, main role, a portrait from thousands of classic icons, a theme color and a profile song that plays when guildies visit. Set it once and all your characters share it.
+- **Make it yours.** A nickname, a status line, About Me, favorites, main role and off spec, a portrait from thousands of classic icons, a theme color and a profile song that plays when guildies visit. Set it once and all your characters share it.
 - **Kudos.** Recognize guildies for Clutch heals, Great tank, Carried me, GGWP and more, with a few words saying why. Their page shows the latest kudos they've received.
 - **Professions.** See someone's two main professions and browse their recipes right from their page.
-- **Character.** See their character in 3D right on their page, and Inspect to see what they were most recently wearing, even when they're offline or across the world. Click an item to add it to your own wishlist.
+- **Character.** Their gear laid out like the character pane, with their character in 3D when they're nearby, and Inspect to see what they were most recently wearing, even when they're offline or across the world. Click an item to add it to your own wishlist.
 - **Most played with.** Fills itself with the guildies you group with most.
 
 ## LFG
-- **Find a group.** Tick the dungeons you want, pick your role, add a note, and the guild sees you're looking. Dungeons in your level range stand out.
+- **Find a group.** Tick the dungeons you want, pick your roles (tank, healer, DPS, any mix), add a note, and the guild sees you're looking. Dungeons in your level range stand out.
 - **Groups at a glance.** Every group listing as a tile with how full it is and what it needs, and a Join button right on it. People after the same dungeons as you are listed first.
 
 ## Wishlist
-- **Plan your gear.** A character sheet of the gear you're after, one item per slot, with your character in the middle wearing it. Shift-click items in from your bags, chat or any loot window.
+- **Plan your gear.** A character sheet of the gear you're after, one item per slot, with your character in the middle wearing it. Shift-click items in from your bags, chat or any loot window. Keep up to three wishlists (say, one for healing) and name them.
 - **Browse by slot.** Pick Head, Chest, Trinket or any slot to see every item for it, best item level first, and where it drops. Items tick themselves off when you get them.
 
 ## Raid leading
@@ -32,7 +32,7 @@ A MySpace-style page for every guildie running Pog Guild Tools, one per account.
 
 ## Crafting
 - **Who can make it?** Search any recipe and see which guildies know it, online crafters first, with a click to whisper them. Works for crafters who are offline too.
-- **Profession directory.** Every profession in the guild, who has it, their skill, and how many recipes they know.
+- **Profession directory.** Every profession in the guild, who has it and their skill.
 - Your professions share themselves. Open each profession window once and your recipes join the search.
 
 ## Games
@@ -42,6 +42,7 @@ A MySpace-style page for every guildie running Pog Guild Tools, one per account.
 - **Ranked Duels.** Challenge a guildie, duel, and the result counts once both addons agree. Chess-style ratings and a win/loss leaderboard.
 
 ## Settings
+- **Themes.** Night, Stone, Ember, Sandstone or Leather, each on its own textured surface, or the plain modern look.
 - Minimap button (easy to hide), sounds, pop-ups, profile songs, which guild ranks count as officers, and who in the guild has Pog Guild Tools and on which version.
 
 ## Notes

@@ -714,10 +714,10 @@ function Att:Build(page)
         row:SetPoint("TOPLEFT", 2, -2 - (i - 1) * ROW_H)
         row.sel = row:CreateTexture(nil, "BACKGROUND")
         row.sel:SetAllPoints()
-        row.sel:SetColorTexture(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3], 0.18)
+        UI.SelBar(row.sel, 0.18)
         local hl = row:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints()
-        hl:SetColorTexture(1, 1, 1, 0.06)
+        UI.Hover(hl, 0.06)
         row.label = UI.Text(row, 11)
         row.label:SetPoint("LEFT", 8, 0)
         row.label:SetPoint("RIGHT", -40, 0)
@@ -754,13 +754,13 @@ function Att:Build(page)
     line:SetPoint("BOTTOMLEFT")
     line:SetPoint("BOTTOMRIGHT")
     line:SetHeight(1)
-    line:SetColorTexture(1, 1, 1, 0.06)
+    UI.Line(line, 0.06)
     self.head = head
     self.headCells = {}
     for i = 1, 5 do
         local b = CreateFrame("Button", nil, head)
         b:SetSize(80, ROW_H)
-        b.text = UI.SectionTitle(b)
+        b.text = UI.SectionTitle(b, nil, UI.COLUMN_SIZE)
         b:SetScript("OnClick", function(btn)
             if self:Viewing() or not btn.key then return end
             self.sortCol = btn.key
@@ -780,7 +780,7 @@ function Att:Build(page)
         stripe:SetColorTexture(1, 1, 1, i % 2 == 0 and 0.025 or 0)
         local hl = row:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints()
-        hl:SetColorTexture(1, 1, 1, 0.06)
+        UI.Hover(hl, 0.06)
         row.cells = {}
         for c = 1, 5 do
             row.cells[c] = UI.Text(row, 12)
@@ -895,9 +895,7 @@ function Att:Refresh()
             kills, kills == 1 and "" or "s", wipes, wipes == 1 and "" or "s", s.stop and "" or ", recording"))
     else
         self.title:SetText("Attendance summary")
-        local sum = self:Summary()
-        self.info:SetText(("%d raid week%s, %d night%s"):format(sum.weeks,
-            sum.weeks == 1 and "" or "s", sum.nights, sum.nights == 1 and "" or "s"))
+        self.info:SetText("")
     end
     self:RefreshList()
     self:RefreshTable()
@@ -921,10 +919,8 @@ function Att:RefreshList()
             local s = sessions[idx - 1]
             row.sessionId = s.id
             row.label:SetText(date("%a %m/%d", s.start) .. "  " .. s.name)
-            row.label:SetTextColor(0.92, 0.92, 0.94)
-            local n = 0
-            for _ in pairs(s.present) do n = n + 1 end
-            row.count:SetText(s.stop and tostring(n) or "live")
+            row.label:SetTextColor(UI.TEXT[1], UI.TEXT[2], UI.TEXT[3])
+            row.count:SetText(s.stop and "" or "live")
             row.sel:SetShown(self.viewing == s.id)
             row:Show()
         else
@@ -941,7 +937,7 @@ function Att:RefreshTable()
         local col = cols[i]
         if col then
             cell.key = col.key
-            cell.text:SetText((col.label .. ((not s and self.sortCol == col.key) and " *" or "")):upper())
+            cell.text:SetText(col.label .. ((not s and self.sortCol == col.key) and " *" or ""))
             placeCell(cell.text, self.head, col)
             cell:ClearAllPoints()
             cell:SetAllPoints(cell.text)

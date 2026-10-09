@@ -105,10 +105,16 @@ function Editor:Build()
     f:SetToplevel(true)
     f:EnableMouse(true)
     UI.Panel(f)
+    -- the game's metal window with our logo in the corner (else the dialog border)
+    local metal = UI.PortraitFrame(f, "Pog Guild Tools", ns.MEDIA .. "logo", function() f:Hide() end)
+    if not metal then UI.Window(f) end
+    self.metal = metal
     f:Hide()
+    f:SetScript("OnShow", function() UI.Sound("IG_CHARACTER_INFO_OPEN") end)
     f:SetScript("OnHide", function()
         UI.HideMenu()
         self:StopDrag()
+        UI.Sound("IG_CHARACTER_INFO_CLOSE")
     end)
     tinsert(UISpecialFrames, "PogRaidEditor")
     self.frame = f
@@ -122,18 +128,26 @@ function Editor:Build()
     local band = bar:CreateTexture(nil, "BACKGROUND")
     band:SetPoint("TOPLEFT", 1, -1)
     band:SetPoint("BOTTOMRIGHT", -1, 0)
-    band:SetColorTexture(0.095, 0.1, 0.115, 1)
     local divider = bar:CreateTexture(nil, "BORDER")
     divider:SetPoint("BOTTOMLEFT", 1, 0)
     divider:SetPoint("BOTTOMRIGHT", -1, 0)
     divider:SetHeight(1)
-    divider:SetColorTexture(UI.BORDER[1], UI.BORDER[2], UI.BORDER[3], 1)
     self.band, self.divider = bar, divider
     local title = UI.Text(bar, 14)
     title:SetPoint("LEFT", PAD, 0)
     title:SetText("Pog Guild Tools")
-    local close = UI.Tab(bar, "X", 28, BAND_H, function() f:Hide() end)
-    close:SetPoint("RIGHT", -PAD + 7, 0)
+    UI.Band(band, divider, title)
+    self.bandTitle = title
+    local close
+    if metal then
+        -- the title and the X live in the frame's strip; the portrait covers the band's left
+        title:Hide()
+        close = metal.close
+        UI.MakeMovable(f, metal.strip, function() UI.SavePosition(f, "editor") end)
+    else
+        close = UI.CloseButton(bar, 28, BAND_H, function() f:Hide() end)
+        close:SetPoint("RIGHT", -PAD + 7, 0)
+    end
     self.closeBtn = close
     table.sort(self.tabs, function(a, b) return a.order < b.order end)
     -- one button per tab, except a group's tabs share one (its menu picks)
@@ -157,12 +171,18 @@ function Editor:Build()
         local b
         if entry.group then
             local g = entry.group
-            b = UI.Tab(bar, g.label, TAB_W, BAND_H, function() self:GroupClick(g) end)
+            b = UI.Tab(bar, g.label, TAB_W, BAND_H, function()
+                UI.Sound("IG_CHARACTER_INFO_TAB")
+                self:GroupClick(g)
+            end)
             g.button = b
             for _, tab in ipairs(g.members) do self.tabButtons[tab.key] = b end
         else
             local tab = entry.tab
-            b = UI.Tab(bar, tab.label, TAB_W, BAND_H, function() self:ShowTab(tab.key) end)
+            b = UI.Tab(bar, tab.label, TAB_W, BAND_H, function()
+                UI.Sound("IG_CHARACTER_INFO_TAB")
+                self:ShowTab(tab.key)
+            end)
             self.tabButtons[tab.key] = b
         end
         self.topButtons[i] = b
@@ -195,15 +215,34 @@ end
 local SUB_GAP = 32    -- between sub-tab labels
 local SUB_LIFT = 4    -- label this far above the row's middle, clear of its underline
 
--- The first underline starts at the page margin; labels are SUB_GAP apart.
+-- Classic look: talent-window tabs side by side from the page margin.
+-- Plain: the first underline starts at the page margin; labels are SUB_GAP apart.
 function Editor:BuildSubTabs(g)
     local row = CreateFrame("Frame", nil, self.frame)
     row:SetPoint("TOPLEFT", 0, -(PAGE_Y + TITLE_H))
     row:SetSize(FRAME_W, BAR_H)
     row.tabs = {}
+    if UI.classic then
+        local x = PAD
+        for i, tab in ipairs(g.members) do
+            local t = UI.SubTab(row, tab.label, function()
+                UI.Sound("IG_CHARACTER_INFO_TAB")
+                self:ShowTab(tab.key)
+            end)
+            t:SetPoint("TOPLEFT", row, "TOPLEFT", x, 0)
+            t.key = tab.key
+            row.tabs[i] = t
+            x = x + t:GetWidth() + UI.SUBTAB_GAP
+        end
+        g.sub = row
+        return row
+    end
     local center
     for i, tab in ipairs(g.members) do
-        local t = UI.Tab(row, tab.label, 80, BAR_H, function() self:ShowTab(tab.key) end)
+        local t = UI.Tab(row, tab.label, 80, BAR_H, function()
+            UI.Sound("IG_CHARACTER_INFO_TAB")
+            self:ShowTab(tab.key)
+        end)
         local tw = t.label:GetStringWidth()
         local w = math.floor(tw + SUB_GAP + 0.5)
         t:SetWidth(w)
@@ -244,12 +283,21 @@ end
 -- either side, so the whole gap is clickable.
 function Editor:LayoutTabs(bar, list)
     local close = self.closeBtn
-    local closeCenter = FRAME_W - (PAD - 7) - close:GetWidth() / 2
-    local xText = closeCenter - close.label:GetStringWidth() / 2
     local sum = 0
     for _, b in ipairs(list) do sum = sum + b.label:GetStringWidth() end
-    local gap = (xText - RIGHT_X - sum) / (#list + 0.5)
+    local gap
     local x = RIGHT_X
+    if close.inStrip then
+        -- the X is up in the frame's strip: the tabs keep the spacing that fills
+        -- from the right column to the margin, centred in the window (Jake)
+        gap = (FRAME_W - PAD - RIGHT_X - sum) / (#list - 0.5)
+        local span = sum + (#list - 1) * gap -- first label's start to last label's end
+        x = (FRAME_W - span) / 2 - gap / 2
+    else
+        local closeCenter = FRAME_W - (PAD - 7) - close:GetWidth() / 2
+        local xText = closeCenter - close.visualW / 2
+        gap = (xText - RIGHT_X - sum) / (#list + 0.5)
+    end
     for _, b in ipairs(list) do
         local tw = b.label:GetStringWidth()
         local w = math.floor(tw + gap + 0.5)
@@ -369,10 +417,10 @@ function Editor:BuildLeft()
         row:SetPoint("TOPLEFT", 2, -2 - (i - 1) * ROW_H)
         row.sel = row:CreateTexture(nil, "BACKGROUND")
         row.sel:SetAllPoints()
-        row.sel:SetColorTexture(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3], 0.18)
+        UI.SelBar(row.sel, 0.18)
         local hl = row:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints()
-        hl:SetColorTexture(1, 1, 1, 0.06)
+        UI.Hover(hl, 0.06)
         row.label = UI.Text(row, 11)
         row.label:SetPoint("LEFT", 8, 0)
         row.label:SetPoint("RIGHT", -6, 0)
@@ -558,7 +606,7 @@ function Editor:SetDotPlayer(name, class)
     self.dotName, self.dotClass = name, class
     self.dotBtn:SetLabel(name)
     local c = class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
-    if c then self.dotBtn.label:SetTextColor(c.r, c.g, c.b) else self.dotBtn.label:SetTextColor(0.92, 0.92, 0.94) end
+    if c then self.dotBtn.label:SetTextColor(c.r, c.g, c.b) else self.dotBtn.label:SetTextColor(UI.TEXT[1], UI.TEXT[2], UI.TEXT[3]) end
 end
 
 ------------------------------------------------------------------------

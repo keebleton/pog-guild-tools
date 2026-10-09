@@ -11,9 +11,8 @@
 -- renews it. Dungeon names come from the DungeonJournal addon when it's
 -- installed, else the list below.
 --
--- Layout (902 x PAGE_H window):
---   [Post a group           ]  [Groups and looking            2 groups up, 3 looking]
---   [YOU               Stop ]  [GROUPS                                            ]
+-- Layout (902 x PAGE_H window), both columns from the top:
+--   [You               Stop ]  [Groups                                Post group  ]
 --   [[Tank][Heals][DPS]     ]  [[tile: what, leader, pips  Join] [tile ...]        ]
 --   [Note (optional)        ]  [LOOKING FOR GROUP                                 ]
 --   [DUNGEONS               ]  [(role) Name 24   Deadmines, SFK       online  3h  ]
@@ -37,7 +36,7 @@ local ROLE = { D = 1, T = 2, H = 3, M = 1, R = 1 }
 Dungeons.KNOWN = {
     { "Hall of Thanes", "13-20" }, { "Ragefire Chasm", "13-18" }, { "Ruins of Lordaeron", "15-22" },
     { "Wailing Caverns", "15-24" }, { "The Deadmines", "17-26" }, { "Shadowfang Keep", "20-30" },
-    { "Blackfathom Deeps", "22+" }, { "The Stockade", "24-32" }, { "Excavation Site: Wetlands", "26-31" },
+    { "Blackfathom Deeps", "22-32" }, { "The Stockade", "24-32" }, { "Excavation Site: Wetlands", "26-31" },
     { "City of Dalaran", "28-33" }, { "Gnomeregan", "29-38" }, { "Razorfen Kraul", "29-38" },
     { "Scarlet Monastery: Graveyard", "30-38" }, { "Scarlet Monastery: Library", "33-41" },
 }
@@ -97,7 +96,8 @@ Sync:Register({
         if rec.exp - rec.t > Dungeons.LOOK_HOURS * 3600 + 60 then return false end
         if rec.deleted then return true end
         return type(rec.list) == "string" and rec.list ~= "" and #rec.list <= Dungeons.MAX_NAMES
-            and not rec.list:find("[%c|]") and (rec.role == nil or ROLE[rec.role] ~= nil)
+            and not rec.list:find("[%c|]") and (rec.role == nil or (type(rec.role) == "string" and #rec.role <= 3
+                and rec.role:match("^[DTH]+$") ~= nil))
             and (rec.note == nil or (type(rec.note) == "string" and #rec.note <= Dungeons.MAX_NOTE and not rec.note:find("[%c|]")))
     end,
     prune = function(store)
@@ -168,12 +168,26 @@ function Dungeons:IsLooking(dungeon)
     return false
 end
 
--- Our role: picked here, else our profile's main role, else DPS.
+-- Our roles, as letters in Tank, Heals, DPS order ("TD"): picked here, else
+-- our profile's main role and off spec, else DPS.
+local ORDER = { "T", "H", "D" }
+local function sortRoles(set)
+    local out = ""
+    for _, k in ipairs(ORDER) do if set[k] then out = out .. k end end
+    return out
+end
+Dungeons.SortRoles = sortRoles
+
 function Dungeons:Role()
-    if ns.db.lookRole then return ns.db.lookRole end
-    local role = ns.Profiles and ns.Profiles:Content(me()).role
-    local i = role and ROLE[role]
-    return i and Dungeons.ROLES[i][1] or "D"
+    if ns.db.lookRole and ns.db.lookRole ~= "" then return ns.db.lookRole end
+    local content = ns.Profiles and ns.Profiles:Content(me()) or {}
+    local set = {}
+    for _, r in ipairs({ content.role, content.off }) do
+        local i = r and ROLE[r]
+        if i then set[Dungeons.ROLES[i][1]] = true end
+    end
+    local roles = sortRoles(set)
+    return roles ~= "" and roles or "D"
 end
 
 function Dungeons:Note() return ns.db.lookNote end
@@ -205,8 +219,14 @@ end
 
 function Dungeons:StopLooking() write({}) end
 
+-- Roles toggle: any of the three, at least one.
 function Dungeons:SetRole(key)
-    ns.db.lookRole = key
+    local set = {}
+    for k in self:Role():gmatch(".") do set[k] = true end
+    set[key] = not set[key] or nil
+    local roles = sortRoles(set)
+    if roles == "" then return end
+    ns.db.lookRole = roles
     local rec = self:MyLooking()
     if rec then write(split(rec.list)) else self:Changed() end
 end
@@ -220,6 +240,10 @@ function Dungeons:SetNote(text)
     if rec then write(split(rec.list)) end
 end
 
+-- Level ranges we show instead of the journal's (it has Blackfathom Deeps as
+-- an open-ended "22+"; Jake: 22-32).
+Dungeons.LEVEL_FIX = { ["Blackfathom Deeps"] = "22-32" }
+
 -- The dungeons by level: { name, level, min, max }.
 function Dungeons:List()
     local out = {}
@@ -230,6 +254,7 @@ function Dungeons:List()
         for _, k in ipairs(Dungeons.KNOWN) do out[#out + 1] = { name = k[1], level = k[2] } end
     end
     for _, d in ipairs(out) do
+        d.level = Dungeons.LEVEL_FIX[d.name] or d.level
         d.min = tonumber(d.level:match("^(%d+)")) or 1
         d.max = tonumber(d.level:match("%-(%d+)$")) or (d.min + 10)
     end
@@ -244,7 +269,7 @@ local FRAME_W, FRAME_H = 902, ns.PAGE_H
 local LEFT_W = 262
 local RX = PAD + LEFT_W + PAD
 local RW = FRAME_W - RX - PAD
-local LIST_Y = TITLE_H + BAR_H + GAP
+local LIST_Y = TITLE_H
 local LIST_H = FRAME_H - PAD - LIST_Y
 local HEAD_H = 26
 local YOU_H = HEAD_H + 10 + 30 + 8 + 24 + 12
@@ -254,6 +279,7 @@ local TILE_W = math.floor((RW - 24 - 8) / 2)
 local TILE_H = 82
 local GROUPS_H = HEAD_H + 8 + 2 * TILE_H + 8 + 8
 local LOOK_ROW = 42
+local ROLES_W = 8 + 3 * 21 + 8 -- room for three role icons before a name
 
 Dungeons.layout = { RX = RX, RW = RW, LIST_Y = LIST_Y, LIST_H = LIST_H, YOU_H = YOU_H, GROUPS_H = GROUPS_H,
     TILE_W = TILE_W, TILE_H = TILE_H }
@@ -269,7 +295,7 @@ local function card(page, title, x, y, w, h, icon)
         c.icon:SetSize(14, 14)
         c.icon:SetPoint("LEFT", c, "TOPLEFT", 10, -HEAD_H / 2)
         c.icon:SetTexture(icon)
-        c.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        c.icon:SetTexCoord(0.04, 0.96, 0.04, 0.96) -- (a light crop: some icons' art runs to the edge)
         c.title:SetPoint("LEFT", c, "TOPLEFT", 10 + 14 + 6, -HEAD_H / 2)
     else
         c.title:SetPoint("LEFT", c, "TOPLEFT", 10, -HEAD_H / 2)
@@ -281,7 +307,7 @@ local function card(page, title, x, y, w, h, icon)
     line:SetPoint("TOPLEFT", 1, -HEAD_H)
     line:SetPoint("TOPRIGHT", -1, -HEAD_H)
     line:SetHeight(1)
-    line:SetColorTexture(1, 1, 1, 0.06)
+    UI.Line(line, 0.06)
     c.empty = UI.Text(c, 11)
     c.empty:SetPoint("TOP", 0, -HEAD_H - 24)
     c.empty:SetWidth(w - 24)
@@ -292,20 +318,8 @@ end
 
 function Dungeons:Build(page)
     self.page = page
-    self.postBtn = UI.Button(page, "Post a group", LEFT_W, BAR_H, function()
-        if ns.Home then ns.Home:PostGroupDialog() end
-    end)
-    self.postBtn:SetPoint("TOPLEFT", PAD, -TITLE_H)
-    self.postBtn:SetPrimary()
-
     self:BuildYou(page)
     self:BuildDungeons(page)
-
-    self.title = UI.Text(page, 13)
-    self.title:SetPoint("LEFT", page, "TOPLEFT", RX + 2, -(TITLE_H + BAR_H / 2))
-    self.meta = UI.Text(page, 11)
-    self.meta:SetPoint("RIGHT", page, "TOPLEFT", RX + RW - 2, -(TITLE_H + BAR_H / 2))
-    self.meta:SetTextColor(0.55, 0.55, 0.6)
     self:BuildGroups(page)
     self:BuildLooking(page)
 end
@@ -372,7 +386,7 @@ function Dungeons:BuildDungeons(page)
         row:SetPoint("TOPRIGHT", -2, -(HEAD_H + 4 + (i - 1) * DUNGEON_ROW))
         local hl = row:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints()
-        hl:SetColorTexture(1, 1, 1, 0.05)
+        UI.Hover(hl, 0.05)
         -- the tick box: looking for this one
         row.box = CreateFrame("Button", nil, row)
         row.box.row = row
@@ -430,7 +444,7 @@ local function tile(self, parent)
     t.edge:SetColorTexture(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3], 0.8)
     local hl = t:CreateTexture(nil, "HIGHLIGHT")
     hl:SetAllPoints()
-    hl:SetColorTexture(1, 1, 1, 0.04)
+    UI.Hover(hl, 0.04)
     t.left = UI.Text(t, 10)
     t.left:SetPoint("TOPRIGHT", -10, -11)
     t.left:SetTextColor(0.55, 0.55, 0.6)
@@ -472,6 +486,11 @@ end
 
 function Dungeons:BuildGroups(page)
     local c = card(page, "Groups", RX, LIST_Y, RW, GROUPS_H, "Interface\\Icons\\INV_Misc_Spyglass_02")
+    -- posting a group sits in the card's header, as on Home
+    self.postBtn = UI.Button(c, "Post group", 74, 18, function()
+        if ns.Home then ns.Home:PostGroupDialog() end
+    end)
+    self.postBtn:SetPoint("RIGHT", c, "TOPRIGHT", -5, -HEAD_H / 2)
     c.offset = 0
     c.tiles = {}
     for i = 1, 4 do
@@ -505,25 +524,25 @@ function Dungeons:BuildLooking(page)
         row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         local hl = row:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints()
-        hl:SetColorTexture(1, 1, 1, 0.05)
-        row.role = row:CreateTexture(nil, "ARTWORK")
-        row.role:SetSize(24, 24)
-        row.role:SetPoint("LEFT", 10, 0)
+        UI.Hover(hl, 0.05)
+        row.roles = {}
+        for k = 1, 3 do
+            local t = row:CreateTexture(nil, "ARTWORK")
+            t:SetSize(20, 20)
+            t:SetPoint("LEFT", 8 + (k - 1) * 21, 0)
+            row.roles[k] = t
+        end
         row.right = UI.Text(row, 10)
         row.right:SetPoint("TOPRIGHT", -10, -7)
         row.right:SetJustifyH("RIGHT")
-        row.right2 = UI.Text(row, 10)
-        row.right2:SetPoint("TOPRIGHT", -10, -23)
-        row.right2:SetJustifyH("RIGHT")
-        row.right2:SetTextColor(0.55, 0.55, 0.6)
         row.text = UI.Text(row, 12)
-        row.text:SetPoint("TOPLEFT", 44, -6)
+        row.text:SetPoint("TOPLEFT", ROLES_W, -6)
         row.text:SetPoint("RIGHT", row.right, "LEFT", -8, 0)
         row.text:SetJustifyH("LEFT")
         row.text:SetWordWrap(false)
         row.sub = UI.Text(row, 10)
-        row.sub:SetPoint("TOPLEFT", 44, -23)
-        row.sub:SetPoint("RIGHT", row.right2, "LEFT", -8, 0)
+        row.sub:SetPoint("TOPLEFT", ROLES_W, -23)
+        row.sub:SetPoint("RIGHT", -10, 0)
         row.sub:SetJustifyH("LEFT")
         row.sub:SetWordWrap(false)
         row.sub:SetTextColor(0.65, 0.65, 0.7)
@@ -560,7 +579,7 @@ function Dungeons:Refresh()
     -- you
     local you = self.you
     local role = self:Role()
-    for _, b in ipairs(you.roles) do b:SetSelected(b.key == role) end
+    for _, b in ipairs(you.roles) do b:SetSelected(role:find(b.key, 1, true) ~= nil) end
     you.stop:SetShown(mine ~= nil)
     you.meta:SetShown(mine == nil)
     you.meta:SetText("Not looking")
@@ -570,7 +589,7 @@ function Dungeons:Refresh()
     local list = self:List()
     local c = self.dungeons
     local entries = list
-    c.meta:SetText(mine and ("Looking, " .. timeLeft(mine.exp)) or "")
+    c.meta:SetText(mine and "Looking" or "")
     if mine then c.meta:SetTextColor(0.4, 0.85, 0.45) else c.meta:SetTextColor(0.5, 0.5, 0.55) end
     c.offset = math.max(0, math.min(c.offset, #entries - c.visible))
     c.hint:Set(c.offset, c.visible, #entries)
@@ -580,7 +599,7 @@ function Dungeons:Refresh()
         if e then
             local fits = myLevel >= e.min - 2 and myLevel <= e.max
             row.name:SetText(e.name)
-            if fits then row.name:SetTextColor(0.92, 0.92, 0.95) else row.name:SetTextColor(0.5, 0.5, 0.55) end
+            if fits then row.name:SetTextColor(UI.TEXT[1], UI.TEXT[2], UI.TEXT[3]) else row.name:SetTextColor(0.5, 0.5, 0.55) end
             row.level:SetText(e.level)
             row.box:SetShown(inGuild)
             row.box.mark:SetShown(self:IsLooking(e.name))
@@ -590,8 +609,6 @@ function Dungeons:Refresh()
         end
     end
 
-    self.title:SetText("Groups and looking")
-    self.meta:SetText(("%d group%s up, %d looking"):format(#groups, #groups == 1 and "" or "s", #looking))
     self:RefreshGroups(groups, inGuild)
     self:RefreshLooking(looking, inGuild, mine)
 end
@@ -651,16 +668,23 @@ function Dungeons:RefreshLooking(looking, inGuild, mine)
         local l = looking[i + c.offset]
         row.item = l
         if l then
-            Dungeons.RoleIcon(row.role, l.role)
+            local k = 0
+            for key in tostring(l.role or "D"):gmatch(".") do
+                k = k + 1
+                if row.roles[k] then
+                    Dungeons.RoleIcon(row.roles[k], key)
+                    row.roles[k]:Show()
+                end
+            end
+            for j = k + 1, 3 do row.roles[j]:Hide() end
             row.text:SetText(colorName(l.name) .. (l.level and ("  |cff8a8a92" .. l.level .. "|r") or ""))
             local names = {}
             for _, d in ipairs(l.list) do
-                names[#names + 1] = (wanted[d] and l.name ~= me()) and ("|cff66ccff" .. d .. "|r") or d
+                names[#names + 1] = (wanted[d] and l.name ~= me()) and (UI.AccentCode() .. d .. "|r") or d
             end
             row.sub:SetText(table.concat(names, ", ") .. (l.note and ('  |cff9a9aa2"' .. l.note .. '"|r') or ""))
             row.right:SetText(l.online and "online" or "offline")
             if l.online then row.right:SetTextColor(0.4, 0.85, 0.45) else row.right:SetTextColor(0.5, 0.5, 0.55) end
-            row.right2:SetText(timeLeft(l.exp))
             row:Show()
         else
             row:Hide()

@@ -277,6 +277,10 @@ local KEY_W, KEY_H, KEY_GAP = 32, 36, 4
 local SIDE_X = PAD + LEFT_W + PAD
 local SIDE_W = 902 - SIDE_X - PAD
 local COLORS = { g = { 0.33, 0.66, 0.33 }, y = { 0.82, 0.66, 0.2 }, x = { 0.2, 0.2, 0.23 } }
+-- The keyboard (Jake: make it clear which letters are still in play): a letter
+-- not tried yet stands out, a letter ruled out sinks away.
+Wowdle.KEY_OPEN = { fill = { 0.30, 0.30, 0.34, 0.95 }, edge = { 0.55, 0.53, 0.48, 1 } }
+Wowdle.KEY_OUT = { fill = { 0.035, 0.035, 0.04, 0.95 }, edge = { 0.12, 0.12, 0.13, 1 }, alpha = 0.25 }
 local ROWS = { "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM" }
 
 local function square(c)
@@ -514,11 +518,21 @@ function Wowdle:RefreshGrid()
     end
     for ch, b in pairs(self.keys) do
         local s = known[ch]
-        if s then
+        if s == "x" then
+            local k = Wowdle.KEY_OUT
+            b.bg:SetColorTexture(k.fill[1], k.fill[2], k.fill[3], k.fill[4])
+            UI.SetBorderColor(b, k.edge)
+            b.label:SetAlpha(k.alpha)
+        elseif s then
             local col = COLORS[s]
             b.bg:SetColorTexture(col[1], col[2], col[3], 1)
+            UI.SetBorderColor(b, { col[1], col[2], col[3], 1 })
+            b.label:SetAlpha(1)
         else
-            b.bg:SetColorTexture(0.15, 0.15, 0.17, 0)
+            local k = Wowdle.KEY_OPEN
+            b.bg:SetColorTexture(k.fill[1], k.fill[2], k.fill[3], k.fill[4])
+            UI.SetBorderColor(b, k.edge)
+            b.label:SetAlpha(1)
         end
     end
 end
@@ -550,7 +564,7 @@ function Wowdle:Refresh()
             local p = ns.db.guild.players[rec.author]
             local cc = p and p.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[p.class]
             row.name:SetText(Ambiguate(rec.author, "short"))
-            if cc then row.name:SetTextColor(cc.r, cc.g, cc.b) else row.name:SetTextColor(0.9, 0.9, 0.93) end
+            if cc then row.name:SetTextColor(cc.r, cc.g, cc.b) else row.name:SetTextColor(UI.TEXT[1], UI.TEXT[2], UI.TEXT[3]) end
             local solved = rec.n <= Wowdle.TRIES
             row.score:SetText((solved and rec.n or "X") .. "/6")
             if solved then row.score:SetTextColor(0.4, 0.85, 0.45) else row.score:SetTextColor(0.95, 0.4, 0.35) end

@@ -130,13 +130,12 @@ function M:GetText() return self.__text end
 function M:SetUnit(unit) self.__unit, self.__tried, self.__dressed = unit, {}, (self.__dressed or 0) + 1 end
 function M:TryOn(link) table.insert(self.__tried, link) end
 function M:SetFacing(f) self.__facing = f end
-function M:SetCustomRace(race, gender) self.__unit, self.__race, self.__gender, self.__tried = nil, race, gender, {} end
 function M:Undress() self.__tried = {} end
 function M:ClearModel() self.__unit, self.__race, self.__tried = nil, nil, {} end
 function M:SetTextColor(r, g, b, a) self.__textColor = { r, g, b, a } end
 function M:SetJustifyH(j) self.__justifyH = j end
 function M:GetStringWidth() return #(self.__text or "") * 6 end
-function M:SetTexture(t) self.__texture = t end
+function M:SetTexture(t) self.__texture = t; self.__color = nil end
 function M:GetTexture() return self.__texture end
 function M:SetVertexColor(r, g, b, a) self.__vertex = { r, g, b, a } end
 function M:SetTexCoord(...)
@@ -145,7 +144,14 @@ function M:SetTexCoord(...)
 end
 function M:SetMask(path) self.__mask = path end
 function M:SetAtlas(name) self.__atlas = name end
-function M:SetColorTexture(r, g, b, a) self.__color = { r, g, b, a } end
+function M:SetColorTexture(r, g, b, a) self.__color = { r, g, b, a }; self.__texture = nil end
+function M:SetBlendMode(mode) self.__blend = mode end
+function M:SetGradient(orientation, minColor, maxColor) self.__gradient = { orientation, minColor, maxColor } end
+-- frames made with "BackdropTemplate" (the game's border and fill mixin)
+function M:SetBackdrop(b) self.__backdrop = b end
+function M:SetBackdropBorderColor(r, g, b, a) self.__borderColor = { r, g, b, a } end
+function M:SetAttribute(k, v) self.__attr = self.__attr or {}; self.__attr[k] = v end
+function M:RegisterForClicks(...) self.__clicks = { ... } end
 function M:SetStartPoint(_, _, x, y) self.__start = { x, y } end
 function M:SetEndPoint(_, _, x, y) self.__end = { x, y } end
 
@@ -245,11 +251,24 @@ function GetBuildInfo() return "1.60.1", "70009", "Sep 24 2026", 16001 end
 STUB.instance = { "Stormwind", "none" }
 function GetInstanceInfo() return STUB.instance[1], STUB.instance[2], 0, "", 0, 0, false, 0 end
 function SetRaidTargetIconTexture(tex, i) tex.__raidIcon = i end
-function PlaySound() end
+STUB.sounds = {}
+function PlaySound(id) table.insert(STUB.sounds, id) end
+-- like the game: an addon calling ReloadUI is blocked ("Interface action failed because of an AddOn")
+function ReloadUI() error("ADDON_ACTION_BLOCKED: ReloadUI") end
+-- the game's frame layouts: lays a named border kit onto a "NineSlicePanelTemplate" frame
+NineSliceUtil = { ApplyLayoutByName = function(f, name) f.__layout = name end }
+function CreateColor(r, g, b, a) return { r = r, g = g, b = b, a = a } end
+-- where each class sits on Interface\TargetingFrame\UI-Classes-Circles (the game's own table)
+CLASS_ICON_TCOORDS = { WARRIOR = { 0, 0.25, 0, 0.25 }, MAGE = { 0.25, 0.49609375, 0, 0.25 },
+    ROGUE = { 0.49609375, 0.7421875, 0, 0.25 }, DRUID = { 0.7421875, 0.98828125, 0, 0.25 },
+    HUNTER = { 0, 0.25, 0.25, 0.5 }, SHAMAN = { 0.25, 0.49609375, 0.25, 0.5 },
+    PRIEST = { 0.49609375, 0.7421875, 0.25, 0.5 }, WARLOCK = { 0.7421875, 0.98828125, 0.25, 0.5 },
+    PALADIN = { 0, 0.25, 0.5, 0.75 } }
 -- music: PlayMusic replaces the zone music until StopMusic
 function PlayMusic(file) STUB.music = file return true end
 function StopMusic() STUB.music = nil end
-SOUNDKIT = { RAID_WARNING = 8959 }
+SOUNDKIT = { RAID_WARNING = 8959, IG_CHARACTER_INFO_OPEN = 839, IG_CHARACTER_INFO_CLOSE = 840, IG_CHARACTER_INFO_TAB = 841,
+    IG_MAINMENU_OPTION_CHECKBOX_ON = 856, IG_MAINMENU_OPTION_CHECKBOX_OFF = 857 }
 STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
 UISpecialFrames = {}
 SlashCmdList = {}
@@ -431,13 +450,26 @@ function hooksecurefunc(name, fn)
     local orig = _G[name]
     _G[name] = function(...) local r = orig(...) fn(...) return r end
 end
-GameTooltip = setmetatable({ lines = {} }, { __index = function(t, k)
+-- Like the game: an item link brings up the "Currently equipped" comparison
+-- (ShoppingTooltip1/2) when the client always compares (STUB.alwaysCompare,
+-- on by default as on Jake's client) or Shift is held; it goes with the tooltip.
+ShoppingTooltip1 = CreateFrame("Frame")
+ShoppingTooltip2 = CreateFrame("Frame")
+STUB.alwaysCompare = true
+local function hideCompare() ShoppingTooltip1:Hide() ShoppingTooltip2:Hide() end
+GameTooltip = setmetatable({ lines = {}, shoppingTooltips = { ShoppingTooltip1, ShoppingTooltip2 } }, { __index = function(t, k)
     if k == "AddLine" then return function(self, text) table.insert(self.lines, text) end end
     if k == "AddDoubleLine" then return function(self, a, b) table.insert(self.lines, a .. " | " .. tostring(b)) end end
-    if k == "SetOwner" then return function(self) self.lines = {} self.shown = false end end
+    if k == "SetOwner" then return function(self, owner) self.owner = owner self.lines = {} self.shown = false hideCompare() end end
+    if k == "GetOwner" then return function(self) return self.owner end end
+    if k == "IsShown" then return function(self) return self.shown end end
     if k == "Show" then return function(self) self.shown = true end end
-    if k == "Hide" then return function(self) self.shown = false end end
-    if k == "SetHyperlink" then return function(self, link) self.link = link end end
+    if k == "Hide" then return function(self) self.shown = false hideCompare() end end
+    if k == "SetHyperlink" then return function(self, link)
+        self.link = link
+        self.shown = true
+        if link:find("|Hitem:", 1, true) and (STUB.alwaysCompare or IsShiftKeyDown()) then ShoppingTooltip1:Show() end
+    end end
     return nil
 end })
 

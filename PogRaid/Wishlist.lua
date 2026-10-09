@@ -24,7 +24,9 @@ ns.Wishlist = Wishlist
 local Journal = {}
 ns.Journal = Journal
 
-Wishlist.MAX = 20 -- shared IDs accepted per player (17 slots, some slack)
+Wishlist.SETS = 3 -- wishlists per character (at most)
+Wishlist.MAX = 60 -- shared IDs accepted per player (3 lists of 17 slots, some slack)
+Wishlist.MAX_NAME = 20
 local NO_ICON = 134400
 local QUALITY_HEX = { [0] = "9d9d9d", [1] = "ffffff", [2] = "1eff00", [3] = "0070dd", [4] = "a335ee",
     [5] = "ff8000", [6] = "e6cc80", [7] = "00ccff" }
@@ -149,14 +151,101 @@ end
 -- Our list (per character) and what we share
 ------------------------------------------------------------------------
 -- { { id, link, t, slot, got } }, one item per slot.
-function Wishlist:Mine()
+-- Per character: { sets = { { name, items }, ... up to SETS }, cur }. Lists are
+-- made with New; there's always one. A list from before there were sets
+-- becomes the first.
+function Wishlist:Data()
     ns.db.wishlist = ns.db.wishlist or {}
     local key = (UnitGUID and UnitGUID("player")) or ns.PlayerName()
-    local list = ns.db.wishlist[key]
-    if not list then
-        list = {}
-        ns.db.wishlist[key] = list
+    local data = ns.db.wishlist[key]
+    if not data or not data.sets then
+        data = { sets = { { items = data or {} } }, cur = 1 }
+        ns.db.wishlist[key] = data
     end
+    if #data.sets == 0 then data.sets[1] = { items = {} } end
+    if not data.sets[data.cur or 1] then data.cur = 1 end
+    return data
+end
+
+function Wishlist:SetName(i)
+    local s = self:Data().sets[i]
+    return s and s.name or ("Wishlist " .. i)
+end
+
+function Wishlist:Rename(i, name)
+    local s = self:Data().sets[i]
+    if not s then return end
+    name = ns.Codec.CleanText(name or "", Wishlist.MAX_NAME)
+    s.name = name ~= "" and name or nil
+    self:Changed()
+end
+
+function Wishlist:UseSet(i)
+    local data = self:Data()
+    if not data.sets[i] then return end
+    data.cur = i
+    self:ShowSheet()
+end
+
+-- A new, empty wishlist (up to SETS), shown straight away.
+function Wishlist:NewSet()
+    local data = self:Data()
+    if #data.sets >= Wishlist.SETS then return end
+    data.sets[#data.sets + 1] = { items = {} }
+    data.cur = #data.sets
+    self:ShowSheet()
+    return data.cur
+end
+
+-- Never the last one.
+function Wishlist:DeleteSet(i)
+    local data = self:Data()
+    if #data.sets <= 1 or not data.sets[i] then return end
+    table.remove(data.sets, i)
+    if data.cur > i or data.cur > #data.sets then data.cur = data.cur - 1 end
+    self:Publish()
+    self:ShowSheet()
+end
+
+-- Back to the sheet (out of a slot list or a search).
+function Wishlist:ShowSheet()
+    self.list, self.offset = nil, 0
+    if self.addBox and self.addBox:GetText() ~= "" then self.addBox:SetText("") end
+    self:Changed()
+end
+
+function Wishlist:SetsMenu(anchor)
+    local data = self:Data()
+    local entries = { { text = "Wishlists", header = true } }
+    for i in ipairs(data.sets) do
+        local mark = i == data.cur and "> " or "   "
+        entries[#entries + 1] = { text = mark .. self:SetName(i), func = function() self:UseSet(i) end }
+    end
+    if #data.sets < Wishlist.SETS then
+        entries[#entries + 1] = { text = "New wishlist", color = { UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3] },
+            func = function() self:NewSet() end }
+    end
+    local cur = data.cur
+    entries[#entries + 1] = { text = "Rename this one...", func = function()
+        UI.Compose({ heading = "Rename this wishlist", label1 = "Name", max1 = Wishlist.MAX_NAME,
+            text1 = data.sets[cur] and data.sets[cur].name or "", text2 = "", button = "Save", optional = true, noArea = true },
+            function(name) self:Rename(cur, name) end)
+    end }
+    if #data.sets > 1 then
+        entries[#entries + 1] = { text = "Delete this one", color = { 0.95, 0.4, 0.4 }, func = function()
+            UI.ShowMenu(anchor, {
+                { text = "Delete " .. self:SetName(cur) .. "?", header = true },
+                { text = "Sure? Delete it", color = { 0.95, 0.4, 0.4 }, func = function() self:DeleteSet(cur) end },
+                { text = "Keep it" },
+            })
+        end }
+    end
+    UI.ShowMenu(anchor, entries)
+end
+
+-- The list on screen: { { id, link, t, slot, got } }, one item per slot.
+function Wishlist:Mine()
+    local list = self:Data().sets[self:Data().cur].items
     -- items from before the sheet (no slot): into a free slot, or off the list
     for i = #list, 1, -1 do
         local it = list[i]
@@ -259,14 +348,17 @@ function Wishlist:SetGot(id, got)
     self:Changed()
 end
 
--- Got something we wanted? Check it off.
+-- Got something we wanted? Check it off, on every list it's on.
 function Wishlist:CheckOwned()
-    local changed = false
-    for _, it in ipairs(self:Mine()) do
-        if not it.got and owned(it.id) then
-            it.got = ns.Now()
-            changed = true
-            ns.Print(("wishlist: got %s!"):format(it.link))
+    local changed, said = false, {}
+    for _, set in ipairs(self:Data().sets) do
+        for _, it in ipairs(set.items) do
+            if not it.got and owned(it.id) then
+                it.got = ns.Now()
+                changed = true
+                if not said[it.id] then ns.Print(("wishlist: got %s!"):format(it.link)) end
+                said[it.id] = true
+            end
         end
     end
     if changed then
@@ -275,11 +367,16 @@ function Wishlist:CheckOwned()
     end
 end
 
--- What we still want, as the guild sees it.
+-- What we still want, on any of our lists, as the guild sees it.
 function Wishlist:Wanted()
-    local ids = {}
-    for _, it in ipairs(self:Mine()) do
-        if not it.got then ids[#ids + 1] = it.id end
+    local ids, seen = {}, {}
+    for _, set in ipairs(self:Data().sets) do
+        for _, it in ipairs(set.items) do
+            if not it.got and not seen[it.id] then
+                seen[it.id] = true
+                ids[#ids + 1] = it.id
+            end
+        end
     end
     return ids
 end
@@ -426,11 +523,10 @@ local function slotButton(parent, slot, i, onClick)
     b:SetScript("OnClick", function(btn, button) if onClick then onClick(btn, button) end end)
     b:SetScript("OnEnter", function(btn)
         if not GameTooltip then return end
-        GameTooltip:SetOwner(btn, left and "ANCHOR_RIGHT" or "ANCHOR_LEFT")
         if btn.item then
-            local ok = pcall(GameTooltip.SetHyperlink, GameTooltip, btn.item.link)
-            if not ok then GameTooltip:AddLine(btn.item.link) end
+            UI.ItemTip(btn, btn.item.link, left and "ANCHOR_RIGHT" or "ANCHOR_LEFT")
         else
+            GameTooltip:SetOwner(btn, left and "ANCHOR_RIGHT" or "ANCHOR_LEFT")
             GameTooltip:AddLine(slot.name, 1, 1, 1)
         end
         GameTooltip:Show()
@@ -470,13 +566,14 @@ end
 -- Behind a model: the game's dressing room art for the class when the client
 -- has it (cropped to fit, dimmed), else a soft glow in the class colour; a
 -- shadow at the feet either way. bd:SetClass(classFile).
+Wishlist.BACKDROP_ALPHA = 0.7 -- the dressing room art, strong (Jake: was 0.55)
 function Wishlist.Backdrop(parent, m, area)
     local bd = {}
     local w, h = (area or m):GetWidth(), (area or m):GetHeight()
     local mh = m:GetHeight()
     bd.art = parent:CreateTexture(nil, "BACKGROUND", nil, 1)
     bd.art:SetAllPoints(area or m)
-    bd.art:SetAlpha(0.55)
+    bd.art:SetAlpha(Wishlist.BACKDROP_ALPHA)
     bd.art:Hide()
     bd.glow = parent:CreateTexture(nil, "BACKGROUND", nil, 2)
     bd.glow:SetTexture(ns.MEDIA .. "glow")
@@ -653,28 +750,6 @@ function Wishlist:Items(list)
     return out
 end
 
--- How many journal items each list has (the journal doesn't change while
--- we play, so this is counted once).
-function Wishlist:Counts()
-    if self.counts then return self.counts end
-    if not Journal:DB() then return {} end
-    local counts, seen = {}, {}
-    for i in ipairs(Wishlist.LISTS) do counts[i] = 0 end
-    -- one pass, no item details needed (so nothing is loaded just to count)
-    for _, dg in ipairs(Journal:List()) do
-        Journal.EachItem(dg.data, function(id, _, slot)
-            if seen[id] then return end
-            seen[id] = true
-            local loc = Wishlist.EquipLoc(id, slot or "")
-            for i, l in ipairs(Wishlist.LISTS) do
-                if loc and l.locs[loc] then counts[i] = counts[i] + 1 end
-            end
-        end)
-    end
-    self.counts = counts
-    return counts
-end
-
 function Wishlist:Build(page)
     self.page = page
     -- add box: shift-click an item while it has focus
@@ -707,7 +782,7 @@ function Wishlist:Build(page)
     side:SetSize(LEFT_W, LIST_H)
     UI.Card(side)
     side.rows = {}
-    local entries = { { label = "My wishlist", icon = "Interface\\Icons\\INV_Misc_Note_01" } }
+    local entries = { { set = true, icon = "Interface\\Icons\\INV_Misc_Note_01" } }
     for i, l in ipairs(Wishlist.LISTS) do
         entries[#entries + 1] = { label = l.name, list = l, index = i, icon = emptyIcon(slotOf(l.slot)) }
     end
@@ -718,21 +793,18 @@ function Wishlist:Build(page)
         row:SetPoint("TOPRIGHT", -2, -(4 + (i - 1) * SIDE_ROW))
         row.sel = row:CreateTexture(nil, "BACKGROUND")
         row.sel:SetAllPoints()
-        row.sel:SetColorTexture(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3], 0.12)
+        UI.SelBar(row.sel, 0.12)
         local hl = row:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints()
-        hl:SetColorTexture(1, 1, 1, 0.05)
+        UI.Hover(hl, 0.05)
         row.icon = row:CreateTexture(nil, "ARTWORK")
         row.icon:SetSize(16, 16)
         row.icon:SetPoint("LEFT", 8, 0)
         row.icon:SetTexture(e.icon)
         row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        row.count = UI.Text(row, 10)
-        row.count:SetPoint("RIGHT", -10, 0)
-        row.count:SetTextColor(0.5, 0.5, 0.55)
         row.name = UI.Text(row, 11)
         row.name:SetPoint("LEFT", 32, 0)
-        row.name:SetText(e.label)
+        row.name:SetText(e.label or "")
         row.entry = e
         row:SetScript("OnClick", function(r)
             self.list = r.entry.list
@@ -753,9 +825,8 @@ function Wishlist:Build(page)
     -- right: title row, then the character sheet (or a slot's items)
     self.title = UI.Text(page, 13)
     self.title:SetPoint("LEFT", page, "TOPLEFT", RX + 2, -(TITLE_H + BAR_H / 2))
-    self.meta = UI.Text(page, 11)
-    self.meta:SetPoint("RIGHT", page, "TOPLEFT", RX + RW - 2, -(TITLE_H + BAR_H / 2))
-    self.meta:SetTextColor(0.55, 0.55, 0.6)
+    self.setsBtn = UI.Button(page, "Wishlists", 84, 20, function(b) self:SetsMenu(b) end)
+    self.setsBtn:SetPoint("RIGHT", page, "TOPLEFT", RX + RW, -(TITLE_H + BAR_H / 2))
     local card = CreateFrame("Frame", nil, page)
     card:SetPoint("TOPLEFT", RX, -LIST_Y)
     card:SetSize(RW, LIST_H)
@@ -781,7 +852,7 @@ function Wishlist:Build(page)
         row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         row.hl = row:CreateTexture(nil, "HIGHLIGHT")
         row.hl:SetAllPoints()
-        row.hl:SetColorTexture(1, 1, 1, 0.05)
+        UI.Hover(row.hl, 0.05)
         row.icon = row:CreateTexture(nil, "ARTWORK")
         row.icon:SetSize(26, 26)
         row.icon:SetPoint("LEFT", 8, 0)
@@ -807,9 +878,7 @@ function Wishlist:Build(page)
         row:SetScript("OnEnter", function(r)
             local it = r.data
             if not it or not GameTooltip then return end
-            GameTooltip:SetOwner(r, "ANCHOR_RIGHT")
-            local ok = pcall(GameTooltip.SetHyperlink, GameTooltip, it.link)
-            if not ok then GameTooltip:AddLine(it.link) end
+            UI.ItemTip(r, it.link)
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine(Wishlist.SourceText(it), 0.5, 0.85, 0.55)
             GameTooltip:Show()
@@ -855,20 +924,19 @@ end
 
 function Wishlist:Refresh()
     if not self.page then return end
-    local list = self:Mine()
-    local got = 0
-    for _, it in ipairs(list) do if it.got then got = got + 1 end end
-
-    -- left list: counts of journal items, our wishlist on top
-    local counts = self:Counts()
-    local hasJournal = Journal:DB() ~= nil
-    self.side.note:SetShown(not hasJournal)
+    -- left list: our wishlist on top, then each kind of slot
+    self.side.note:SetShown(Journal:DB() == nil)
+    local data = self:Data()
     for _, row in ipairs(self.side.rows) do
         local e = row.entry
-        local n = e.list and counts[e.index] or (#list - got)
-        row.count:SetText(n and n > 0 and tostring(n) or "")
-        row.sel:SetShown(not self.search and e.list == self.list)
-        if e.list then row.name:SetTextColor(0.9, 0.9, 0.93) else row.name:SetTextColor(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3]) end
+        if e.set then
+            row.name:SetText(self:SetName(data.cur))
+            row.sel:SetShown(not self.search and not self.list)
+            row.name:SetTextColor(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3])
+        else
+            row.sel:SetShown(not self.search and e.list == self.list)
+            row.name:SetTextColor(UI.TEXT[1], UI.TEXT[2], UI.TEXT[3])
+        end
     end
 
     local listing = self.list ~= nil or self.search ~= nil
@@ -878,8 +946,7 @@ function Wishlist:Refresh()
     if listing then
         self:RefreshBrowse()
     else
-        self.title:SetText("My wishlist")
-        self.meta:SetText(("%d of %d slots%s"):format(#list, #Wishlist.SLOTS, got > 0 and (", %d got"):format(got) or ""))
+        self.title:SetText(self:SetName(data.cur))
         self:RefreshDoll()
     end
 end
@@ -909,7 +976,6 @@ function Wishlist:RefreshBrowse()
     local items = self:Items(l)
     local browse = self.browse
     self.title:SetText(self.search and ('Search: "%s"'):format(self.search) or l.name)
-    self.meta:SetText(#items > 0 and ("%d item%s"):format(#items, #items == 1 and "" or "s") or "")
     self.offset = math.max(0, math.min(self.offset or 0, #items - browse.visible))
     browse.hint:Set(self.offset, browse.visible, #items)
     for i, row in ipairs(browse.rows) do

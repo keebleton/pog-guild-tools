@@ -22,7 +22,7 @@ local RX = PAD + LEFT_W + PAD
 local RW = FRAME_W - RX - PAD
 local TOP = TITLE_H
 local ROW_H = 22
-local GENERAL_H = 202   -- six checks
+local GENERAL_H = 254   -- six checks, the theme and its reload button
 
 local function S() return ns.db.settings end
 
@@ -64,6 +64,20 @@ end
 ------------------------------------------------------------------------
 -- UI
 ------------------------------------------------------------------------
+-- A theme was picked: it shows once the UI reloads.
+function Settings:ThemePicked()
+    local t = UI.Theme(S().theme)
+    self.themeBtn:SetLabel(t and t.name or "")
+    local pending = S().theme ~= UI.theme
+    if self.reloadBtn and not (InCombatLockdown and InCombatLockdown()) then
+        self.reloadBtn:SetShown(pending)
+    end
+    if pending then
+        ns.Print(("theme: %s. %s"):format(t and t.name or "?",
+            self.reloadBtn and "Click Reload to apply (or type /reload)." or "Type /reload to apply."))
+    end
+end
+
 function Settings:Build(page)
     self.page = page
     local height = FRAME_H - PAD - TOP
@@ -93,6 +107,31 @@ function Settings:Build(page)
         c:SetWidth(LEFT_W - 24)
         c:SetPoint("TOPLEFT", 12, -(32 + (i - 1) * 26))
         self.checks[i] = c
+    end
+    -- the theme: a button with the current one, a menu of the rest. The look is
+    -- set when the UI is built, so a new pick shows after a reload: the Reload
+    -- button appears (addons can't reload the UI themselves here)
+    local y = -(32 + #items * 26)
+    local label = UI.Text(gen, 12)
+    label:SetPoint("TOPLEFT", 12, y - 4)
+    label:SetText("Theme")
+    local current = UI.Theme(S().theme) or UI.Theme(UI.DEFAULT_THEME)
+    self.themeBtn = UI.Button(gen, current.name, 130, 22, function(b)
+        local menu = { { text = "Theme", header = true } }
+        for _, t in ipairs(UI.THEMES) do
+            menu[#menu + 1] = { text = (t.key == S().theme and "> " or "   ") .. t.name, func = function()
+                if t.key == S().theme then return end
+                S().theme = t.key
+                self:ThemePicked()
+            end }
+        end
+        UI.ShowMenu(b, menu)
+    end)
+    self.themeBtn:SetPoint("TOPRIGHT", gen, "TOPRIGHT", -12, y)
+    self.reloadBtn = UI.ReloadButton(gen, "Reload to apply", 130, 22)
+    if self.reloadBtn then
+        self.reloadBtn:SetPoint("TOPRIGHT", gen, "TOPRIGHT", -12, y - 26)
+        self.reloadBtn:Hide()
     end
     self.general = gen
 
@@ -131,7 +170,7 @@ function Settings:Build(page)
     line:SetPoint("TOPLEFT", 1, -34)
     line:SetPoint("TOPRIGHT", -1, -34)
     line:SetHeight(1)
-    line:SetColorTexture(1, 1, 1, 0.06)
+    UI.Line(line, 0.06)
     who.rows = {}
     who.visible = math.floor((height - 42) / ROW_H)
     for i = 1, who.visible do
@@ -211,7 +250,7 @@ function Settings:Refresh()
             local p = ns.db.guild.players[e.name]
             local cc = p and p.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[p.class]
             row.name:SetText(Ambiguate(e.name, "short"))
-            if cc then row.name:SetTextColor(cc.r, cc.g, cc.b) else row.name:SetTextColor(0.9, 0.9, 0.93) end
+            if cc then row.name:SetTextColor(cc.r, cc.g, cc.b) else row.name:SetTextColor(UI.TEXT[1], UI.TEXT[2], UI.TEXT[3]) end
             row.dot:SetShown(e.online)
             local old = ns.Version.Compare(e.version, newest) == -1
             row.version:SetText(e.version .. (old and "  (update)" or ""))

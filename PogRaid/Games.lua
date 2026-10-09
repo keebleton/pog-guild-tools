@@ -18,7 +18,7 @@ local STATUS_H = 44
 local MSG_H = 18                                  -- win / loss line between the bar and the board
 local MSG_Y = STATUS_Y + STATUS_H + 4
 local BOARD_Y = MSG_Y + MSG_H + 4
-local HELP_H = 14                                 -- controls hint at the bottom, inside the margin
+local HELP_H = 0                                  -- (no controls hint under the board: Jake)
 local BOARD_MAX_H = FRAME_H - PAD - HELP_H - 6 - BOARD_Y
 local MAX_CELL = 40
 
@@ -261,10 +261,12 @@ function Games:Build(page)
     self.modeTabs = {}
     local tx = PAD
     for _, m in ipairs(Games.MODES) do
-        local t = UI.Tab(page, m.label, m.w, BAR_H, function() self:SetMode(m.key) end)
+        -- the talent window's tabs in the classic look, else underlined text tabs
+        local t = UI.SubTab(page, m.label, function() self:SetMode(m.key) end)
+            or UI.Tab(page, m.label, m.w, BAR_H, function() self:SetMode(m.key) end)
         t:SetPoint("TOPLEFT", tx, -ROW1_Y)
         self.modeTabs[m.key] = t
-        tx = tx + m.w + 4
+        tx = tx + t:GetWidth() + (UI.classic and UI.SUBTAB_GAP or 4)
     end
     self.levelButtons = {}
     local x = FRAME_W - PAD - 100 - 12 - (3 * 96 + 2 * 4)
@@ -329,11 +331,6 @@ function Games:Build(page)
     self.board = board
     self.cells = {}
 
-    self.help = UI.Text(page, 10)
-    self.help:SetPoint("BOTTOM", page, "BOTTOM", 0, PAD)
-    self.help:SetHeight(HELP_H)
-    self.help:SetTextColor(0.5, 0.5, 0.55)
-    self.help:SetText("Left-click: reveal     Right-click: mark with a skull     Click a number: open around it")
 
     self:BuildScores(page)
     -- the other games each get a full-page view under the tabs
@@ -366,7 +363,6 @@ function Games:SetMode(mode)
         self.bar:Hide()
         self.board:Hide()
         self.bar.message:Hide()
-        self.help:Hide()
         local mod = ({ duels = ns.Duels, gems = ns.Gems, wowdle = ns.Wowdle })[mode]
         mod:Refresh()
     end
@@ -400,7 +396,7 @@ function Games:BuildScores(page)
         line:SetPoint("TOPLEFT", 1, -32)
         line:SetPoint("TOPRIGHT", -1, -32)
         line:SetHeight(1)
-        line:SetColorTexture(1, 1, 1, 0.06)
+        UI.Line(line, 0.06)
         c.rows = {}
         for r = 1, SCORE_ROWS + 1 do
             local row = CreateFrame("Frame", nil, c)
@@ -442,7 +438,6 @@ function Games:ShowScores(on)
     self.bar:SetShown(not on)
     self.board:SetShown(not on)
     self.bar.message:SetShown(not on)
-    self.help:SetShown(not on)
     self.scoresBtn:SetLabel(on and "Back to game" or "Leaderboard")
     self.scoresBtn:SetSelected(on)
     if on then
@@ -473,7 +468,7 @@ function Games:RefreshScores()
                 local p = ns.db.guild.players[rec.author]
                 local cc = p and p.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[p.class]
                 row.name:SetText(Ambiguate(rec.author, "short"))
-                if cc then row.name:SetTextColor(cc.r, cc.g, cc.b) else row.name:SetTextColor(0.9, 0.9, 0.93) end
+                if cc then row.name:SetTextColor(cc.r, cc.g, cc.b) else row.name:SetTextColor(UI.TEXT[1], UI.TEXT[2], UI.TEXT[3]) end
                 row.time:SetText(fmtBest(rec.best))
                 row.ago:SetText(ns.Home and ns.Home.Ago(rec.t) or "")
                 row.mine:SetShown(rec.author == me)
@@ -488,7 +483,9 @@ end
 
 local function makeCell(board)
     local c = CreateFrame("Button", nil, board)
-    c:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    -- act on the press (Jake: fast clicking lost clicks when the mouse drifted
+    -- onto the next tile before the release)
+    c:RegisterForClicks("LeftButtonDown", "RightButtonDown")
     c.bg = c:CreateTexture(nil, "BACKGROUND")
     c.bg:SetAllPoints()
     -- bevel: light top/left, dark bottom/right while the tile is covered
@@ -514,7 +511,7 @@ local function makeCell(board)
     c.darkR:SetColorTexture(0, 0, 0, 0.45)
     c.hl = c:CreateTexture(nil, "HIGHLIGHT")
     c.hl:SetAllPoints()
-    c.hl:SetColorTexture(1, 1, 1, 0.07)
+    UI.Hover(c.hl, 0.07)
     c.icon = c:CreateTexture(nil, "ARTWORK")
     c.icon:SetPoint("CENTER")
     c.num = c:CreateFontString(nil, "OVERLAY")
