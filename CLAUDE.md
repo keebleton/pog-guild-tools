@@ -250,6 +250,15 @@ fields on GameTooltip (taint, secret values).
 Window 902x658 with a 36 px title band; pages are 902 x `ns.PAGE_H` (642); the Raid group's pages are 902 x
 `ns.RAID_H` (608) under their sub-tab row (`ns.SUB_H` = 34).
 
+## How Jake likes to work
+- Plain English, short, recommendation first. He isn't a terminal person: give him buttons, double-click files and
+  in-game steps, and do the command-line parts yourself.
+- Never suggest stopping, pausing or "a good place to wrap up". When something lands, say what's done and move to the
+  next step; he decides when to stop.
+- He iterates by screenshot and notices small misalignments: measure, don't eyeball.
+- Keep it lean: single-agent work unless he asks for more horsepower.
+- When he asks, commit and push for him (GitHub Desktop is his tool for Fetch/Pull/Push).
+
 ## Jake's decisions
 - Don't change the top band without asking (Jake asked for the metal frame and its strip, Oct 2026). No leveling race. Signups/Discord integration parked. No "what's new"
   pop-up (no extra things to click). Officer sync: attendance is shared between officers (Jake, Oct 2026: two raid
