@@ -248,6 +248,12 @@ function UnitIsVisible(unit) return UnitExists(unit) end
 function GetInventoryItemID(unit, slot) return unit == "player" and STUB.worn and STUB.worn[slot] or nil end
 function GetInventorySlotInfo(name) return 1, "slot-" .. name end
 function IsShiftKeyDown() return STUB.shift or false end
+-- the player's numbers, shaped like the game's returns (base, effective, ...)
+STUB.unitStats = { hp = 4200, mana = 3100, stats = { 120, 95, 140, 210, 180 }, armor = 1850 }
+function UnitHealthMax(unit) return unit == "player" and STUB.unitStats.hp or 0 end
+function UnitPowerMax(unit) return unit == "player" and STUB.unitStats.mana or 0 end
+function UnitStat(unit, i) local v = STUB.unitStats.stats[i] or 0 return v, v, 0, 0 end
+function UnitArmor(unit) local v = STUB.unitStats.armor return v, v, v, 0, 0 end
 function GetBuildInfo() return "1.60.1", "70009", "Sep 24 2026", 16001 end
 STUB.instance = { "Stormwind", "none" }
 function GetInstanceInfo() return STUB.instance[1], STUB.instance[2], 0, "", 0, 0, false, 0 end

@@ -667,7 +667,7 @@ do
     Roster:RefreshPool()
     Roster.search = nil
     for _, row in ipairs(Roster.poolRows) do if row.player == "Levelling-Realm" then lvlRow = row end end
-    check(lvlRow and lvlRow.name:GetText():find("59", 1, true), "pool: level shown for players below the cap")
+    check(lvlRow and not lvlRow.name:GetText():find("59", 1, true), "pool: no level after names, even below the cap")
     check(not Roster.poolRows[1].name:GetText():find("60", 1, true), "pool: no level shown at the cap")
     ns.db.guild.maxLevelOnly = true
     pool = Roster:PoolNames()
@@ -703,8 +703,7 @@ do
     for _, n in ipairs(pool) do inPool[n] = true end
     check(#pool == 29 and not inPool["Socialite-Realm"], "pool: rank filter drops socials")
     check(Roster:RoleOf(pool[1]) == nil, "pool: nobody has a role until one is set (no class guessing)")
-    check(Roster.poolInfo:GetText():find("29 raiders", 1, true) and Roster.poolInfo:GetText():find("online", 1, true),
-        "pool: summary line")
+    check(Roster.poolInfo == nil, "pool: no summary line (0.16 dropped it)")
 
     -- clicking pool rows fills the first open slots
     -- find a pool row the way a player would: type the name in search
@@ -1488,13 +1487,15 @@ do
     STUB.canEditMOTD = false
     Home:Refresh()
     local hd = Home.header
-    check(hd.name:GetText() == "<Pog Squad>" and hd.motd:GetText() == STUB.motd, "header: guild name in angle brackets, and the MOTD")
+    -- a real message starts with a "MOTD: " label in the title colour (0.16)
+    local function motd() return ((hd.motd:GetText() or ""):gsub("^|c%x%x%x%x%x%x%x%x" .. Home.MOTD_LABEL .. "|r", "")) end
+    check(hd.name:GetText() == "<Pog Squad>" and motd() == STUB.motd, "header: guild name in angle brackets, and the MOTD")
     -- a change arrives with GUILD_MOTD, even while the game still answers with the old one
     STUB.Fire("GUILD_MOTD", "New message, raid moved to Friday")
-    check(hd.motd:GetText() == "New message, raid moved to Friday", "header: a new message of the day shows at once")
+    check(motd() == "New message, raid moved to Friday", "header: a new message of the day shows at once")
     -- a blank one (the game sends one at login before the message is in) doesn't hide the real one
     STUB.Fire("GUILD_MOTD", "")
-    check(hd.motd:GetText() == STUB.motd, "header: a blank GUILD_MOTD keeps the game's message")
+    check(motd() == STUB.motd, "header: a blank GUILD_MOTD keeps the game's message")
     local realMotd = STUB.motd
     STUB.motd = ""
     STUB.Fire("GUILD_MOTD", "")
@@ -1505,8 +1506,8 @@ do
     check(hd.name.__fontSize == 22 and hd.motd.__fontSize == 12 and hd.name.__textColor[1] == 1 and hd.name.__textColor[2] == 0.82,
         "header: the guild's name big and gold")
     check(hd.logo == nil and hd.plate == nil, "header: no logo (it's in the window's corner)")
-    check(hd.parchment == nil and hd.inset == nil and Home.feedCard.parchment == nil and Home.feedCard.inset == nil,
-        "header: no parchment or inset edges on Home (too harsh)")
+    check(hd.parchment ~= nil and hd.inset == nil and Home.feedCard.inset == nil,
+        "header: faint parchment on Home's cards, no inset edges")
     -- the background: a mid grey with the marble over it, a shade lighter than the cards
     local wf = ns.Editor.frame
     check(wf.stone.__texture == ns.UI.SURFACE and ns.UI.SURFACE == ns.UI.Theme("night").surface and wf.stone.__blend == "ADD" and wf.bg.__color[1] == ns.UI.BACKING[1]
@@ -1523,50 +1524,18 @@ do
     local board = CreateFrame("Frame")
     ns.UI.Card(board, { 0.03, 0.03, 0.035, 1 })
     check(board.marble == nil and board.shade == nil, "home: a card with its own colour (game boards) stays flat")
-    local m, o = Home:StatValues()
-    check(m > 1 and hd.counts:GetText() == ("%d members, %d online"):format(m, o), "header: one quiet line of counts")
+    check(Home.StatValues == nil and hd.counts == nil, "header: no member counts (0.16)")
     check(hd.tiles == nil and Home.chart == nil and hd.edit == nil and hd.stats == nil,
         "header: no stat tiles, no level chart, no MOTD edit button")
     -- the guild's own card: name, the message (two lines), counts under it; no countdown
     check(hd.launch == nil and Home.Countdown == nil, "header: no launch countdown")
+    -- 0.16: the name and message centred on a short card; no banner, no counts, no level spread
     local hl0, ht0, hw0, hh0 = STUB.rect(hd)
     local nl, nt, nameW = STUB.rect(hd.name)
     local ml, mt0, mw0 = STUB.rect(hd.motd)
-    local cl0 = STUB.rect(hd.counts)
-    check(hh0 == 88 and hw0 == 262 and near(nl, hl0 + 14) and near(ml, nl) and mt0 < nt and near(mw0, nameW)
-        and near(nl + nameW, hl0 + hw0 - 14 - 58 - 10), "header: a card as wide as Activity, the name over the message, up to the banner")
-    -- the guild's banner hangs from the card's top-right edge; the text stops short of it
-    check(hd.banner and not hd.banner:IsShown(), "header: no banner art in this client, no banner")
-    local oldTex, tabardArgs = C_Texture, nil
-    C_Texture = { GetAtlasInfo = function(name) if name:find("^communities%-guildbanner") then return { file = 1, width = 74, height = 69 } end end }
-    SetLargeGuildTabardTextures = function(unit, emblem, bg, border) tabardArgs = { unit, emblem, bg, border } end
-    local saveHeader = Home.header
-    Home:BuildHeader(Home.page)
-    local nb = Home.header.banner
-    Home:RefreshHeader()
-    local bl0, bt0, bw0, bh0 = STUB.rect(nb)
-    local hl1, ht1, hw1 = STUB.rect(Home.header)
-    local _, _, nw1 = STUB.rect(Home.header.name)
-    check(nb:IsShown() and nb.bg.__atlas == "communities-guildbanner-background" and nb.border.__atlas == "communities-guildbanner-border"
-        and bw0 == 58 and bh0 == 76 and near(bl0 + bw0, hl1 + hw1 - 14) and near(bt0, ht1 + 4) and nb:GetFrameLevel() > Home.header:GetFrameLevel(),
-        "header: the guild banner hangs from the card's top-right, just over its edge")
-    check(tabardArgs and tabardArgs[1] == "player" and tabardArgs[2] == nb.emblem and tabardArgs[3] == nb.bg and tabardArgs[4] == nb.border,
-        "header: the game paints it in the guild's colours and emblem")
-    check(Home.header.name:GetLeft() + nw1 <= bl0 - 8, "header: the text stops short of the banner")
-    tabardArgs = nil
-    STUB.Fire("PLAYER_GUILD_UPDATE")
-    check(tabardArgs ~= nil, "header: a tabard change repaints the banner")
-    C_Texture, SetLargeGuildTabardTextures = oldTex, nil
-    Home.header:Hide()
-    Home.header = saveHeader
-    check(near(cl0, ml) and hd.counts.__anchor.rel == hd.motd and hd.counts.__anchor.relPoint == "BOTTOMLEFT"
-        and hd.counts.__justifyH == "LEFT", "header: the counts right under the message")
-    STUB.canEditMOTD = false
-    local counts, members = Home:LevelSpread()
-    local sum, sixty = 0, 0
-    for _, n in ipairs(counts) do sum = sum + n end
-    for _, pl in pairs(G.players) do if pl.inGuild and pl.level and pl.level >= 56 then sixty = sixty + 1 end end
-    check(sum == members and counts[12] == sixty and counts[1] >= 1, "members: counted by level")
+    check(hh0 == Home.layout.HEADER_H and hw0 == Home.layout.LEFT_W and mt0 < nt and near(ml + mw0 / 2, nl + nameW / 2),
+        "header: a short card as wide as Activity, the name centred over the message")
+    check(hd.banner == nil and Home.LevelSpread == nil, "header: no guild banner, no level spread")
 
     -- achievements in the activity feed
     local ach = "|cffffff00|Hachievement:6:Jake:1:9:25:26:0:0:0:0|h[Level 10]|h|r"
@@ -1819,14 +1788,19 @@ do
     local gl, gt, gw, gh = STUB.rect(Home.groupCard)
     local ll, lt, lw, lh = STUB.rect(Home.lootCard)
     local chl, cht, chw, chh = STUB.rect(Home.chatCard)
-    check(near(hl - pl, 12) and near(hw, fw) and near(pt - ht, 30) and near(hh, 88), "layout: the guild card tops the left column")
-    check(near(ft, ht - hh - 8) and near(bt, ht) and near(gt, ht), "layout: Activity under it, the other columns start at the top")
+    -- 0.16: Online now under the guild card; Activity, Guild chat and Recent loot share the bottom half;
+    -- LFM and LFG split the right column's top half
+    check(near(hl - pl, 12) and near(hw, fw) and near(pt - ht, 30) and near(hh, Home.layout.HEADER_H), "layout: the guild card tops the left column")
+    check(near(ot, ht - hh - 8) and near(ot - oh, bt - bh) and near(bt, ht) and near(gt, ht),
+        "layout: Online now under it, the other columns start at the top")
     check(near(fl - pl, 12) and near(bl, fl + fw + 8) and near(gl, bl + bw + 8) and near(gl + gw, pl + 890), "layout: three columns, even gaps")
     local bottom = ns.PAGE_H - 12
-    check(near(pt - (ot - oh), bottom) and near(pt - (cht - chh), bottom) and near(pt - (lt - lh), bottom), "layout: every column ends at the margin")
-    check(near(ot, ft - fh - 8) and near(lt, gt - gh - 8) and near(cht, bt - bh - 8) and near(gh, lh) and near(bh, gh)
-        and near(chh, gh) and near(oh, gh) and near(hh + 8 + fh, gh) and near(ot, cht) and near(ot, lt),
-        "layout: the halves line up across: Online now, Guild chat and Recent loot start together")
+    check(near(pt - (ft - fh), bottom) and near(pt - (cht - chh), bottom) and near(pt - (lt - lh), bottom), "layout: every column ends at the margin")
+    local lfg = Home.groupCard.lfg
+    local _, lgt, _, lgh = STUB.rect(lfg)
+    check(near(ft, ot - oh - 8) and near(cht, bt - bh - 8) and near(ft, cht) and near(ft, lt) and near(fh, chh) and near(fh, lh)
+        and near(hh + 8 + oh, bh) and near(lgt, gt - gh - 8) and near(gh, lgh) and near(gh + 8 + lgh, bh) and near(lt, lgt - lgh - 8),
+        "layout: the halves line up across: Activity, Guild chat and Recent loot start together; LFM over LFG")
     check(near(chl, bl) and near(chw, bw) and Home.feedCard:IsShown() and Home.chatCard:IsShown()
         and Home.feedCard.title:GetText() == "Activity", "layout: Activity and guild chat each have their own card")
 
@@ -1919,6 +1893,7 @@ do
     -- the tab
     SlashCmdList.POGRAID("games")
     check(Editor.currentTab == "games" and Games.page:IsShown(), "games: /pog games opens the tab")
+    Games:SetMode("sweeper") -- 0.16 opens on Wowdle
     Games:NewGame("apprentice")
     check(Games.cells[1].__clicks and Games.cells[1].__clicks[1] == "LeftButtonDown" and Games.cells[1].__clicks[2] == "RightButtonDown",
         "games: tiles act on the press, so fast clicks aren't lost")
@@ -1926,7 +1901,10 @@ do
     local pl, pt = STUB.rect(Games.page)
     local bl, bt, bw, bh = STUB.rect(Games.board)
     local sl, st, sw = STUB.rect(Games.bar)
-    check(cell == 40 and near(bw, 9 * 40 + 4) and near((bl - pl) + bw / 2, 451), "games: apprentice board centred, big tiles")
+    -- 0.16: the board from the page's left edge, the leaderboard card filling the rest of the width
+    local scl, sct, scw = STUB.rect(Games.scores)
+    check(cell == 40 and near(bw, 9 * 40 + 4) and near(bl - pl, 12) and near(scl, bl + bw + 8) and near(scl + scw, pl + 902 - 12),
+        "games: apprentice board at the left, big tiles, the leaderboard beside it")
     check(near(sl, bl) and near(sw, bw) and near(st - bt, 44 + 4 + 18 + 4), "games: status bar lines up above the board")
     local ml, mt, mw, mh = STUB.rect(Games.bar.message)
     check(Games.bar.message.__parent == Games.page and near(mt, st - 44 - 4) and near(mh, 18) and mt - mh >= bt + 4,
@@ -2014,15 +1992,18 @@ do
     local board = Games:Leaderboard("apprentice")
     check(#board == 3 and board[1].author == "Raider02-Realm" and board[2].author == "Jake-Realm" and Games:Rank("apprentice", "Jake-Realm") == 2,
         "leaderboard: fastest first")
-    STUB.Script(Games.scoresBtn, "OnClick")
-    check(Games.showingScores and Games.scores:IsShown() and not Games.board:IsShown() and not Games.bar:IsShown()
-        and Games.scoresBtn.label:GetText() == "Back to game", "leaderboard: button swaps the board for the scores")
-    local col = Games.scores.cols.apprentice
+    Games:RefreshScores()
+    check(Games.scoresBtn == nil and Games.scores:IsShown() and Games.board:IsShown() and Games.bar:IsShown(),
+        "leaderboard: always beside the game, no button to swap")
+    local col = Games.scores
     check(col.rows[1].name:GetText() == "Raider02" and col.rows[1].time:GetText() == "18.4s" and col.rows[1].rank:GetText() == "1.",
         "leaderboard: rows show rank and name")
     check(col.rows[2].mine:IsShown() and not col.rows[1].mine:IsShown(), "leaderboard: your row highlighted")
-    check(Games.scores.cols.expert.rows[1].time:GetText() == "5:01" and Games.scores.cols.journeyman.empty:IsShown(),
-        "leaderboard: each difficulty has its own column")
+    STUB.Script(Games.levelButtons.expert, "OnClick")
+    local expertTime = col.rows[1].time:GetText()
+    STUB.Script(Games.levelButtons.journeyman, "OnClick")
+    check(expertTime == "5:01" and col.empty:IsShown(), "leaderboard: shows the picked difficulty's times")
+    STUB.Script(Games.levelButtons.apprentice, "OnClick")
     -- you outside the top rows: your place shows at the bottom
     for i = 1, 22 do
         local who = ("Speedy%02d-Realm"):format(i)
@@ -2034,7 +2015,7 @@ do
     check(last:IsShown() and last.rank:GetText() == "24." and last.mine:IsShown(), "leaderboard: your rank shown below the top 20")
     -- beating your time: shared and ranked in the win message
     STUB.Script(Games.levelButtons.apprentice, "OnClick")
-    check(not Games.showingScores and Games.board:IsShown(), "leaderboard: picking a difficulty goes back to the game")
+    check(Games.board:IsShown() and Games.scores:IsShown(), "leaderboard: picking a difficulty keeps the game in view")
     STUB.Script(Games.cells[41], "OnClick", "LeftButton")
     STUB.Advance(5)
     for i = 1, Games.game.n do
@@ -2435,11 +2416,13 @@ do
         "version: compares numbers, not text")
     Settings:Refresh()
     local who = Settings.who
-    local found = {}
+    local found, colour = {}, {}
     for _, row in ipairs(who.rows) do
-        if row:IsShown() then found[row.name:GetText()] = row.version:GetText() end
+        if row:IsShown() then found[row.name:GetText()], colour[row.name:GetText()] = row.version:GetText(), row.version.__textColor end
     end
-    check(found["Raider02"] == "0.9.0  (update)" and found["Raider05"] == "99.1.0", "version: who has it, old versions flagged")
+    -- 0.16: an old version is a quieter colour, not "(update)"
+    check(found["Raider02"] == "0.9.0" and found["Raider05"] == "99.1.0" and colour["Raider02"][2] < colour["Raider05"][2],
+        "version: who has it, old versions in a quieter colour")
     check(who.mine:GetText() == "You: " .. ns.VERSION, "version: your own version shown")
     STUB.sent = {}
     Editor:ShowTab("boards")
@@ -2751,8 +2734,8 @@ do
     SlashCmdList.POGRAID("crafting")
     local left, right = C.left, C.right
     check(C.page and C.page:IsShown() and left.rows[1].name:GetText() == "Blacksmithing", "crafting: tab opens with the professions list")
-    check(right.empty:IsShown() and right.status:GetText() == "open your cooking window once to share recipes!",
-        "crafting: hint, and a nudge to share the other profession")
+    check(right.status:GetText() == "open your cooking window once to share recipes!",
+        "crafting: a nudge to share the other profession")
     STUB.Script(left.rows[1], "OnClick")
     check(C.selected == "Blacksmithing" and right.rows[1]:IsShown() and right.rows[1].name:GetText() == "Raider03"
         and right.rows[1].right:GetText():find("300 / 300", 1, true) ~= nil, "crafting: picking a profession shows its members")
@@ -3036,7 +3019,7 @@ do
     -- one page per account: opening an alt shows it, on the alt's professions
     P:Open("Raider09-Realm")
     check(P.viewing == "Raider03-Realm" and P.profChar == "Raider09-Realm" and P.profCard.switch:IsShown()
-        and P.profCard.switch.label:GetText() == "Raider09 v" and not P.profCard.tiles[1]:IsShown(),
+        and P.profCard.switch.label:GetText() == "Raider09" and not P.profCard.tiles[1]:IsShown(),
         "accounts: opening an alt shows the account's page, on the alt's professions")
     local pmenu
     local realShowP = UI.ShowMenu
@@ -3054,7 +3037,7 @@ do
         if row.member == "Raider03-Realm" then r03 = row end
         if row.member == "Raider09-Realm" then r09 = row end
     end
-    check(r03 and not r09 and r03.name:GetText():find("+1", 1, true) and r03.sel:IsShown(), "list: one row per account, +1 for an alt")
+    check(r03 and not r09 and not r03.name:GetText():find("+1", 1, true) and r03.sel:IsShown(), "list: one row per account (no +1 since 0.16)")
     local listed = {}
     for _, m in ipairs(P:Members()) do listed[m] = true end
     check(listed["Raider03-Realm"] and listed[me] and not listed["Raider20-Realm"] and not P:HasAddon("Raider20-Realm"),
@@ -3074,35 +3057,33 @@ do
     check(rows[1].member == "Raider03-Realm" and not rows[2]:IsShown(), "list: searching an alt finds the account")
     P.searchBox:SetText("")
     STUB.Script(P.searchBox, "OnTextChanged")
-    -- profiles someone has set up come first, then the rest, each alphabetical
-    local members = P:Members()
-    local sawPlain, setUpAfter, lastSetUp, lastPlain, sorted = false, false, nil, nil, true
+    -- 0.16: online first, then profiles someone has set up, then the rest, each alphabetical
+    local members, online = P:Members()
+    local sorted, prev, sawOnline, sawCustom = true, nil, false, false
     for _, m in ipairs(members) do
-        local shownName = P:Name(m):lower()
-        if P:Customized(m) then
-            if sawPlain then setUpAfter = true end
-            if lastSetUp and shownName < lastSetUp then sorted = false end
-            lastSetUp = shownName
-        else
-            sawPlain = true
-            if lastPlain and shownName < lastPlain then sorted = false end
-            lastPlain = shownName
+        local key = { online[m] and 0 or 1, P:Customized(m) and 0 or 1, P:Name(m):lower() }
+        if online[m] then sawOnline = true end
+        if P:Customized(m) then sawCustom = true end
+        if prev and (key[1] < prev[1] or (key[1] == prev[1] and (key[2] < prev[2] or (key[2] == prev[2] and key[3] < prev[3])))) then
+            sorted = false
         end
+        prev = key
     end
-    check(P:Customized(members[1]) and sawPlain and not setUpAfter and sorted,
-        "list: set-up profiles first, then everyone else, each alphabetical")
+    check(#members > 1 and sawOnline and sawCustom and sorted,
+        "list: online first, then set-up profiles, then everyone else, each alphabetical")
     STUB.Script(tiles[1], "OnClick")
     check(P.viewing == "Raider05-Realm", "page: clicking someone in Most played with opens their profile")
     P:Open("Raider03-Realm")
 
     -- professions and the recipe book
     local pt = P.profCard.tiles
-    check(pt[1].name:GetText() == "Blacksmithing" and pt[1].skill:GetText() == "300 / 300" and pt[1].recipes:GetText() == "3 recipes"
-        and pt[2].recipes:GetText() == "recipes not shared yet", "page: profession tiles")
+    -- 0.16: no recipe count on the tile; the hint says whether there's a book to browse
+    check(pt[1].name:GetText() == "Blacksmithing" and pt[1].skill:GetText() == "300 / 300" and pt[1].recipes == nil
+        and pt[1].hint:GetText() == "Browse recipes" and pt[2].hint:GetText() == "Recipes not shared yet", "page: profession tiles")
     STUB.Script(pt[1], "OnClick")
     local book = P.book
     check(book:IsShown() and not P.aboutCard:IsShown() and book.rows[1].recipe and book.rows[1].recipe.name == "Arcanite Reaper"
-        and book.rows[3]:IsShown() and not book.rows[4]:IsShown() and book.meta:GetText() == "300 / 300, 3 recipes",
+        and book.rows[3]:IsShown() and not book.rows[4]:IsShown() and book.meta:GetText() == "300 / 300",
         "book: clicking a profession opens their recipes")
     book.search:SetText("reaper")
     STUB.Script(book.search, "OnTextChanged")
@@ -3207,18 +3188,25 @@ do
     local gl = edges(c.inspect.glass)
     check(c.inspect.label:GetText() == "Inspect" and math.abs((gl - il) - (ir - (gl + 14 + 5 + c.inspect.label:GetStringWidth()))) <= 1,
         "layout: the glass and the word are centred together")
-    -- the character card: our model between our gear, Inspect under it above the weapons
+    -- the character card (0.16): our numbers between our gear by default, a button above the weapons
+    -- switches to the model
     local viewed = P.viewing
     P:Open(me)
-    il, it_, ir, ib = edges(c.miniInspect)
-    local ml_, mt_, mr_, mb_ = edges(c.model)
+    local vl, _, vr, vb = edges(c.viewBtn)
+    local _, wt = edges(c.mini[#c.mini])
+    check(c.title == nil and c.name == nil and c.miniInspect == nil and not c.inspect:IsShown() and c.mini[1]:IsShown()
+        and not c.classIcon:IsShown() and c.stats:IsShown() and not c.model:IsShown() and c.viewBtn:IsShown()
+        and c.viewBtn.label:GetText() == "Show model" and math.abs((vl - cl_) - (cr_ - vr)) < 0.01 and vb < wt,
+        "layout: the character card shows our stats between our gear, a button above the weapons")
+    STUB.Script(c.viewBtn, "OnClick")
+    local ml_, mt_, mr_ = edges(c.model)
     local _, _, lcr = edges(c.mini[1])
     local rcl = edges(c.mini[#P.MINI.left + 1])
-    local _, wt = edges(c.mini[#c.mini])
-    check(c.title == nil and c.name == nil and c.model:IsShown() and not c.inspect:IsShown() and c.miniInspect:IsShown()
-        and c.mini[1]:IsShown() and not c.classIcon:IsShown() and math.abs((il - cl_) - (cr_ - ir)) < 0.01
-        and mt_ == ct_ + 8 and math.abs((ml_ - cl_) - (cr_ - mr_)) < 0.01 and ml_ > lcr and mr_ < rcl
-        and it_ >= mb_ and ib < wt, "layout: the character card is our model between our gear, Inspect above the weapons")
+    check(c.model:IsShown() and not c.stats:IsShown() and c.viewBtn.label:GetText() == "Show stats"
+        and mt_ == ct_ + 8 and math.abs((ml_ - cl_) - (cr_ - mr_)) < 0.01 and ml_ > lcr and mr_ < rcl,
+        "layout: Show model puts our model between our gear")
+    STUB.Script(c.viewBtn, "OnClick")
+    check(c.stats:IsShown() and not c.model:IsShown(), "layout: and back to the stats")
     -- our own icons: what we're wearing now
     local wornBefore = STUB.worn
     STUB.worn = { [1] = 5001 }
@@ -3235,7 +3223,7 @@ do
     P.playing = { 1, "x" }
     STUB.music = 1
     STUB.Script(P.mine, "OnClick")
-    check(P.viewing == me and STUB.music == nil and b.edit:IsShown() and b.portraitBtn:IsShown() and not b.whisper:IsShown(),
+    check(P.viewing == me and STUB.music == nil and b.edit:IsShown() and b.portraitBtn == nil and not b.whisper:IsShown(),
         "page: My profile shows ours with edit buttons, and stops the music")
     check(not P.kudosCard.give:IsShown(), "page: no kudos for ourselves")
     local cf
@@ -3285,7 +3273,7 @@ do
     check(P.list.rows[1].member == me, "nickname: the search finds it")
     P.searchBox:SetText("")
     STUB.Script(P.searchBox, "OnTextChanged")
-    STUB.Script(b.portraitBtn, "OnClick")
+    edit("Portrait...") -- 0.16: in the Edit profile menu
     local pk = UI.pickerFrame
     check(pk:IsShown() and pk.pageText:GetText() == "Page 1 of 4" and pk.cells[96]:IsShown() and pk.cells[97] == nil
         and pk.nav:IsShown(), "edit: portrait picker: ours, then the client's classic icons, in pages")
@@ -3298,18 +3286,18 @@ do
     STUB.Script(pk.cells[25], "OnClick")
     check(a.content.icon == 134169 and P:Portrait(me) == 134169 and P:Portrait("Jakealt-Realm") == 134169 and not pk:IsShown()
         and b.pic.icon.__texture == 134169, "edit: picking a portrait, for the whole account")
-    STUB.Script(b.portraitBtn, "OnClick")
+    edit("Portrait...") -- 0.16: in the Edit profile menu
     STUB.Script(pk.next, "OnClick")
     STUB.Script(pk.cells[1], "OnClick")
-    STUB.Script(b.portraitBtn, "OnClick")
+    edit("Portrait...") -- 0.16: in the Edit profile menu
     check(a.content.icon == 139049 and pk.page == 2 and pk.cells[1].selected, "edit: the picker opens on the page with ours")
-    STUB.Script(b.portraitBtn, "OnClick")
-    STUB.Script(b.colorBtn, "OnClick")
+    edit("Portrait...") -- 0.16: in the Edit profile menu
+    edit("Color...")
     check(pk:IsShown() and pk.cells[1].tip == "Class color" and pk.cells[10]:IsShown() and not pk.cells[11]:IsShown()
         and not pk.nav:IsShown(), "edit: color picker reuses the grid")
     STUB.Script(pk.cells[8], "OnClick")
-    check(a.content.color == 7 and b.strip.__color[1] == P.COLORS[7][1], "edit: picking a color")
-    STUB.Script(b.colorBtn, "OnClick")
+    check(a.content.color == 7 and b.washColor[1] == P.COLORS[7][1], "edit: picking a color (the banner's wash, 0.16)")
+    edit("Color...")
     STUB.Script(pk.cells[1], "OnClick")
     check(a.content.color == nil, "edit: back to class color")
     local songs = P:SongMenu()
@@ -3612,8 +3600,9 @@ do
     local names = {}
     for i, r in ipairs(side.rows) do names[i] = r.name:GetText() end
     check(D.addBox.placeholder:GetText() == "Search...", "wishlist: the box says Search...")
-    check(table.concat(names, ",") == "Wishlist 1,Head,Neck,Shoulder,Back,Chest,Wrist,Hands,Waist,Legs,Feet,Finger,Trinket,Main Hand,Off Hand,Ranged"
-        and side.rows[2].icon.__texture == "slot-HeadSlot", "wishlist: the side lists the wishlist we're on, then each kind of slot")
+    check(table.concat(names, ",") == "Wishlist 1,Where to get them,Head,Neck,Shoulder,Back,Chest,Wrist,Hands,Waist,Legs,Feet,Finger,Trinket,Main Hand,Off Hand,Ranged"
+        and side.rows[3].icon.__texture == "slot-HeadSlot",
+        "wishlist: the side lists the wishlist we're on, where to get them (0.16), then each kind of slot")
     check(slotB(1).name:GetText() == "Head" and slotB(1).icon.__texture == "slot-HeadSlot" and not slotB(1).check:IsShown(),
         "wishlist: empty slots show the game's empty slot art and their name")
 
@@ -4006,8 +3995,9 @@ do
         "lfg: more than one role")
     STUB.Script(you.roles[3], "OnClick") -- DPS off
     check(DG:Role() == "T", "lfg: a role clicked again comes off")
-    STUB.Script(you.roles[1], "OnClick") -- the last one stays
-    check(DG:Role() == "T", "lfg: at least one role")
+    STUB.Script(you.roles[1], "OnClick") -- 0.16: the last one comes off too
+    check(DG:Role() == "", "lfg: the last role can come off too")
+    STUB.Script(you.roles[1], "OnClick") -- Tank back on
     STUB.Script(you.roles[2], "OnClick") -- Heals on: TH
     content.role, content.off = savedRole, savedOff
     local pickB = { key = "TH" }
@@ -4032,7 +4022,8 @@ do
         "lfg: our note is shared")
     local l1 = lookingC.rows[1]
     check(l1:IsShown() and l1.item.name == me and l1.roles[1].__atlas == DG.ROLE_ATLAS.TANK[1]
-        and l1.roles[2].__atlas == DG.ROLE_ATLAS.HEALER[1] and l1.roles[2]:IsShown() and not l1.roles[3]:IsShown()
+        and l1.roles[2].__atlas == DG.ROLE_ATLAS.HEALER[1] and l1.roles[2]:IsShown() and l1.roles[1]:GetAlpha() == 1
+        and l1.roles[3]:IsShown() and l1.roles[3]:GetAlpha() == DG.ROLE_OFF_ALPHA -- 0.16: all three in place, DPS greyed
         and l1.sub:GetText():find("The Stockade, The Deadmines", 1, true) and l1.sub:GetText():find("have quests", 1, true)
         and l1.right:GetText() == "online" and l1.right2 == nil, "lfg: we're listed with both roles, dungeons and note (no time left)")
 
@@ -4062,7 +4053,7 @@ do
     DG:Refresh()
     local t1 = groups.tiles[1]
     check(t1:IsShown() and t1.what:GetText() == "SFK run" and t1.who:GetText():find("needs a healer", 1, true)
-        and t1.pips[1]:IsShown() and t1.pips[1].__color[2] > 0.8 and t1.pips[2].__color[4] < 0.2
+        and t1.slots[1]:IsShown() and t1.slots[1].__w == DG.SLOT and t1.slots[2]:IsShown() and t1.slots[2].__w == 10 -- 0.16: role icon, then empty-slot dots
         and t1.join.label:GetText() == "Manage" and t1.edge:IsShown(), "lfg: a group as a tile (ours: Manage)")
     local entries
     local show = ns.UI.ShowMenu
@@ -4087,14 +4078,14 @@ do
     local prefill
     local compose = ns.UI.Compose
     ns.UI.Compose = function(opts) prefill = opts.text1 end
-    STUB.Script(DG.postBtn, "OnClick")
+    STUB.Script(DG.groups.quiet.post, "OnClick") -- 0.16: on the empty Groups card
     ns.UI.Compose = compose
     check(prefill == "", "lfg: Post a group opens the group finder's dialog")
     local _, pgT = STUB.rect(DG.page)
     local _, gT = STUB.rect(DG.groups)
     local _, yT = STUB.rect(DG.you)
-    check(DG.postBtn:GetParent() == DG.groups and DG.postBtn.label:GetText() == "Post group" and near(pgT - gT, 30)
-        and near(pgT - yT, 30), "lfg: no title bar: both columns start at the top, Post group in the Groups header")
+    check(DG.postBtn == nil and DG.groups.quiet.post.label:GetText() == "Post a group" and near(pgT - gT, 30)
+        and near(pgT - yT, 30), "lfg: no title bar: both columns start at the top, Post a group on the empty Groups card")
 
     -- stop, and running out
     STUB.Script(you.stop, "OnClick")
@@ -4178,7 +4169,7 @@ do
     check(c:IsShown() and P.charFor == "Raider03-Realm", "gear: the card shows their current character")
     local warrior = RAID_CLASS_COLORS[ns.db.guild.players["Raider03-Realm"].class]
     check(c.backdrop.glow:IsShown() and c.backdrop.glow.__vertex[1] == warrior.r and c.backdrop.glow.__vertex[3] == warrior.b
-        and c.backdrop.shadow:IsShown(), "gear: a glow in their class colour behind the model, a shadow at its feet")
+        and not c.backdrop.shadow:IsShown(), "gear: a glow in their class colour; no shadow without a model (0.16)")
     local cl, ct, cw, ch = STUB.rect(c)
     local al, at, aw, ah = STUB.rect(c.backdrop.art)
     local il, it, iw, ih = STUB.rect(c.inspect)
@@ -4208,22 +4199,20 @@ do
         and near((wl_ + rl_ + rw_) / 2, cl + cw / 2), "gear: laid out like the character pane, trinkets on the right")
     check(mini(4).icon.__texture == "slot-ShirtSlot" and mini(19).icon.__texture == "slot-TabardSlot",
         "gear: shirt and tabard slots too")
-    -- the middle: their class icon, Inspect above the weapons
+    -- the middle: their class icon above the weapons (0.16: no small Inspect button; the art or a gear icon opens it)
     local order = { WARRIOR = 1, PALADIN = 2, HUNTER = 3, ROGUE = 4, PRIEST = 5, SHAMAN = 6, MAGE = 7, WARLOCK = 8, DRUID = 9 }
     local classIcon = P.ICONS[order[ns.db.guild.players["Raider03-Realm"].class]][1]
-    local il2, it2, iw2, ih2 = STUB.rect(c.miniInspect)
     local cil, cit, ciw, cih = STUB.rect(c.classIcon)
-    check(c.classIcon:IsShown() and c.classIcon.icon.__texture == classIcon and c.miniInspect.glass ~= nil
-        and c.miniInspect:IsShown() and not c.inspect:IsShown()
-        and near(il2 + iw2 / 2, cl + cw / 2) and it2 - ih2 > wt_ and near(cil + ciw / 2, cl + cw / 2) and cit - cih > it2,
-        "gear: their class icon in the middle, Inspect above the weapons")
+    check(c.classIcon:IsShown() and c.classIcon.icon.__texture == classIcon and c.miniInspect == nil and not c.inspect:IsShown()
+        and near(cil + ciw / 2, cl + cw / 2) and cit - cih > wt_,
+        "gear: their class icon in the middle, above the weapons")
     STUB.Script(mini(1), "OnEnter")
     check(GameTooltip.link and GameTooltip.link:find("Hitem:5001", 1, true), "gear: hovering a gear icon shows the item")
     -- targeted (in range): the live model in the middle, their gear still around it
     STUB.target = "Raider03"
     P:Refresh()
     check(c.model:IsShown() and c.model.__unit == "target" and not c.pic:IsShown() and mini(1):IsShown()
-        and not c.inspect:IsShown() and c.miniInspect:IsShown() and not c.classIcon:IsShown(),
+        and not c.inspect:IsShown() and not c.classIcon:IsShown() and c.backdrop.shadow:IsShown(),
         "gear: in range, their live model in the middle instead of the class icon")
     STUB.target = nil
     P:Refresh()
@@ -4844,7 +4833,9 @@ do
     -- lists: the quest log's bar for the selected row, a gold glow on hover, gold dividers
     ns.Editor:ShowTab("wishlist")
     local row = ns.Wishlist.side.rows[1]
-    check(row.sel.__texture == UI.FILES.questBar and row.sel.__blend == "ADD", "classic: the selected row is the quest log's bar")
+    local gr = row.sel.__gradient
+    check(gr and gr[1] == "HORIZONTAL" and gr[2].a == UI.SEL_WASH[1] and gr[3].a == UI.SEL_WASH[2] and gr[2].g == 0.80,
+        "classic: the selected row is a gold wash, fading left to right (0.16)")
     local t = f:CreateTexture()
     UI.Hover(t, 0.05)
     local line = f:CreateTexture()
