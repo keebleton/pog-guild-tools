@@ -337,8 +337,10 @@ function Loot:Build(page)
     search:SetScript("OnEnterPressed", search.ClearFocus)
     self.searchBox = search
     self.nightBtn = UI.Button(page, "All nights", 220, BAR_H, function(b) UI.ShowMenu(b, self:NightMenu()) end)
+    UI.DropArrow(self.nightBtn)
     self.nightBtn:SetPoint("TOPLEFT", RX, -ROW1_Y)
-    local opts = UI.Button(page, "Options", 84, BAR_H, function(b) UI.ShowMenu(b, self:OptionsMenu()) end)
+    local opts = UI.Button(page, "Options", 92, BAR_H, function(b) UI.ShowMenu(b, self:OptionsMenu()) end)
+    UI.DropArrow(opts)
     opts:SetPoint("TOPRIGHT", page, "TOPRIGHT", -PAD, -ROW1_Y)
 
     -- Row 2
@@ -445,14 +447,16 @@ function Loot:Build(page)
     -- Bottom row
     local add = UI.Button(page, "Add loot", LEFT_W, BAR_H, function() self:PromptAdd() end)
     add:SetPoint("TOPLEFT", PAD, -BOTTOM_Y)
-    local discord = UI.Button(page, "Copy for Discord", 130, BAR_H, function()
-        UI.CopyBox("Loot for Discord", self:DiscordText())
+    -- one Export menu (CSV and Discord were two buttons: UI experiment)
+    self.exportBtn = UI.Button(page, "Export", 92, BAR_H, function(b)
+        UI.ShowMenu(b, {
+            { text = "Export", header = true },
+            { text = "Copy for Discord", func = function() UI.CopyBox("Loot for Discord", self:DiscordText()) end },
+            { text = "Copy as CSV", func = function() UI.CopyBox("Loot (CSV, paste into a spreadsheet)", self:CSV()) end },
+        })
     end)
-    discord:SetPoint("TOPRIGHT", page, "TOPRIGHT", -PAD, -BOTTOM_Y)
-    local csv = UI.Button(page, "Copy as CSV", 110, BAR_H, function()
-        UI.CopyBox("Loot (CSV, paste into a spreadsheet)", self:CSV())
-    end)
-    csv:SetPoint("RIGHT", discord, "LEFT", -4, 0)
+    UI.DropArrow(self.exportBtn)
+    self.exportBtn:SetPoint("TOPRIGHT", page, "TOPRIGHT", -PAD, -BOTTOM_Y)
 end
 
 -- Manual entry: item first (shift-click it in), then who got it.
@@ -599,6 +603,7 @@ function Loot:RefreshTable()
             "No loot yet.")
     end
     self.empty:SetShown(#rows == 0)
+    if self.tableArt then self.tableArt:SetSparse(#rows == 0) end -- an empty card shows its whole picture
 end
 
 ------------------------------------------------------------------------

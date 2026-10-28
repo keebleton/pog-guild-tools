@@ -76,10 +76,13 @@ Sync:Register({
 
 Sync:Register({
     name = "lfg", code = "g", order = 1,
-    fields = { "what", "need", "exp", "size", "max", "desc" },
+    -- `roles`: one letter per member (T, H, D), tanks first, for the group
+    -- finder's role icons (Jake); older versions ignore it
+    fields = { "what", "need", "exp", "size", "max", "desc", "roles" },
     numeric = { exp = true, size = true, max = true },
     valid = function(rec)
         return sane(rec, { what = Social.MAX_LFG, need = Social.MAX_LFG, desc = Social.MAX_LFG_DESC }) and rec.exp ~= nil
+            and (rec.roles == nil or (type(rec.roles) == "string" and #rec.roles <= 40 and rec.roles:match("^[THD]+$") ~= nil))
             and rec.exp - rec.t <= 3 * 3600 and (rec.by == rec.author or Sync:IsOfficer(rec.by))
             and (rec.deleted or (rec.what and rec.what ~= ""))
     end,
@@ -200,6 +203,34 @@ function Social:GroupSize()
     return n, 5
 end
 
+-- Each member's role, tanks first ("THDD"): a guildie's profile role, else
+-- what the game has them as, else DPS.
+local ROLE_LETTER = { T = "T", H = "H", D = "D", M = "D", R = "D", TANK = "T", HEALER = "H", DAMAGER = "D" }
+function Social:GroupRoles()
+    local out = {}
+    local function add(unit)
+        local name = unit == "player" and Sync:Me() or (UnitName and UnitName(unit))
+        if not name or (issecretvalue and issecretvalue(name)) then return end
+        local key = unit == "player" and name or (ns.Attendance and ns.Attendance:Key(name)) or name
+        local prof = ns.Profiles and ns.Profiles:Content(key).role
+        local game = UnitGroupRolesAssigned and UnitGroupRolesAssigned(unit)
+        if game and issecretvalue and issecretvalue(game) then game = nil end
+        out[#out + 1] = ROLE_LETTER[prof or ""] or ROLE_LETTER[game or ""] or "D"
+    end
+    add("player")
+    if IsInRaid() then
+        for i = 1, 40 do
+            local u = "raid" .. i
+            if UnitExists and UnitExists(u) and not (UnitIsUnit and UnitIsUnit(u, "player")) then add(u) end
+        end
+    else
+        for i = 1, 4 do if UnitExists and UnitExists("party" .. i) then add("party" .. i) end end
+    end
+    local rank = { T = 1, H = 2, D = 3 }
+    table.sort(out, function(a, b) return rank[a] < rank[b] end)
+    return table.concat(out)
+end
+
 -- One listing per person: posting again replaces your old one.
 function Social:PostGroup(what, need, desc)
     what, need = clean(what, Social.MAX_LFG), clean(need, Social.MAX_LFG)
@@ -212,7 +243,7 @@ function Social:PostGroup(what, need, desc)
     wipe(self.requests)
     return Sync:Write("lfg", { id = ns.NewId(), author = Sync:Me(), t = now, what = what,
         need = need ~= "" and need or nil, desc = desc ~= "" and desc or nil,
-        exp = now + Social.LFG_MINUTES * 60, size = size, max = max })
+        exp = now + Social.LFG_MINUTES * 60, size = size, max = max, roles = self:GroupRoles() })
 end
 
 -- Keep your listing's 2/5 current as people join or leave.
@@ -220,9 +251,10 @@ function Social:UpdateGroupSize()
     local mine = self:MyGroup()
     if not mine then return end
     local size, max = self:GroupSize()
-    if mine.size == size and mine.max == max then return end
+    local roles = self:GroupRoles()
+    if mine.size == size and mine.max == max and mine.roles == roles then return end
     local c = copy(mine)
-    c.size, c.max = size, max
+    c.size, c.max, c.roles = size, max, roles
     Sync:Write("lfg", c)
 end
 

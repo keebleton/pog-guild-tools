@@ -43,9 +43,14 @@ function Gear.Unpack(s)
     return ids
 end
 
+-- `st`: the character sheet's numbers at the time, "hp,mana,str,agi,sta,int,
+-- spi,armor" (max health and mana; 0 mana for rage and energy classes), shown
+-- on a profile's Character card when we can't draw them (Jake). Older versions
+-- ignore the field (records are read by their known fields).
+Gear.STATS = { "hp", "mana", "str", "agi", "sta", "int", "spi", "armor" }
 Sync:Register({
     name = "gear", code = "h", order = 5,
-    fields = { "items", "race", "sex" },
+    fields = { "items", "race", "sex", "st" },
     numeric = { race = true, sex = true },
     valid = function(rec)
         if rec.by ~= rec.author or rec.id ~= rec.author then return false end
@@ -53,6 +58,8 @@ Sync:Register({
         return type(rec.items) == "string" and #rec.items == 4 * Gear.SLOTS and rec.items:match("^[A-Za-z0-9+/]*$") ~= nil
             and type(rec.race) == "number" and rec.race >= 1 and rec.race <= 99 and rec.race % 1 == 0
             and (rec.sex == 2 or rec.sex == 3)
+            and (rec.st == nil or (type(rec.st) == "string" and #rec.st <= 80 and rec.st:match("^[%d,]+$") ~= nil
+                and select(2, rec.st:gsub(",", "")) == #Gear.STATS - 1))
     end,
     onChange = function(rec) Gear:Changed(rec) end,
 })
@@ -72,6 +79,41 @@ function Gear:Worn()
     return ids
 end
 
+-- Our character sheet's numbers, packed for `st` (nil if the client won't say).
+function Gear.StatsNow()
+    local function num(fn, ...)
+        if not fn then return nil end
+        local ok, v = pcall(fn, ...)
+        if not ok or v == nil or secret(v) or type(v) ~= "number" then return nil end
+        return math.max(0, math.floor(v + 0.5))
+    end
+    local function stat(i)
+        if not UnitStat then return nil end
+        local ok, _, effective = pcall(UnitStat, "player", i)
+        if not ok or effective == nil or secret(effective) or type(effective) ~= "number" then return nil end
+        return math.max(0, math.floor(effective + 0.5))
+    end
+    local armor
+    if UnitArmor then
+        local ok, _, effective = pcall(UnitArmor, "player")
+        if ok and type(effective) == "number" and not secret(effective) then armor = math.floor(effective + 0.5) end
+    end
+    local v = { num(UnitHealthMax, "player"), num(UnitPowerMax, "player", 0), stat(1), stat(2), stat(3), stat(4), stat(5), armor }
+    for i = 1, #Gear.STATS do if v[i] == nil then return nil end end
+    return table.concat(v, ",")
+end
+
+-- A record's `st` as { hp = 1234, mana = ..., ... }, or nil.
+function Gear.Stats(rec)
+    if not rec or type(rec.st) ~= "string" then return nil end
+    local out, i = {}, 0
+    for n in rec.st:gmatch("%d+") do
+        i = i + 1
+        if Gear.STATS[i] then out[Gear.STATS[i]] = tonumber(n) end
+    end
+    return i == #Gear.STATS and out or nil
+end
+
 function Gear:Publish()
     if not ns.db or not Sync:GuildName() then return end
     local who = me()
@@ -79,9 +121,10 @@ function Gear:Publish()
     local sex = UnitSex("player")
     if not race or secret(race) or not sex or secret(sex) then return end
     local items = Gear.Pack(self:Worn())
+    local st = Gear.StatsNow()
     local cur = self:Record(who)
-    if cur and cur.items == items and cur.race == race and cur.sex == sex then return end
-    Sync:Write("gear", { id = who, author = who, t = ns.Now(), items = items, race = race, sex = sex })
+    if cur and cur.items == items and cur.race == race and cur.sex == sex and cur.st == st then return end
+    Sync:Write("gear", { id = who, author = who, t = ns.Now(), items = items, race = race, sex = sex, st = st })
 end
 
 -- The character of an account to show: the one we're playing, or the one
@@ -218,7 +261,12 @@ function Gear:BuildWindow()
     f.metal = UI.PortraitFrame(f, "", ns.MEDIA .. "logo", function() f:Hide() end)
     if not f.metal then UI.Window(f) end
     f:Hide()
-    f:SetScript("OnHide", function() UI.HideMenu() end)
+    -- the profile card's model hides while this is open (it would draw through)
+    f:SetScript("OnShow", function() if ns.Profiles and ns.Profiles.charCard then ns.Profiles:RefreshCharacter() end end)
+    f:SetScript("OnHide", function()
+        UI.HideMenu()
+        if ns.Profiles and ns.Profiles.charCard then ns.Profiles:RefreshCharacter() end
+    end)
     tinsert(UISpecialFrames, "PogRaidInspect")
 
     local bar = CreateFrame("Frame", nil, f)
@@ -364,6 +412,8 @@ ns.On("PLAYER_LOGIN", function()
     C_Timer.After(20, function() Gear:Publish() end)
     C_Timer.After(90, function() Gear:Publish() end) -- in case the guild roster was slow
 end)
+-- a new level changes the numbers too (buffs don't trigger a share)
+ns.On("PLAYER_LEVEL_UP", function() publishSoon() end)
 ns.On("PLAYER_EQUIPMENT_CHANGED", function()
     publishSoon()
     local f = Gear.window

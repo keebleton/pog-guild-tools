@@ -490,6 +490,7 @@ function Duels:Refresh()
         end
     end
     board.empty:SetShown(#list == 0)
+    if self.boardArt then self.boardArt:SetSparse(#list == 0) end -- an empty card shows its whole picture
 end
 
 ------------------------------------------------------------------------
@@ -536,7 +537,9 @@ function Popup:Ask(from, id, t)
     self.current = ask
     self.frame.text:SetText(("%s (%d) challenges you to a ranked duel"):format(colorName(from),
         math.floor(Duels:Rating(from) + 0.5)))
+    local was = self.frame:IsShown()
     self.frame:Show()
+    if not was then UI.FadeIn(self.frame, 0.2) end -- (a little motion: UI experiment)
     ns.Sound("IG_PLAYER_INVITE")
     -- no answer in time counts as a decline
     C_Timer.After(Duels.ANSWER_WAIT - 5, function()

@@ -684,7 +684,8 @@ function Att:Build(page)
     self.title:SetPoint("LEFT", page, "TOPLEFT", RX + 2, -(ROW1_Y + BAR_H / 2))
 
     -- Row 2: status and the "late / early" button (left), info (right)
-    self.noticeBtn = UI.Button(page, "Late / early...", NOTICE_W, BAR_H, function(b) UI.ShowMenu(b, self:NoticeMenu()) end)
+    self.noticeBtn = UI.Button(page, "Late / early", NOTICE_W, BAR_H, function(b) UI.ShowMenu(b, self:NoticeMenu()) end)
+    UI.DropArrow(self.noticeBtn)
     self.noticeBtn:SetPoint("TOPLEFT", PAD + LEFT_W - NOTICE_W, -ROW2_Y)
     self.status = UI.Text(page, 11)
     self.status:SetPoint("LEFT", page, "TOPLEFT", PAD + 2, -(ROW2_Y + BAR_H / 2))
@@ -805,8 +806,21 @@ function Att:Build(page)
     end)
     del:SetPoint("TOPLEFT", PAD, -BOTTOM_Y)
     self.deleteBtn = del
-    local opts = UI.Button(page, "Options", 84, BAR_H, function(b) UI.ShowMenu(b, self:OptionsMenu()) end)
-    opts:SetPoint("TOPLEFT", RX, -BOTTOM_Y)
+    -- the page's tools in one place, at the bottom right: Add player, Options,
+    -- Export (CSV and Discord were two buttons: UI experiment)
+    self.exportBtn = UI.Button(page, "Export", 92, BAR_H, function(b)
+        UI.ShowMenu(b, {
+            { text = "Export", header = true },
+            { text = "Copy for Discord", func = function() UI.CopyBox("Attendance for Discord", self:DiscordText()) end },
+            { text = "Copy as CSV", func = function() UI.CopyBox("Attendance (CSV, paste into a spreadsheet)", self:CSV()) end },
+        })
+    end)
+    UI.DropArrow(self.exportBtn)
+    self.exportBtn:SetPoint("TOPRIGHT", page, "TOPRIGHT", -PAD, -BOTTOM_Y)
+    local opts = UI.Button(page, "Options", 92, BAR_H, function(b) UI.ShowMenu(b, self:OptionsMenu()) end)
+    UI.DropArrow(opts)
+    opts:SetPoint("RIGHT", self.exportBtn, "LEFT", -4, 0)
+    self.optsBtn = opts
     self.addBtn = UI.Button(page, "Add player", 96, BAR_H, function()
         local s = self:Viewing()
         if not s then return end
@@ -815,15 +829,7 @@ function Att:Build(page)
             if clean ~= "" then self:SetOverride(s, self:Key(clean), 1) end
         end)
     end)
-    self.addBtn:SetPoint("LEFT", opts, "RIGHT", 4, 0)
-    local discord = UI.Button(page, "Copy for Discord", 130, BAR_H, function()
-        UI.CopyBox("Attendance for Discord", self:DiscordText())
-    end)
-    discord:SetPoint("TOPRIGHT", page, "TOPRIGHT", -PAD, -BOTTOM_Y)
-    local csv = UI.Button(page, "Copy as CSV", 110, BAR_H, function()
-        UI.CopyBox("Attendance (CSV, paste into a spreadsheet)", self:CSV())
-    end)
-    csv:SetPoint("RIGHT", discord, "LEFT", -4, 0)
+    self.addBtn:SetPoint("RIGHT", opts, "LEFT", -4, 0)
 end
 
 function Att:Viewing()
@@ -1001,6 +1007,7 @@ function Att:RefreshTable()
             "No raid nights yet :)")
     end
     self.empty:SetShown(#rows == 0)
+    if self.tableArt then self.tableArt:SetSparse(#rows == 0) end -- an empty card shows its whole picture
 end
 
 ------------------------------------------------------------------------

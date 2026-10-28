@@ -33,7 +33,7 @@ local CLASSIC = {
     BORDER = { 0.34, 0.29, 0.20, 1 },
     BUTTON_BORDER = { 0.42, 0.36, 0.25, 1 },
     CARD = { 0.085, 0.082, 0.078, 1 },
-    TITLE = { 0.86, 0.70, 0.30 },
+    TITLE = { 0.80, 0.74, 0.58 }, -- parchment, not gold: gold is for selected and primary (UI experiment)
     ACCENT = { 1, 0.82, 0 },
     SEL_FILL = { 0.24, 0.17, 0.04, 1 },
     BAND = { 0.02, 0.018, 0.015, 0.55 },
@@ -155,17 +155,19 @@ end
 
 function UI.Line(tex, a)
     if UI.classic then
-        tex:SetColorTexture(0.86, 0.70, 0.30, (a or 0.06) * 2.2)
+        tex:SetColorTexture(0.62, 0.56, 0.45, (a or 0.06) * 2)
     else
         tex:SetColorTexture(1, 1, 1, a or 0.06)
     end
 end
 
+UI.SEL_WASH = { 0.20, 0.02 } -- the selected row's gold: left edge, right edge
 function UI.SelBar(tex, a)
-    if UI.classic and UI.HasFile(UI.FILES.questBar) then
-        tex:SetTexture(UI.FILES.questBar)
-        if tex.SetBlendMode then tex:SetBlendMode("ADD") end
-        tex:SetAlpha(0.85)
+    if UI.classic then
+        tex:SetColorTexture(1, 1, 1, 1)
+        local ok = CreateColor and tex.SetGradient and pcall(tex.SetGradient, tex, "HORIZONTAL",
+            CreateColor(1, 0.80, 0.25, UI.SEL_WASH[1]), CreateColor(1, 0.80, 0.25, UI.SEL_WASH[2]))
+        if not ok then tex:SetColorTexture(1, 0.80, 0.25, (UI.SEL_WASH[1] + UI.SEL_WASH[2]) / 2) end
     else
         tex:SetColorTexture(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3], a or 0.12)
     end
@@ -228,6 +230,7 @@ end
 -- "PortraitFrameTemplate"); returns nil (use UI.Window) when it isn't there.
 -- Returns { edge, strip, title, close, portrait }; drag the window by `strip`.
 UI.TITLE_STRIP, UI.PORTRAIT = 21, 62
+UI.LIP_TUCK = 4 -- the top edge starts this far under the corner's ring
 UI.PORTRAIT_CLEAR = 66 -- band content starts here, clear of the portrait (it hangs 34px into the window)
 function UI.PortraitFrame(f, title, portrait, onClose)
     if not (UI.classic and NineSliceUtil and NineSliceUtil.ApplyLayoutByName) then return nil end
@@ -240,11 +243,25 @@ function UI.PortraitFrame(f, title, portrait, onClose)
         edge:Hide()
         return nil
     end
+    -- the title bar's gold lip stops a hair short of the ring and its square
+    -- end showed (Jake): start the top edge a little under the corner, which
+    -- draws over it
+    local corner, top = edge.TopLeftCorner, edge.TopEdge
+    if corner and top and top.ClearAllPoints and corner.GetDrawLayer then
+        local layer = corner:GetDrawLayer()
+        corner:SetDrawLayer(layer, 7)
+        if top.SetDrawLayer then top:SetDrawLayer(layer, 6) end
+        top:ClearAllPoints()
+        top:SetPoint("TOPLEFT", corner, "TOPRIGHT", -UI.LIP_TUCK, 0)
+        if edge.TopRightCorner then top:SetPoint("TOPRIGHT", edge.TopRightCorner, "TOPLEFT", 0, 0) end
+    end
     for _, e in ipairs(f.edges or {}) do e:Hide() end
     stone(f)
     -- the strip: a dark fill, the title, the X; it's the drag handle too
+    -- (the fill starts under the portrait's middle: from the window's edge its
+    -- square corner showed outside the round ring, Jake)
     local fill = f:CreateTexture(nil, "BACKGROUND")
-    fill:SetPoint("BOTTOMLEFT", f, "TOPLEFT", 0, 0)
+    fill:SetPoint("BOTTOMLEFT", f, "TOPLEFT", UI.PORTRAIT / 2 - 5, 0)
     fill:SetPoint("BOTTOMRIGHT", f, "TOPRIGHT", 0, 0)
     fill:SetHeight(UI.TITLE_STRIP)
     fill:SetColorTexture(UI.BG[1], UI.BG[2], UI.BG[3], 1)
@@ -276,7 +293,7 @@ function UI.PortraitFrame(f, title, portrait, onClose)
     p.icon:SetTexture(portrait)
     -- what the frame adds around the window still counts for staying on screen
     if f.SetClampRectInsets then f:SetClampRectInsets(-16, 6, UI.TITLE_STRIP + 18, -6) end
-    return { edge = edge, strip = strip, title = text, close = close, portrait = p }
+    return { edge = edge, strip = strip, title = text, close = close, portrait = p, fill = fill }
 end
 
 -- A window's title band (Editor, Inspect, gallery): its fill, the line under
@@ -352,6 +369,18 @@ end
 -- colour stays flat.
 UI.CARD_SHADE_TOP, UI.CARD_SHADE_BOTTOM = 0.06, 0.30
 UI.CARD_EDGE = { 0.27, 0.26, 0.24, 0.7 }
+-- A card header's titles and buttons sit in the middle of what shows: the
+-- soft edge covers about 3px of the card's top, so with it they go 1.5px
+-- lower than the header's centre, and buttons keep 6px from the right
+-- (Jake: they leaned on the edge and the title sat high).
+UI.EDGE_NUDGE, UI.HEAD_INSET_EDGE = 1.5, 6
+function UI.HeadMid(headH)
+    if UI.classic and UI.CARD_EDGE then return headH / 2 + UI.EDGE_NUDGE end
+    return headH / 2
+end
+function UI.HeadInset()
+    return (UI.classic and UI.CARD_EDGE) and UI.HEAD_INSET_EDGE or 5
+end
 
 function UI.Card(f, color)
     local c = color or UI.CARD
@@ -387,6 +416,76 @@ function UI.Card(f, color)
     end
 end
 
+-- An icon with rounded corners (Jake: square icons looked rigid): the game's
+-- rounded icon mask, set a few pixels inside a slightly bigger icon so it
+-- also trims the icon's own border (a masked texture can't be cropped).
+-- `size` is what shows; anchor the icon by its CENTER. Falls back to a
+-- plain cropped square.
+UI.ICON_MASK = "Interface\\Common\\common-iconmask"
+UI.ICON_TRIM = 3
+function UI.RoundIcon(parent, size, layer)
+    local icon = parent:CreateTexture(nil, layer or "ARTWORK")
+    if parent.CreateMaskTexture and icon.AddMaskTexture and UI.HasFile(UI.ICON_MASK) then
+        icon:SetSize(size + 2 * UI.ICON_TRIM, size + 2 * UI.ICON_TRIM)
+        local mask = parent:CreateMaskTexture()
+        mask:SetTexture(UI.ICON_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        mask:SetPoint("TOPLEFT", icon, "TOPLEFT", UI.ICON_TRIM, -UI.ICON_TRIM)
+        mask:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -UI.ICON_TRIM, UI.ICON_TRIM)
+        icon:AddMaskTexture(mask)
+        icon.mask = mask
+    else
+        icon:SetSize(size, size)
+        icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    end
+    return icon
+end
+
+-- A clickable tile that reads as a button on a card (Jake: the profession
+-- tiles blended into the background): the soft rounded edge, a fill a shade
+-- lighter, lit from the top. Its fill, highlight and selection sit inside the
+-- edge so no square corner shows. UI.TileSelected(tile, on) turns the edge gold.
+UI.TILE_EDGE = { 0.40, 0.38, 0.34, 0.9 }
+UI.TILE_SEL_EDGE = { 0.70, 0.56, 0.22, 1 }
+UI.TILE_SEL_ALPHA = 0.8 -- the picked tile's wash (Jake: the old glow was a little bright)
+UI.TILE_FILL = { 0.10, 0.03 } -- white: top, bottom
+UI.TILE_INSET = 4
+function UI.Tile(t)
+    local n = UI.TILE_INSET
+    local function inside(tex)
+        tex:SetPoint("TOPLEFT", n, -n)
+        tex:SetPoint("BOTTOMRIGHT", -n, n)
+        return tex
+    end
+    t.bg = inside(t:CreateTexture(nil, "BACKGROUND", nil, 1))
+    t.bg:SetColorTexture(1, 1, 1, 1)
+    local ok = CreateColor and t.bg.SetGradient and pcall(t.bg.SetGradient, t.bg, "VERTICAL",
+        CreateColor(1, 1, 1, UI.TILE_FILL[2]), CreateColor(1, 1, 1, UI.TILE_FILL[1]))
+    if not ok then t.bg:SetColorTexture(1, 1, 1, (UI.TILE_FILL[1] + UI.TILE_FILL[2]) / 2) end
+    t.sel = inside(t:CreateTexture(nil, "BACKGROUND", nil, 2))
+    UI.SelBar(t.sel, 0.08)
+    t.sel:SetAlpha(UI.TILE_SEL_ALPHA)
+    t.sel:Hide()
+    -- act on the press, as Sapper Sweeper's tiles (Jake: fast clicks were lost
+    -- when the mouse drifted off before the release)
+    if t.RegisterForClicks then t:RegisterForClicks("LeftButtonDown") end
+    local hl = inside(t:CreateTexture(nil, "HIGHLIGHT"))
+    UI.Hover(hl, 0.06)
+    local made, edge = pcall(CreateFrame, "Frame", nil, t, "BackdropTemplate")
+    if made and edge and edge.SetBackdrop then
+        edge:SetAllPoints()
+        edge:SetBackdrop({ edgeFile = UI.FILES.tooltip, edgeSize = 12 })
+        t.edge = edge
+    end
+    UI.TileSelected(t, false)
+    return t
+end
+function UI.TileSelected(t, on)
+    t.sel:SetShown(on and true or false)
+    local e = on and UI.TILE_SEL_EDGE or UI.TILE_EDGE
+    if t.edge and t.edge.SetBackdropBorderColor then t.edge:SetBackdropBorderColor(e[1], e[2], e[3], e[4]) end
+    t.edgeColor = e
+end
+
 -- A section's label ("Message board"), in the title colour, as the game
 -- writes them: no capitals (Jake). `size`: 12, or smaller for table columns.
 UI.TITLE_SIZE, UI.COLUMN_SIZE = 12, 11
@@ -398,6 +497,50 @@ function UI.SectionTitle(parent, text, size)
     fs:SetTextColor(UI.TITLE[1], UI.TITLE[2], UI.TITLE[3])
     if text then fs:SetText(text) end
     return fs
+end
+
+-- A page's headline in the game's book and quest title font (Morpheus): one
+-- per page, for the thing that page is about (UI experiment). Plain look: our font.
+UI.HEADLINE_FONT = "Fonts\\MORPHEUS.TTF"
+UI.HEADLINE = { 0.97, 0.88, 0.66 }
+function UI.Headline(parent, size, layer)
+    local fs = parent:CreateFontString(nil, layer or "OVERLAY")
+    if not (UI.classic and fs:SetFont(UI.HEADLINE_FONT, size or 18, "") ~= false) then
+        fs:SetFont(UI.FONT, size or 18, "")
+    end
+    fs:SetShadowOffset(1, -1)
+    fs:SetShadowColor(0, 0, 0, 0.9)
+    local c = UI.classic and UI.HEADLINE or UI.TEXT
+    fs:SetTextColor(c[1], c[2], c[3])
+    fs.headline = true
+    return fs
+end
+
+-- 9. a little motion: fade a frame in (page switches, toasts). One shared
+-- driver; a frame faded again restarts.
+local fading, fader = {}, nil
+UI.FADE_TIME = 0.15
+function UI.FadeIn(f, dur) UI.Fade(f, 0, 1, dur) end
+-- From one alpha to another over `dur` seconds (a flash fades 0.35 -> 0).
+function UI.Fade(f, from, to, dur)
+    if not f or not f.SetAlpha then return end
+    f:SetAlpha(from)
+    fading[f] = { t = 0, dur = dur or UI.FADE_TIME, from = from, to = to }
+    if not fader then
+        fader = CreateFrame("Frame")
+        fader:SetScript("OnUpdate", function(self, elapsed)
+            local busy = false
+            for fr, s in pairs(fading) do
+                s.t = s.t + (elapsed or 0)
+                local k = math.min(1, s.t / s.dur)
+                fr:SetAlpha(s.from + (s.to - s.from) * k)
+                if k >= 1 then fading[fr] = nil else busy = true end
+            end
+            if not busy then self:Hide() end
+        end)
+        UI.fader = fader
+    end
+    fader:Show()
 end
 
 -- A thin bar on the right edge of a scrolling list, shown only when the list
@@ -461,6 +604,7 @@ function UI.Button(parent, text, w, h, onClick)
     function b:SetLabel(t) self.label:SetText(t) end
     function b:SetSelected(on)
         self.selected = on
+        if self.red then UI.Unred(self) end
         if on then
             self.bg:SetColorTexture(UI.SEL_FILL[1], UI.SEL_FILL[2], UI.SEL_FILL[3], UI.SEL_FILL[4])
             UI.SetBorderColor(self, { UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3], 1 })
@@ -482,8 +626,10 @@ function UI.Button(parent, text, w, h, onClick)
         self.label:SetAlpha(on and 1 or 0.4)
         if self.red then self:SetRed(on and "Up" or "Disabled") end
     end
+    if UI.classic and h >= UI.RED_MIN_H then UI.RedButton(b) end
     return b
 end
+UI.RED_MIN_H = 20 -- smaller buttons (card headers) stay outlines
 
 -- The game's red panel button (as on Accept / Decline), in three slices so
 -- it stretches to any width: caps 12px, the art is 80x22 of a 128x32 file.
@@ -511,7 +657,8 @@ function UI.RedButton(b)
     for _, e in ipairs(b.edges) do e:Hide() end
     b.hl:Hide()
     b.red = slices(b, "BACKGROUND", UI.FILES.red .. "Up")
-    for _, t in ipairs(slices(b, "HIGHLIGHT", UI.FILES.red .. "Highlight")) do
+    b.redHL = slices(b, "HIGHLIGHT", UI.FILES.red .. "Highlight")
+    for _, t in ipairs(b.redHL) do
         if t.SetBlendMode then t:SetBlendMode("ADD") end
     end
     b.label:SetTextColor(1, 0.82, 0)
@@ -521,9 +668,21 @@ function UI.RedButton(b)
         local c = state == "Disabled" and { 0.5, 0.5, 0.5 } or { 1, 0.82, 0 }
         self.label:SetTextColor(c[1], c[2], c[3])
     end
-    b:HookScript("OnMouseDown", function(self) if self:IsEnabled() then self:SetRed("Down") end end)
-    b:HookScript("OnMouseUp", function(self) if self:IsEnabled() then self:SetRed("Up") end end)
+    b:HookScript("OnMouseDown", function(self) if self.red and self:IsEnabled() then self:SetRed("Down") end end)
+    b:HookScript("OnMouseUp", function(self) if self.red and self:IsEnabled() then self:SetRed("Up") end end)
     b:SetRed(b:IsEnabled() and "Up" or "Disabled")
+end
+
+-- Back to the outline look (a toggle or a menu button isn't an action).
+function UI.Unred(b)
+    if not b.red then return end
+    for _, t in ipairs(b.red) do t:Hide() end
+    for _, t in ipairs(b.redHL or {}) do t:Hide() end
+    b.red, b.redHL, b.SetRed = nil, nil, nil
+    b.bg:Show()
+    for _, e in ipairs(b.edges or {}) do e:Show() end
+    b.hl:Show()
+    b.label:SetTextColor(UI.TEXT[1], UI.TEXT[2], UI.TEXT[3])
 end
 
 -- A button that reloads the UI. Addons can't call ReloadUI themselves on
@@ -548,6 +707,21 @@ function UI.ReloadButton(parent, text, w, h)
     b.label:SetText(text or "")
     if UI.classic then UI.RedButton(b) end
     return b
+end
+
+-- A button that opens a menu gets the game's small down arrow at its right
+-- (not a letter "v"); its label moves over to make room.
+UI.DROP_ARROW = "Interface\\Buttons\\Arrow-Down-Up"
+function UI.DropArrow(b)
+    UI.Unred(b)
+    b.arrow = b:CreateTexture(nil, "ARTWORK")
+    b.arrow:SetSize(12, 12)
+    b.arrow:SetPoint("RIGHT", -5, -2)
+    b.arrow:SetTexture(UI.DROP_ARROW)
+    b.label:ClearAllPoints()
+    b.label:SetPoint("LEFT", 6, 0)
+    b.label:SetPoint("RIGHT", -20, 0)
+    return b.arrow
 end
 
 -- Two-click confirm for destructive buttons: the first click turns the
@@ -1227,8 +1401,10 @@ UI.SUBTAB_PAD, UI.SUBTAB_GAP, UI.SUBTAB_H, UI.SUBTAB_MIN = 14, 6, 26, 80
 UI.SUBTAB_COLORS = {
     fill = { 0.07, 0.068, 0.064, 0.95 }, edge = { 0.30, 0.28, 0.24, 1 }, text = { 0.62, 0.60, 0.56 },
     hoverEdge = { 0.48, 0.42, 0.30, 1 }, hoverText = { 0.85, 0.80, 0.66 },
-    selFill = { 0.30, 0.20, 0.04, 1 }, selEdge = { 0.95, 0.76, 0.22, 1 }, selText = { 0.98, 0.95, 0.88 },
+    -- the open tab, toned down (Jake: it looked a little bright)
+    selFill = { 0.21, 0.145, 0.04, 1 }, selEdge = { 0.74, 0.59, 0.20, 1 }, selText = { 0.95, 0.91, 0.80 },
 }
+UI.SUBTAB_SHEEN = { 0.15, 0.02 } -- the open tab's gold sheen: bottom, top
 function UI.SubTab(parent, text, onClick)
     if not UI.classic then return nil end
     local C = UI.SUBTAB_COLORS
@@ -1244,8 +1420,8 @@ function UI.SubTab(parent, text, onClick)
     b.glow:SetAllPoints()
     b.glow:SetColorTexture(1, 1, 1, 1)
     local ok = CreateColor and b.glow.SetGradient and pcall(b.glow.SetGradient, b.glow, "VERTICAL",
-        CreateColor(1, 0.78, 0.25, 0.32), CreateColor(1, 0.85, 0.40, 0.04))
-    if not ok then b.glow:SetColorTexture(1, 0.8, 0.3, 0.12) end
+        CreateColor(1, 0.78, 0.25, UI.SUBTAB_SHEEN[1]), CreateColor(1, 0.85, 0.40, UI.SUBTAB_SHEEN[2]))
+    if not ok then b.glow:SetColorTexture(1, 0.8, 0.3, UI.SUBTAB_SHEEN[1] / 2) end
     UI.Border(b)
     local hl = b:CreateTexture(nil, "HIGHLIGHT")
     hl:SetAllPoints()

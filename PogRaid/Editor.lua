@@ -501,7 +501,8 @@ function Editor:BuildTools()
     self.options.group = group
 
     local dot = strip(1, 200)
-    self.dotBtn = UI.Button(dot, "Pick a player...", 200, BAR_H, function(b) UI.ShowMenu(b, self:RosterEntries()) end)
+    self.dotBtn = UI.Button(dot, "Pick a player", 200, BAR_H, function(b) UI.ShowMenu(b, self:RosterEntries()) end)
+    UI.DropArrow(self.dotBtn)
     self.dotBtn:SetPoint("LEFT")
     self.options.dot = dot
 

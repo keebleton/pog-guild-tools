@@ -115,6 +115,7 @@ function M:CreateTexture() return new("Texture", self) end
 function M:CreateLine() return new("Line", self) end
 function M:CreateAnimationGroup() return new("AnimationGroup", self) end
 function M:CreateFontString() return new("FontString", self) end
+function M:CreateMaskTexture() return new("MaskTexture", self) end
 function M:SetFont(font, size) self.__font, self.__fontSize = font, size end
 function M:SetText(t)
     if self.__kind == "FontString" and not self.__font then error("FontString:SetText(): Font not set") end
@@ -255,8 +256,16 @@ STUB.sounds = {}
 function PlaySound(id) table.insert(STUB.sounds, id) end
 -- like the game: an addon calling ReloadUI is blocked ("Interface action failed because of an AddOn")
 function ReloadUI() error("ADDON_ACTION_BLOCKED: ReloadUI") end
--- the game's frame layouts: lays a named border kit onto a "NineSlicePanelTemplate" frame
-NineSliceUtil = { ApplyLayoutByName = function(f, name) f.__layout = name end }
+-- the game's frame layouts: lays a named border kit onto a "NineSlicePanelTemplate" frame,
+-- creating its corner and edge pieces as textures like the game does
+local NINE_SLICE_PIECES = { "TopLeftCorner", "TopRightCorner", "BottomLeftCorner", "BottomRightCorner",
+    "TopEdge", "BottomEdge", "LeftEdge", "RightEdge", "Center" }
+NineSliceUtil = { ApplyLayoutByName = function(f, name)
+    f.__layout = name
+    for _, key in ipairs(NINE_SLICE_PIECES) do
+        if rawget(f, key) == nil then rawset(f, key, f:CreateTexture()) end
+    end
+end }
 function CreateColor(r, g, b, a) return { r = r, g = g, b = b, a = a } end
 -- where each class sits on Interface\TargetingFrame\UI-Classes-Circles (the game's own table)
 CLASS_ICON_TCOORDS = { WARRIOR = { 0, 0.25, 0, 0.25 }, MAGE = { 0.25, 0.49609375, 0, 0.25 },

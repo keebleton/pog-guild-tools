@@ -54,7 +54,9 @@ function Popup:Show()
     local detail = p and p.level and (" (level %d)"):format(p.level) or ""
     self.frame.text:SetText(("%s%s wants to join your %s group"):format(name, detail, req.what))
     self.frame.more:SetText(#self.queue > 1 and ("+%d more"):format(#self.queue - 1) or "")
+    local was = self.frame:IsShown()
     self.frame:Show()
+    if not was then UI.FadeIn(self.frame, 0.2) end -- (a little motion: UI experiment)
     ns.Sound("IG_PLAYER_INVITE")
 end
 

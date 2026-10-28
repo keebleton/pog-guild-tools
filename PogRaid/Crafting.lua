@@ -369,7 +369,7 @@ function Crafting:Changed()
     if self.page and self.page:IsShown() then self:Refresh() end
 end
 
-Crafting.PLACEHOLDER = "Who can make... (search recipes)"
+Crafting.PLACEHOLDER = "Search recipes"
 
 local function rowList(parent, top, count)
     local rows = {}
@@ -420,25 +420,13 @@ function Crafting:Build(page)
         local row = CreateFrame("Button", nil, left)
         row:SetSize(tw, TILE_H)
         row:SetPoint("TOPLEFT", 12 + col * (tw + TILE_GAP), -(TILES_Y + line * (TILE_H + TILE_GAP)))
-        row.bg = row:CreateTexture(nil, "BACKGROUND", nil, 1)
-        row.bg:SetAllPoints()
-        row.bg:SetColorTexture(1, 1, 1, 0.035)
-        row.sel = row:CreateTexture(nil, "BACKGROUND", nil, 2)
-        row.sel:SetAllPoints()
-        UI.SelBar(row.sel, 0.14)
-        local hl = row:CreateTexture(nil, "HIGHLIGHT")
-        hl:SetAllPoints()
-        UI.Hover(hl, 0.05)
-        row.bar = row:CreateTexture(nil, "ARTWORK")
-        row.bar:SetPoint("BOTTOMLEFT", 0, 0)
-        row.bar:SetSize(tw, 2)
-        row.bar:SetColorTexture(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3], 1)
-        row.icon = row:CreateTexture(nil, "ARTWORK")
-        row.icon:SetSize(36, 36)
-        row.icon:SetPoint("TOP", 0, -math.floor((TILE_H - 36 - 7 - 12) / 2))
-        row.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        -- a button on the card: soft rounded edge, lit fill, rounded icon (Jake)
+        UI.Tile(row)
+        local top = math.floor((TILE_H - 36 - 7 - 12) / 2)
+        row.icon = UI.RoundIcon(row, 36)
+        row.icon:SetPoint("CENTER", row, "TOP", 0, -(top + 18))
         row.name = UI.Text(row, 12)
-        row.name:SetPoint("TOP", row.icon, "BOTTOM", 0, -7)
+        row.name:SetPoint("TOP", row, "TOP", 0, -(top + 36 + 7))
         row.name:SetWidth(tw - 8)
         row.name:SetJustifyH("CENTER")
         row.name:SetWordWrap(false)
@@ -485,8 +473,8 @@ function Crafting:Build(page)
     end)
     search:SetScript("OnEnterPressed", search.ClearFocus)
     self.searchBox = search
-    right.title = UI.SectionTitle(right, "")
-    right.title:SetPoint("TOPLEFT", 12, -(12 + BAR_H + 12))
+    right.title = UI.Headline(right, 16) -- the page's headline: what's listed
+    right.title:SetPoint("TOPLEFT", 12, -(12 + BAR_H + 10))
     right.back = UI.Button(right, "Back", 56, 18, function() self:ShowMember(nil) end)
     right.back:SetPoint("TOPRIGHT", -12, -(12 + BAR_H + 9))
     local line = right:CreateTexture(nil, "ARTWORK")
@@ -505,6 +493,9 @@ function Crafting:Build(page)
         row:SetScript("OnClick", function(r, button)
             -- a member opens their recipe book; right-click still whispers
             if r.kind == "member" and r.item and button ~= "RightButton" then
+                self:ShowMember(r.item.name)
+            elseif r.kind == "crafter" and r.item and button ~= "RightButton" then
+                self.selected = r.item.profs[1]
                 self:ShowMember(r.item.name)
             else
                 self:RowMenu(r)
@@ -605,10 +596,9 @@ function Crafting:Refresh()
         if p then
             local sel = self.selected == p.name
             row.name:SetText(p.name)
-            row.name:SetTextColor(sel and 1 or 0.9, sel and 1 or 0.9, sel and 1 or 0.93)
+            if sel then row.name:SetTextColor(1, 1, 1) else row.name:SetTextColor(UI.TEXT[1], UI.TEXT[2], UI.TEXT[3]) end
             row.icon:SetTexture(Crafting.ICONS[p.name] or (ns.Profiles and ns.Profiles.PROF_ICONS[p.name]) or 134400)
-            row.sel:SetShown(sel)
-            row.bar:SetShown(sel)
+            UI.TileSelected(row, sel)
             row:Show()
         else
             row:Hide()
@@ -646,8 +636,11 @@ function Crafting:Refresh()
         right.title:SetText(self.selected)
         right.empty:SetText("")
     else
-        right.title:SetText("Recipes")
-        right.empty:SetText("Search for something to craft, or pick a profession\nto see who has it.")
+        -- nothing picked: who can craft right now (UI experiment: the space
+        -- was one line of text)
+        items, kind = self:OnlineCrafters(dir), "crafter"
+        right.title:SetText(#items > 0 and "Crafters online now" or "Recipes")
+        right.empty:SetText("Search a recipe or select a profession ^_^")
     end
     self.offset = math.max(0, math.min(self.offset or 0, #items - right.visible))
     right.hint:Set(self.offset, right.visible, #items)
@@ -672,8 +665,16 @@ function Crafting:Refresh()
             for _, c in ipairs(e.crafters) do
                 if #names < 3 then names[#names + 1] = display(c.name) end
             end
-            local more = #e.crafters - #names
-            row.right:SetText(table.concat(names, ", ") .. (more > 0 and ("  +" .. more) or ""))
+            -- (no "+3" tally: fewer numbers)
+            row.right:SetText(table.concat(names, ", ") .. (#e.crafters > #names and " and more" or ""))
+            row:Show()
+        elseif e and kind == "crafter" then
+            row.dot:SetShown(true)
+            row.name:ClearAllPoints()
+            row.name:SetPoint("LEFT", 26, 0)
+            row.name:SetText(display(e.name))
+            row.name:SetTextColor(classColor(e.name))
+            row.right:SetText(table.concat(e.profs, ", "))
             row:Show()
         elseif e then
             row.dot:SetShown(online(e.name))
@@ -681,27 +682,49 @@ function Crafting:Refresh()
             row.name:SetPoint("LEFT", 26, 0)
             row.name:SetText(display(e.name))
             row.name:SetTextColor(classColor(e.name))
-            row.right:SetText(("%s%d / %d"):format(e.recipes and (e.recipes .. " recipes     ") or "", e.rank, e.max))
+            row.right:SetText(("%d / %d"):format(e.rank, e.max)) -- (skill, no recipe count: fewer numbers)
             row:Show()
         else
             row:Hide()
         end
     end
     right.empty:SetShown(#items == 0)
+    if self.rightArt then self.rightArt:SetSparse(#items == 0) end -- an empty card shows its whole picture
     right.status:SetText(self:StatusText())
 end
 
--- What we share, or a nudge to open a profession window we haven't read.
+-- Guildies online now with a shared profession (not the hidden gathering
+-- ones), by name: { name, profs = { "Alchemy", ... } }.
+function Crafting:OnlineCrafters(dir)
+    local by, out = {}, {}
+    for prof, list in pairs(dir) do
+        if not Crafting.HIDDEN[prof] then
+            for _, e in ipairs(list) do
+                if online(e.name) and e.name ~= me() then
+                    if not by[e.name] then
+                        by[e.name] = { name = e.name, profs = {} }
+                        out[#out + 1] = by[e.name]
+                    end
+                    table.insert(by[e.name].profs, prof)
+                end
+            end
+        end
+    end
+    for _, c in ipairs(out) do table.sort(c.profs) end
+    table.sort(out, function(a, b) return a.name < b.name end)
+    return out
+end
+
+-- Only a nudge to open a profession window we haven't read; otherwise nothing
+-- (Jake: no "Recipes shared: ..." line).
 function Crafting:StatusText()
     local mine = self:ReadProfessions()
-    if not mine[1] then return "No professions yet." end
-    local shared, missing = {}, {}
+    if not mine[1] then return "" end
+    local missing = {}
     local store = Sync:Store("recipes") or {}
     for _, p in ipairs(mine) do
         local rec = store[me() .. ":" .. p.name]
-        if rec and not rec.deleted then
-            shared[#shared + 1] = ("%s (%d)"):format(p.name, #rec.ids / 4)
-        elseif not Crafting.NO_RECIPES[p.name] then
+        if (not rec or rec.deleted) and not Crafting.NO_RECIPES[p.name] then
             missing[#missing + 1] = p.name
         end
     end
@@ -709,8 +732,7 @@ function Crafting:StatusText()
         return ("open your %s %s once to share recipes!"):format(table.concat(missing, " and "):lower(),
             #missing == 1 and "window" or "windows")
     end
-    if shared[1] then return "Recipes shared: " .. table.concat(shared, ", ") end
-    return "No recipes to share."
+    return ""
 end
 
 ------------------------------------------------------------------------

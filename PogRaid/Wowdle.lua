@@ -282,6 +282,10 @@ local COLORS = { g = { 0.33, 0.66, 0.33 }, y = { 0.82, 0.66, 0.2 }, x = { 0.2, 0
 Wowdle.KEY_OPEN = { fill = { 0.30, 0.30, 0.34, 0.95 }, edge = { 0.55, 0.53, 0.48, 1 } }
 Wowdle.KEY_OUT = { fill = { 0.035, 0.035, 0.04, 0.95 }, edge = { 0.12, 0.12, 0.13, 1 }, alpha = 0.25 }
 local ROWS = { "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM" }
+-- Your stats get their own plain card under the guild's (Jake: they got lost
+-- in the art), with blue bars; today's try stays green.
+Wowdle.STATS_H = 250
+Wowdle.BAR_BLUE = { 0.22, 0.45, 0.78 }
 
 local function square(c)
     local col = COLORS[c]
@@ -351,10 +355,10 @@ function Wowdle:Build(view, top, height)
     input:SetScript("OnEscapePressed", input.ClearFocus)
     self.input = input
 
-    -- side: today in the guild, your stats
+    -- side: today in the guild (on the page's art), your stats in a card under it
     local side = CreateFrame("Frame", nil, view)
     side:SetPoint("TOPLEFT", SIDE_X, -top)
-    side:SetSize(SIDE_W, height)
+    side:SetSize(SIDE_W, height - Wowdle.STATS_H - GAP)
     UI.Card(side)
     self.sideArt = ns.Art and ns.Art.Page("wowdle", side) -- faint game art (Art.PAGES)
     self.side = side
@@ -394,14 +398,19 @@ function Wowdle:Build(view, top, height)
     side.empty:SetTextColor(0.5, 0.5, 0.55)
     side.empty:SetText("Nobody has finished today's word yet.")
 
-    local sy = 32 + 10 * 22 + 12
-    side.statsTitle = UI.SectionTitle(side, "Your stats")
+    local card = CreateFrame("Frame", nil, view)
+    card:SetPoint("TOPLEFT", SIDE_X, -(top + height - Wowdle.STATS_H))
+    card:SetSize(SIDE_W, Wowdle.STATS_H)
+    UI.Card(card)
+    side.statsCard = card
+    local sy = 12
+    side.statsTitle = UI.SectionTitle(card, "Your stats")
     side.statsTitle:SetPoint("TOPLEFT", 14, -sy)
     side.stats = {}
     local labels = { "Played", "Win %", "Streak", "Best streak" }
     local sw = (SIDE_W - 28) / 4
     for i, label in ipairs(labels) do
-        local s = CreateFrame("Frame", nil, side)
+        local s = CreateFrame("Frame", nil, card)
         s:SetSize(sw, 44)
         s:SetPoint("TOPLEFT", 14 + (i - 1) * sw, -(sy + 18))
         s.value = UI.Text(s, 20)
@@ -416,22 +425,22 @@ function Wowdle:Build(view, top, height)
     local barMax = SIDE_W - 28 - 40
     for i = 1, Wowdle.TRIES do
         local y = sy + 72 + (i - 1) * 20
-        local n = UI.Text(side, 11)
+        local n = UI.Text(card, 11)
         n:SetPoint("TOPLEFT", 16, -y)
         n:SetText(tostring(i))
-        local bar = side:CreateTexture(nil, "ARTWORK")
+        local bar = card:CreateTexture(nil, "ARTWORK")
         bar:SetPoint("TOPLEFT", 32, -(y - 1))
         bar:SetHeight(14)
-        bar:SetColorTexture(0.3, 0.3, 0.34, 1)
-        local count = UI.Text(side, 10)
+        bar:SetColorTexture(Wowdle.BAR_BLUE[1], Wowdle.BAR_BLUE[2], Wowdle.BAR_BLUE[3], 1)
+        local count = UI.Text(card, 10)
         count:SetPoint("LEFT", bar, "RIGHT", 6, 0)
         side.bars[i] = { bar = bar, count = count, max = barMax }
     end
-    side.share = UI.Button(side, "Copy result", 110, 24, function()
+    side.share = UI.Button(card, "Copy result", 110, 24, function()
         UI.CopyBox("Wowdle result (squares paste into Discord)", self:ShareText())
     end)
     side.share:SetPoint("BOTTOMRIGHT", -12, 12)
-    side.post = UI.Button(side, "Post to guild", 110, 24, function() self:PostScore() end)
+    side.post = UI.Button(card, "Post to guild", 110, 24, function() self:PostScore() end)
     side.post:SetPoint("RIGHT", side.share, "LEFT", -6, 0)
     view:SetScript("OnShow", function() if self:State() == "playing" then input:SetFocus() end end)
     -- leaving the page always gives the keyboard back
@@ -575,6 +584,7 @@ function Wowdle:Refresh()
         end
     end
     side.empty:SetShown(#list == 0)
+    if self.sideArt then self.sideArt:SetSparse(#list == 0) end -- an empty card shows its whole picture
 
     local st = self:Stats()
     local values = { st.played, st.played > 0 and math.floor(100 * st.wins / st.played + 0.5) or 0, st.streak, st.best }
@@ -585,7 +595,8 @@ function Wowdle:Refresh()
     for i, b in ipairs(side.bars) do
         local n = st.dist[i]
         b.bar:SetWidth(math.max(4, b.max * n / most))
-        if todayN == i then b.bar:SetColorTexture(COLORS.g[1], COLORS.g[2], COLORS.g[3], 1) else b.bar:SetColorTexture(0.3, 0.3, 0.34, 1) end
+        local col = todayN == i and COLORS.g or Wowdle.BAR_BLUE
+        b.bar:SetColorTexture(col[1], col[2], col[3], 1)
         b.count:SetText(tostring(n))
     end
     side.share:SetEnabledState(state ~= "playing")
