@@ -48,6 +48,7 @@ Sync.PRIMARIES = 5        -- about this many addons answer right away
 Sync.FAST = { 0.3, 2.5 }  -- seconds before a primary answers
 Sync.SLOW = { 45, 90 }    -- the fallback, and only once the channel is quiet
 Sync.QUIET = 8
+Sync.FUTURE = 600         -- seconds a record's times may run ahead of the server's clock
 Sync.collections = {}
 Sync.byCode = {}
 Sync.heard = {}          -- key -> { rev, at }: last copy heard on the channel
@@ -281,12 +282,15 @@ end
 
 function Sync:Store(name)
     local guild = self:GuildName()
-    if not guild then return nil end
+    local key = guild and ns.GuildKey()
+    if not key then return nil end
     ns.db.sync = ns.db.sync or {}
-    local g = ns.db.sync[guild]
+    local g = ns.db.sync[key]
     if not g then
-        g = {}
-        ns.db.sync[guild] = g
+        -- before 0.16.1 the guild's name alone was the key (no realm)
+        g = ns.db.sync[guild] or {}
+        ns.db.sync[guild] = nil
+        ns.db.sync[key] = g
     end
     g[name] = g[name] or {}
     return g[name]
@@ -297,8 +301,10 @@ function Sync:Me()
 end
 
 -- Officer = guild rank index at or above the officer rank setting (0 is
--- guild master). Unknown players get the benefit of the doubt, since the
--- guild roster may not have loaded yet.
+-- guild master). Unknown players get the benefit of the doubt only until
+-- we've read the whole guild roster once: after that a name that isn't in
+-- it (made up, or someone who left) is no officer, so a forged "by" can't
+-- post as one or hand out officer ranks.
 function Sync:OfficerRank()
     return ns.db.guild.officerRank or 1
 end
@@ -312,7 +318,9 @@ end
 
 function Sync:IsOfficer(name)
     local p = ns.db.guild.players[ns.Attendance:Key(name)]
-    if not p or p.rankIndex == nil then return true end
+    local known = ns.db.guild.fullScan
+    if not p or p.rankIndex == nil then return not known end
+    if known and p.inGuild == false then return false end
     return self:RankIsOfficer(p.rankIndex)
 end
 
@@ -328,6 +336,10 @@ end
 function Sync:Apply(def, rec, quiet)
     local store = self:Store(def.name)
     if not store then return false end
+    -- newest rev wins, so one stamped in the future could never be replaced
+    -- or deleted again (and every addon would keep passing it on)
+    local latest = ns.Now() + Sync.FUTURE
+    if (rec.rev or 0) > latest or (rec.t or 0) > latest then return false end
     if def.valid and not def.valid(rec) then return false end
     if def.expired and not rec.deleted and def.expired(rec) then return false end
     local cur = store[rec.id]
@@ -396,9 +408,19 @@ function Sync:Pruned()
     self.index = nil
 end
 
+-- Past its time (an old listing or night, deleted or not): it waits for the
+-- next prune, and nobody takes it, so it isn't offered or counted. Players
+-- who have pruned would otherwise never match those who haven't yet. (A
+-- deletion can go too: the record it deleted is just as expired.)
+local function stale(def, rec)
+    if not def.expired then return false end
+    local ok, gone = pcall(def.expired, rec)
+    return ok and gone == true
+end
+
 -- Cached until something changes: { sums, members, tags, count }.
 function Sync:Index()
-    local guild = self:GuildName()
+    local guild = self:GuildName() and ns.GuildKey()
     if self.index and self.index.guild == guild then return self.index end
     local idx = { guild = guild, sums = {}, members = {}, tags = {}, count = 0 }
     for b = 0, Sync.BUCKETS - 1 do
@@ -408,14 +430,16 @@ function Sync:Index()
         local store = guild and self:Store(name)
         if store then
             for id, rec in pairs(store) do
-                local key = def.code .. id
-                local tag = tagOf(key, rec.rev)
-                local b = bucketOf(key)
-                local m = { tag = tag, key = key, def = def, id = id }
-                idx.sums[b] = (idx.sums[b] + tag) % TAG_MOD
-                idx.members[b][#idx.members[b] + 1] = m
-                idx.tags[tag] = m
-                idx.count = idx.count + 1
+                if not stale(def, rec) then
+                    local key = def.code .. id
+                    local tag = tagOf(key, rec.rev)
+                    local b = bucketOf(key)
+                    local m = { tag = tag, key = key, def = def, id = id }
+                    idx.sums[b] = (idx.sums[b] + tag) % TAG_MOD
+                    idx.members[b][#idx.members[b] + 1] = m
+                    idx.tags[tag] = m
+                    idx.count = idx.count + 1
+                end
             end
         end
     end
@@ -847,6 +871,8 @@ function Sync:Missed()
     self.missedAt = now
     C_Timer.After(5 + math.random() * 10, function() self:SendSummary() end)
 end
+
+ns.OnGuildChanged(function() Sync.index = nil end)
 
 ns.On("PLAYER_ENTERING_WORLD", function(initial, reload)
     if not initial and not reload then Sync:Missed() end

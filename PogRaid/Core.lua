@@ -1,7 +1,7 @@
 -- PogRaid core: saved data, event dispatch, slash commands, API probe.
 local ADDON, ns = ...
 
-ns.VERSION = "0.16.0"
+ns.VERSION = "0.16.1"
 ns.MEDIA = "Interface\\AddOns\\" .. ADDON .. "\\Media\\"
 
 -- Page grid: every tab's page is PAGE_H tall. The Raid tab's pages (Roster,
@@ -157,7 +157,7 @@ end
 ------------------------------------------------------------------------
 -- Saved data
 ------------------------------------------------------------------------
-local DB_VERSION = 2
+local DB_VERSION = 3
 
 local function NewBoard(name)
     return { name = name or "New plan", map = nil, zoom = 1, cx = 0.5, cy = 0.5, items = {} }
@@ -181,6 +181,80 @@ function ns.DeleteBoard(id)
     end
 end
 
+------------------------------------------------------------------------
+-- Guild data: one table per guild (and realm), so an alt in another guild
+-- keeps its own roster, attendance, loot and activity instead of marking the
+-- first guild as having left. ns.db.guild is the one in use: only a pointer
+-- into db.guilds, dropped at logout so it isn't saved twice.
+------------------------------------------------------------------------
+local NO_GUILD = "(no guild)"
+ns.NO_GUILD = NO_GUILD
+
+local function fillGuild(g)
+    g.players = g.players or {}
+    g.rosters = g.rosters or {}
+    g.sessions = g.sessions or {}
+    g.loot = g.loot or {}
+    g.feed = g.feed or {}
+    g.chat = g.chat or {}
+    g.seenLoot = g.seenLoot or {}
+    if g.maxLevelOnly == nil then g.maxLevelOnly = false end
+    return g
+end
+
+-- "Guild-Realm" for our guild, NO_GUILD outside one, nil while the client
+-- hasn't told us yet (just after login).
+function ns.GuildKey()
+    if not IsInGuild() then return NO_GUILD end
+    local name, _, _, realm = GetGuildInfo("player")
+    if not name or name == "" then return nil end
+    realm = realm or (GetNormalizedRealmName and GetNormalizedRealmName()) or (GetRealmName and GetRealmName()) or ""
+    return name .. "-" .. realm
+end
+
+local function charKey()
+    return (UnitName("player") or "?") .. "-" .. ((GetRealmName and GetRealmName()) or "")
+end
+
+-- Saves from before 0.16.1 had one table for every guild. It goes to the
+-- first guild that one of its own members logs in with.
+local function legacyIsOurs(db)
+    local first = UnitName("player")
+    if not db.legacyGuild or not first then return false end
+    for full in pairs(db.legacyGuild.players or {}) do
+        local short = Ambiguate(full, "none")
+        if short == first or short:sub(1, #first + 1) == first .. " " then return true end
+    end
+    return false
+end
+
+local guildHooks = {}
+-- `fn` runs when the guild in use changes (caches built from its data).
+function ns.OnGuildChanged(fn) guildHooks[#guildHooks + 1] = fn end
+
+function ns.UseGuild(key)
+    local db = ns.db
+    if not db or not key or (db.guild and ns.guildKey == key) then return end
+    local g = db.guilds[key]
+    if not g and key ~= NO_GUILD and legacyIsOurs(db) then g = db.legacyGuild end
+    g = fillGuild(g or {})
+    if db.legacyGuild == g then db.legacyGuild = nil end
+    db.guilds[key] = g
+    local switched = db.guild ~= nil
+    db.guild, ns.guildKey = g, key
+    db.charGuild[charKey()] = key
+    if switched then
+        for _, fn in ipairs(guildHooks) do pcall(fn) end
+    end
+end
+
+local function useCurrentGuild() ns.UseGuild(ns.GuildKey()) end
+ns.On("PLAYER_LOGIN", useCurrentGuild)
+ns.On("PLAYER_GUILD_UPDATE", useCurrentGuild)
+ns.On("PLAYER_LOGOUT", function()
+    if ns.db then ns.db.guild = nil end
+end)
+
 ns.On("ADDON_LOADED", function(name)
     if name ~= ADDON then return end
     PogRaidDB = PogRaidDB or {}
@@ -190,14 +264,11 @@ ns.On("ADDON_LOADED", function(name)
     db.nextId = db.nextId or 0
     db.frames = db.frames or {}
     db.encounters = db.encounters or {}
-    db.guild = db.guild or {}
-    db.guild.players = db.guild.players or {}
-    db.guild.rosters = db.guild.rosters or {}
-    db.guild.sessions = db.guild.sessions or {}
-    db.guild.loot = db.guild.loot or {}
-    db.guild.feed = db.guild.feed or {}
-    db.guild.chat = db.guild.chat or {}
-    db.guild.seenLoot = db.guild.seenLoot or {}
+    db.guilds = db.guilds or {}
+    db.charGuild = db.charGuild or {}
+    -- v3: per-guild data; the old single table waits for its guild
+    if (db.version or 1) < 3 and db.guild then db.legacyGuild = fillGuild(db.guild) end
+    db.guild = nil
     db.settings = db.settings or {}
     local st = db.settings
     st.minimap = st.minimap or { angle = 220 }
@@ -209,12 +280,16 @@ ns.On("ADDON_LOADED", function(name)
     if st.theme == nil then st.theme = st.classic == false and "plain" or ns.UI.DEFAULT_THEME end
     st.classic = nil
     ns.UI.SetTheme(st.theme)
-    if db.guild.maxLevelOnly == nil then db.guild.maxLevelOnly = false end
     -- v2: "max level only" used to default on, which hid every raider on the
     -- beta (nobody at cap yet). It was never a choice, so reset it.
-    if (db.version or 1) < 2 then db.guild.maxLevelOnly = false end
+    if (db.version or 1) < 2 and db.legacyGuild then db.legacyGuild.maxLevelOnly = false end
     db.version = DB_VERSION
     ns.db = db
+    -- the guild we're in, else the one this character was in last time,
+    -- else a blank table until the client tells us (it moves over then)
+    ns.guildKey = nil
+    ns.UseGuild(ns.GuildKey() or db.charGuild[charKey()])
+    if not db.guild then db.guild = fillGuild({}) end
     if #db.order == 0 then ns.AddBoard(NewBoard("First plan")) end
     restoreSelfName()
 end)

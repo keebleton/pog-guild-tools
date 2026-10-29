@@ -693,7 +693,7 @@ do
     PogRaidDB.version = 1
     PogRaidDB.guild.maxLevelOnly = true
     STUB.Fire("ADDON_LOADED", "PogRaid")
-    check(ns.db.guild.maxLevelOnly == false and ns.db.version == 2, "migration: old default filter turned off")
+    check(ns.db.guild.maxLevelOnly == false and ns.db.version == 3, "migration: old default filter turned off")
     ns.db.guild.maxLevelOnly = true
     STUB.Fire("ADDON_LOADED", "PogRaid")
     check(ns.db.guild.maxLevelOnly == true, "migration: a filter you turn on stays on")
@@ -2382,6 +2382,30 @@ do
     check(not ns.Sync:IsOfficer("Raider03-Realm"), "officers: and removes it")
     check(not ns.Sync:Apply(ns.Sync.collections.config, { id = "officers", rev = ns.Now() + 99, by = "Raider03-Realm",
         author = "Raider03-Realm", t = ns.Now(), ranks = "0,1,2,3" }), "officers: a non-officer can't change them")
+    -- forged records (0.16.1): any guildie's addon can relay a record claiming any "by"
+    local G = ns.db.guild
+    check(G.fullScan and not ns.Sync:IsOfficer("Madeup-Realm"), "officers: once the whole roster is read, a made-up name is no officer")
+    check(not ns.Sync:Apply(ns.Sync.collections.config, { id = "officers", rev = ns.Now() + 99, by = "Madeup-Realm",
+        author = "Madeup-Realm", t = ns.Now(), ranks = "0,1,2,3,4" }), "officers: so a made-up officer can't hand out officer ranks")
+    G.fullScan = nil
+    check(ns.Sync:IsOfficer("Madeup-Realm"), "officers: before the roster is read, unknown names get the benefit of the doubt")
+    G.fullScan = true
+    local r02 = G.players["Raider02-Realm"]
+    local r02In, r02Rank = r02.inGuild, r02.rankIndex
+    r02.inGuild, r02.rankIndex = false, 1
+    check(not ns.Sync:IsOfficer("Raider02-Realm"), "officers: an officer who left the guild is no officer")
+    r02.inGuild = true
+    check(ns.Sync:IsOfficer("Raider02-Realm"), "officers: (an officer in the guild is one)")
+    r02.inGuild, r02.rankIndex = r02In, r02Rank
+    local function post(rev, t)
+        return { id = "future-post", rev = rev, t = t or ns.Now(), by = "Jake-Realm", author = "Jake-Realm", title = "Hi", body = "" }
+    end
+    check(not ns.Sync:Apply(ns.Sync.collections.posts, post(ns.Now() + 3600)), "sync: a record stamped in the future is refused (it could never be replaced)")
+    check(not ns.Sync:Apply(ns.Sync.collections.posts, post(ns.Now(), ns.Now() + 3600)), "sync: so is one created in the future")
+    check(ns.Sync:Apply(ns.Sync.collections.posts, post(ns.Now() + 60)), "sync: a minute of clock difference is fine")
+    local gone = post(ns.Now() + 61)
+    gone.deleted = true
+    check(ns.Sync:Apply(ns.Sync.collections.posts, gone) and ns.Sync:Store("posts")["future-post"].deleted, "sync: (and it can be deleted)")
     -- a member sees the list but can't change it
     local myP = ns.db.guild.players["Jake-Realm"]
     local realRank = myP.rankIndex
@@ -2469,6 +2493,20 @@ do
     check(bf.__propagate == true, "gems: other keys pass through to the game")
     STUB.Script(bf, "OnLeave")
     check(bf.__keyboard == false, "gems: keys released when the mouse leaves")
+    -- a pull with the mouse over the board: combat starting gives the keys back
+    STUB.Script(bf, "OnEnter")
+    STUB.Script(bf, "OnKeyDown", "LEFT")
+    check(bf.__keyboard and bf.__propagate == false, "gems: (hovering, after an arrow key)")
+    STUB.blocked = nil
+    STUB.Fire("PLAYER_REGEN_DISABLED")
+    STUB.combat = true
+    local okKey = pcall(STUB.Script, bf, "OnKeyDown", "1")
+    local okLeave = pcall(STUB.Script, bf, "OnLeave")
+    local okEnter = pcall(STUB.Script, bf, "OnEnter")
+    check(bf.__keyboard == false and bf.__propagate == true and okKey and okLeave and okEnter and not STUB.blocked,
+        "gems: combat starting gives every key back to the game, and the board stays out of it")
+    STUB.combat = false
+    STUB.Fire("PLAYER_REGEN_ENABLED")
     -- drag
     local before = Gems.board.score
     Gems.board = Gems.Board.New({ 0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 1, 1 })
@@ -2538,6 +2576,7 @@ do
     Games:SetMode(nil)
     check(Games.mode == "wowdle", "games: opens on Wowdle when no game was picked")
     ns.db.games.mode = savedMode
+    ns.Editor:ShowTab("home") -- (/pog wowdle toggles: from another tab it opens Wowdle)
     SlashCmdList.POGRAID("wowdle")
     check(Games.mode == "wowdle" and Games.views.wowdle:IsShown() and W.input.__focus, "wowdle: /pog wowdle opens it, ready to type")
     local answer = W:Word(W:Current().day)
@@ -2662,6 +2701,11 @@ do
     W.input:SetFocus()
     Games:SetMode("sweeper")
     check(not W.input.__focus, "wowdle: switching away gives the keyboard back")
+    Games:SetMode("wowdle")
+    W.input:SetFocus()
+    STUB.Fire("PLAYER_REGEN_DISABLED")
+    check(not W.input.__focus and W.view:IsShown(), "wowdle: combat starting gives the keyboard back (keys cast, not type)")
+    STUB.Fire("PLAYER_REGEN_ENABLED")
     Editor:ShowTab("boards")
 end
 
@@ -2822,6 +2866,7 @@ do
     ns.Roster:ScanGuild()
     local me = Sync:Me()
     local guild = Sync:GuildName()
+    local syncKey = ns.GuildKey() -- (sync stores are per guild and realm since 0.16.1)
     local now = ns.Now()
     local function apply(name, rec) return Sync:Apply(Sync.collections[name], rec) end
     local function prof(who, t)
@@ -2837,15 +2882,15 @@ do
         guid2 = { together = { ["Raider05-Realm"] = 200 }, pins = {}, hidden = {} } }
     ns.db.selfNames = ns.db.selfNames or {}
     ns.db.selfNames.testguid = me
-    ns.db.sync[guild].wall = { old = { id = "old" } }
-    ns.db.sync[guild].profile[me] = prof(me, { status = "From the test build", icon = 134169 })
+    ns.db.sync[syncKey].wall = { old = { id = "old" } }
+    ns.db.sync[syncKey].profile[me] = prof(me, { status = "From the test build", icon = 134169 })
     local a = P:Mine()
     check(a.together["Raider05-Realm"] == 500 and ns.db.profiles == nil and a.pins == nil,
         "accounts: the test build's Most played with moves to the account")
-    check(a.content.status == "From the test build" and a.content.icon == 134169 and ns.db.sync[guild].wall == nil,
+    check(a.content.status == "From the test build" and a.content.icon == 134169 and ns.db.sync[syncKey].wall == nil,
         "accounts: and its profile, and the old wall is dropped")
     wipe(a.together); wipe(a.content); a.ed = nil
-    ns.db.sync[guild].profile[me] = nil
+    ns.db.sync[syncKey].profile[me] = nil
     ns.db.selfNames.testguid = nil
 
     -- our profile
@@ -4150,7 +4195,7 @@ do
     check(not try(rec({ race = 1.5 })) and not try(rec({ sex = 1 })), "gear: odd race or sex is refused")
     check(try(rec()), "gear: a guildie's gear is accepted")
     check(not P:HasAddon("Newbie-Realm"), "gear: (someone we know nothing about)")
-    try(rec({ id = "Newbie-Realm", author = "Newbie-Realm", by = "Newbie-Realm", rev = ns.Now() + 1000 }))
+    try(rec({ id = "Newbie-Realm", author = "Newbie-Realm", by = "Newbie-Realm", rev = ns.Now() + 300 }))
     check(P:HasAddon("Newbie-Realm"), "gear: sharing gear shows they run the addon")
 
     -- which character, live or not
@@ -4787,12 +4832,31 @@ do
     check(tb.label:GetText() == "Night" and themeMenu[1].text == "Theme"
         and table.concat(names, ",") == "   Stone,   Ember,   Sandstone,   Leather,> Night,   Plain (modern)", "classic: Settings has a Theme picker")
     local rb = ns.Settings.reloadBtn
-    check(rb and not rb:IsShown() and rb.__attr.type == "macro" and rb.__attr.macrotext == "/reload",
-        "classic: the Reload button is the game's secure /reload, hidden until needed")
+    check(rb and not rb:IsShown() and rb.__attr.type == "macro" and rb.__attr.macrotext == "/reload" and rb.__secure
+        and rb:GetParent() == UIParent, "classic: the Reload button is the game's secure /reload, on UIParent, hidden until needed")
     STUB.printed = {}
     themeMenu[3].func()
     check(ns.db.settings.theme == "ember" and tb.label:GetText() == "Ember" and rb:IsShown() and printedContains("Click Reload"),
         "classic: picking a theme saves it and offers Reload (the addon can't reload itself)")
+    check(rb.__anchor and rb.__anchor.rel == ns.Settings.general, "classic: Reload sits on the Settings card while offered")
+    -- combat: a secure button inside the window used to lock all of it (closing, Esc, tabs, dragging)
+    STUB.blocked = nil
+    STUB.Fire("PLAYER_REGEN_DISABLED")
+    check(not rb:IsShown() and rb.__anchor == nil, "reload: combat starting lets go of the button")
+    STUB.combat = true
+    local okClose = pcall(ns.Editor.Toggle, ns.Editor, "settings")
+    local okOpen = pcall(ns.Editor.Toggle, ns.Editor, "settings")
+    local okTab = pcall(ns.Editor.ShowTab, ns.Editor, "home")
+    local okBack = pcall(ns.Editor.ShowTab, ns.Editor, "settings")
+    check(okClose and okOpen and okTab and okBack and not STUB.blocked,
+        "reload: in combat the window still closes, opens and changes tabs after Reload was offered")
+    STUB.combat = false
+    STUB.Fire("PLAYER_REGEN_ENABLED")
+    check(rb:IsShown() and rb.__anchor and rb.__anchor.rel == ns.Settings.general, "reload: offered again once combat ends")
+    ns.Editor:ShowTab("home")
+    check(not rb:IsShown(), "reload: leaving Settings hides it")
+    ns.Editor:ShowTab("settings")
+    check(rb:IsShown(), "reload: coming back to Settings shows it while still wanted")
     ns.db.settings.theme = "night"
     ns.Settings:ThemePicked()
     check(not rb:IsShown() and tb.label:GetText() == "Night", "classic: back to the theme in use, no reload needed")
@@ -4874,6 +4938,65 @@ do
     SlashCmdList.POGRAID("reset")
     SlashCmdList.POGRAID("nonsense")
     check(printedContains("/pog opens"), "slash: help for unknown command")
+end
+
+-- Alts in other guilds (0.16.1) ---------------------------------------------------------
+do
+    local G0, keyA = ns.db.guild, ns.GuildKey()
+    local savedGuild, savedName, savedPlayer = STUB.guild, STUB.guildName, STUB.player
+    local function inGuild(g)
+        local n = 0
+        for _, p in pairs(g.players) do if p.inGuild then n = n + 1 end end
+        return n
+    end
+    local membersA, inA, feedA = ns.Count(G0.players), inGuild(G0), #G0.feed
+    check(keyA == "Pog Squad-Realm" and ns.db.guilds[keyA] == G0, "guilds: our guild's data lives under its name and realm")
+
+    -- an alt in another guild
+    STUB.player, STUB.guildName = "Bankalt", "Other Guild"
+    STUB.guild = { { name = "Bankalt-Realm", rankIndex = 0, level = 10, online = true, class = "MAGE" },
+        { name = "Stranger-Realm", rankIndex = 1, level = 60, online = false, class = "PRIEST" } }
+    STUB.Fire("PLAYER_GUILD_UPDATE")
+    local GB = ns.db.guild
+    check(GB ~= G0 and ns.GuildKey() == "Other Guild-Realm" and ns.db.guilds[keyA] == G0, "guilds: another guild gets its own data")
+    ns.Roster:ScanGuild()
+    ns.Roster:ScanGuild()
+    check(inGuild(G0) == inA and #G0.feed == feedA and ns.Count(GB.players) == 2 and inGuild(GB) == 2 and #GB.feed == 0,
+        "guilds: the alt's guild leaves ours alone: nobody 'left', no 'joined' flood")
+    check(ns.Sync:Store("posts") ~= ns.db.sync[keyA].posts and ns.Attendance:Key("Stranger") == "Stranger-Realm"
+        and ns.Attendance:Key("Raider01") ~= "Raider01-Realm", "guilds: shared data and name lookups are per guild too")
+
+    -- back on the main; the roster can arrive before the client says the guild changed
+    STUB.player, STUB.guild, STUB.guildName = savedPlayer, savedGuild, savedName
+    STUB.Fire("GUILD_ROSTER_UPDATE")
+    check(ns.db.guild == G0 and #G0.feed == feedA and ns.Count(G0.players) == membersA and inGuild(G0) == inA
+        and ns.Attendance:Key("Raider01") == "Raider01-Realm", "guilds: back on the main, everything as it was")
+
+    -- logging out: the pointer isn't saved (it would be a second copy); loading picks it again
+    STUB.Fire("PLAYER_LOGOUT")
+    check(PogRaidDB.guild == nil and PogRaidDB.guilds[keyA] == G0, "guilds: saved once, under its guild")
+    STUB.Fire("ADDON_LOADED", "PogRaid")
+    check(ns.db.guild == G0, "guilds: loading picks this guild's data again")
+
+    -- a save from 0.16.0 or older: one table for every guild, given to the guild it belongs to,
+    -- even when an alt in another guild logs in first
+    local old = { players = { ["Jake-Realm"] = { inGuild = true, rankIndex = 0 } }, feed = { { kind = "old" } } }
+    PogRaidDB.version, PogRaidDB.guild, PogRaidDB.guilds, PogRaidDB.charGuild = 2, old, {}, {}
+    STUB.player, STUB.guildName = "Bankalt", "Other Guild"
+    STUB.guild = { { name = "Bankalt-Realm", rankIndex = 0, level = 10, online = true, class = "MAGE" } }
+    STUB.Fire("ADDON_LOADED", "PogRaid")
+    check(ns.db.guild ~= old and ns.db.legacyGuild == old and #ns.db.guild.feed == 0, "guilds: an old save waits while an alt in another guild plays")
+    STUB.Fire("PLAYER_LOGOUT")
+    STUB.player, STUB.guild, STUB.guildName = savedPlayer, savedGuild, savedName
+    STUB.Fire("ADDON_LOADED", "PogRaid")
+    check(ns.db.guild == old and ns.db.guilds[keyA] == old and ns.db.legacyGuild == nil and old.feed[1].kind == "old",
+        "guilds: and goes to its own guild when one of its members logs in")
+
+    -- put the test's guild back
+    STUB.Fire("PLAYER_LOGOUT")
+    PogRaidDB.guilds[keyA] = G0
+    STUB.Fire("ADDON_LOADED", "PogRaid")
+    check(ns.db.guild == G0, "guilds: (test guild restored)")
 end
 
 return results

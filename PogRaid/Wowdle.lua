@@ -443,8 +443,10 @@ function Wowdle:Build(view, top, height)
     side.post = UI.Button(card, "Post to guild", 110, 24, function() self:PostScore() end)
     side.post:SetPoint("RIGHT", side.share, "LEFT", -6, 0)
     view:SetScript("OnShow", function() if self:State() == "playing" then input:SetFocus() end end)
-    -- leaving the page always gives the keyboard back
+    -- leaving the page always gives the keyboard back, and so does combat
+    -- starting (a box with focus would type letters instead of casting)
     view:SetScript("OnHide", function() input:ClearFocus() end)
+    ns.On("PLAYER_REGEN_DISABLED", function() input:ClearFocus() end)
 end
 
 function Wowdle:Type(ch)

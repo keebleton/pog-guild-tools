@@ -103,6 +103,7 @@ end
 -- loaded yet, and when the guild window hides offline members it only
 -- updates who it can see, so offline raiders never look like they left.
 function Roster:ScanGuild()
+    ns.UseGuild(ns.GuildKey()) -- (this guild's own players, not another's)
     if not IsInGuild() then return end
     local count = GetNumGuildMembers()
     if not count or count == 0 then return end
@@ -141,6 +142,7 @@ function Roster:ScanGuild()
         end
     end
     if complete then
+        G().fullScan = true -- (every member seen: Sync:IsOfficer stops guessing)
         for name, p in pairs(players) do
             if p.inGuild and not seen[name] then
                 p.inGuild = false
@@ -1126,6 +1128,7 @@ ns.On("GUILD_ROSTER_UPDATE", function()
     if Roster.page and Roster.page:IsShown() then Roster:Refresh() end
 end)
 ns.On("GROUP_ROSTER_UPDATE", function() Roster:OnGroupChanged() end)
+ns.OnGuildChanged(function() wipe(Roster.online) end)
 ns.On("PLAYER_LOGIN", function()
     C_Timer.After(5, function() Roster:RequestGuild() end)
 end)

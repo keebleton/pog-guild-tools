@@ -534,6 +534,8 @@ end
 -- Summary: attendance over the last 4 and 8 raid weeks and all of them; a
 -- week counts as a player's best night that week. Cached until data changes.
 ------------------------------------------------------------------------
+ns.OnGuildChanged(function() Att.keyCache, Att.cache, Att.sessionsCache = nil, nil, nil end)
+
 function Att:Changed()
     self.cache, self.sessionsCache = nil, nil
     if self.page and self.page:IsShown() then self:Refresh() end

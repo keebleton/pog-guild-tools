@@ -69,9 +69,7 @@ function Settings:ThemePicked()
     local t = UI.Theme(S().theme)
     self.themeBtn:SetLabel(t and t.name or "")
     local pending = S().theme ~= UI.theme
-    if self.reloadBtn and not (InCombatLockdown and InCombatLockdown()) then
-        self.reloadBtn:SetShown(pending)
-    end
+    if self.reloadBtn then self.reloadBtn:Offer(pending) end
     if pending then
         ns.Print(("theme: %s. %s"):format(t and t.name or "?",
             self.reloadBtn and "Click Reload to apply (or type /reload)." or "Type /reload to apply."))
@@ -129,11 +127,11 @@ function Settings:Build(page)
     end)
     UI.DropArrow(self.themeBtn)
     self.themeBtn:SetPoint("TOPRIGHT", gen, "TOPRIGHT", -12, y)
-    self.reloadBtn = UI.ReloadButton(gen, "Reload to apply", 130, 22)
-    if self.reloadBtn then
-        self.reloadBtn:SetPoint("TOPRIGHT", gen, "TOPRIGHT", -12, y - 26)
-        self.reloadBtn:Hide()
-    end
+    -- (on UIParent, not in the window: see UI.ReloadButton)
+    local reloadY = y - 26
+    self.reloadBtn = UI.ReloadButton(gen, "Reload to apply", 130, 22, function(b)
+        b:SetPoint("TOPRIGHT", gen, "TOPRIGHT", -12, reloadY)
+    end)
     self.general = gen
 
     -- Officer ranks

@@ -690,9 +690,38 @@ end
 -- AddOn"), so this is the game's secure button running the /reload macro on
 -- the player's own click. Styled like UI.Button; nil if the client has no
 -- secure buttons (then the caller asks for /reload in chat). Not in combat.
-function UI.ReloadButton(parent, text, w, h)
-    local ok, b = pcall(CreateFrame, "Button", nil, parent, "SecureActionButtonTemplate")
+--
+-- A secure frame locks every frame it sits inside, or is anchored to, during
+-- combat: inside the window it made opening, closing, Esc, dragging and tabs
+-- fail ("Interface action failed because of an AddOn") once Settings had
+-- been opened. So it lives on UIParent, is placed over `anchor` (by `place`)
+-- only while offered out of combat, and lets go (hidden, unanchored) as
+-- combat starts, which PLAYER_REGEN_DISABLED still allows.
+function UI.ReloadButton(anchor, text, w, h, place)
+    local ok, b = pcall(CreateFrame, "Button", nil, UIParent, "SecureActionButtonTemplate")
     if not ok or not b or not b.SetAttribute then return nil end
+    local function inCombat() return InCombatLockdown and InCombatLockdown() end
+    local function letGo()
+        b:Hide()
+        b:ClearAllPoints()
+    end
+    -- show it (over the anchor) or not; `wanted` is remembered for after combat
+    function b:Offer(on)
+        self.wanted = on and true or false
+        if inCombat() then return end
+        letGo()
+        if self.wanted and anchor:IsVisible() then
+            place(self)
+            self:SetFrameStrata(anchor:GetFrameStrata())
+            self:SetFrameLevel(anchor:GetFrameLevel() + 20)
+            self:Show()
+        end
+    end
+    anchor:HookScript("OnShow", function() b:Offer(b.wanted) end)
+    anchor:HookScript("OnHide", function() if not inCombat() then letGo() end end)
+    ns.On("PLAYER_REGEN_DISABLED", letGo)
+    ns.On("PLAYER_REGEN_ENABLED", function() b:Offer(b.wanted) end)
+    letGo()
     b:SetSize(w, h)
     b:SetAttribute("type", "macro")
     b:SetAttribute("macrotext", "/reload")

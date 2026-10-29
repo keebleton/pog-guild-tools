@@ -81,7 +81,9 @@ function Duels:Confirmed()
     return out
 end
 
--- Replays every confirmed match. Cached until a report arrives.
+-- Replays every confirmed match. Cached until a report arrives (or the
+-- guild changes).
+ns.OnGuildChanged(function() Duels.cache = nil end)
 function Duels:Table()
     if self.cache then return self.cache end
     local players, history = {}, {}

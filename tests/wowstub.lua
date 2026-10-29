@@ -18,8 +18,13 @@ STUB = { sent = {}, timers = {}, printed = {}, restricted = false, throttleNext 
     cursorX = 0, cursorY = 0, now = 100, mouseDown = {} }
 
 local function new(kind, parent)
-    return setmetatable({ __kind = kind, __parent = parent, __shown = true, __scripts = {},
+    local f = setmetatable({ __kind = kind, __parent = parent, __shown = true, __scripts = {},
         __w = 0, __h = 0, __scale = 1, __level = 1 }, MT)
+    if parent then
+        parent.__children = parent.__children or {}
+        parent.__children[#parent.__children + 1] = f
+    end
+    return f
 end
 STUB.new = new
 
@@ -46,7 +51,29 @@ local function rect(f)
 end
 STUB.rect = rect
 
+-- like the game: in combat a secure frame, and every frame it sits inside or
+-- is anchored to, can't be shown, hidden or moved by an addon
+STUB.secureFrames = {}
+function STUB.Protected(f)
+    for _, sf in ipairs(STUB.secureFrames) do
+        local x = sf
+        while x do
+            if x == f then return true end
+            x = x.__parent
+        end
+        if sf.__anchor and sf.__anchor.rel == f then return true end
+    end
+    return false
+end
+local function guard(f, what)
+    if STUB.combat and STUB.Protected(f) then
+        STUB.blocked = (STUB.blocked or 0) + 1
+        error("ADDON_ACTION_BLOCKED: " .. what .. " on a protected frame in combat")
+    end
+end
+
 function M:SetPoint(point, a, b, c, d)
+    guard(self, "SetPoint")
     if self.__anchor then return end -- first anchor wins; enough for these tests
     local rel, relPoint, x, y
     if type(a) == "table" then
@@ -59,7 +86,7 @@ function M:SetPoint(point, a, b, c, d)
     end
     self.__anchor = { point = point, rel = rel, relPoint = relPoint or point, x = x or 0, y = y or 0 }
 end
-function M:ClearAllPoints() self.__anchor = nil; self.__all = nil end
+function M:ClearAllPoints() guard(self, "ClearAllPoints"); self.__anchor = nil; self.__all = nil end
 function M:SetAllPoints(rel) self.__all = rel or self.__parent end
 function M:SetSize(w, h) self.__w, self.__h = w, h end
 function M:SetWidth(w) self.__w = w end
@@ -83,15 +110,33 @@ function M:GetParent() return self.__parent end
 function M:SetFrameLevel(l) self.__level = l end
 
 -- visibility / scripts -------------------------------------------------
+-- like the game: a frame appearing or going away takes its shown children
+-- with it (OnShow / OnHide)
+local function cascade(f, script)
+    for _, c in ipairs(f.__children or {}) do
+        if c.__shown then
+            if c.__scripts[script] then c.__scripts[script](c) end
+            cascade(c, script)
+        end
+    end
+end
 function M:Show()
+    guard(self, "Show")
     local was = self.__shown
     self.__shown = true
-    if not was and self.__scripts.OnShow then self.__scripts.OnShow(self) end
+    if not was then
+        if self.__scripts.OnShow then self.__scripts.OnShow(self) end
+        cascade(self, "OnShow")
+    end
 end
 function M:Hide()
+    guard(self, "Hide")
     local was = self.__shown
     self.__shown = false
-    if was and self.__scripts.OnHide then self.__scripts.OnHide(self) end
+    if was then
+        if self.__scripts.OnHide then self.__scripts.OnHide(self) end
+        cascade(self, "OnHide")
+    end
 end
 function M:IsShown() return self.__shown end
 function M:IsVisible() return self.__shown end
@@ -102,8 +147,15 @@ function M:HookScript(name, fn)
     local old = self.__scripts[name]
     self.__scripts[name] = function(...) if old then old(...) end fn(...) end
 end
-function M:EnableKeyboard(on) self.__keyboard = on end
-function M:SetPropagateKeyboardInput(on) self.__propagate = on end
+-- like the game: an addon can't change keyboard capture during combat
+function M:EnableKeyboard(on)
+    if STUB.combat then STUB.blocked = (STUB.blocked or 0) + 1; error("ADDON_ACTION_BLOCKED: EnableKeyboard in combat") end
+    self.__keyboard = on
+end
+function M:SetPropagateKeyboardInput(on)
+    if STUB.combat then STUB.blocked = (STUB.blocked or 0) + 1; error("ADDON_ACTION_BLOCKED: SetPropagateKeyboardInput in combat") end
+    self.__propagate = on
+end
 function M:IsMouseOver() return STUB.hover == self end
 function M:SetEnabled(on) self.__disabled = not on end
 function M:SetAlpha(a) self.__alpha = a end
@@ -187,8 +239,12 @@ function STUB.Script(frame, name, ...)
     return fn(frame, ...)
 end
 
-function CreateFrame(kind, name, parent)
+function CreateFrame(kind, name, parent, template)
     local f = new(kind, parent or UIParent)
+    if type(template) == "string" and template:find("Secure", 1, true) then
+        f.__secure = true
+        STUB.secureFrames[#STUB.secureFrames + 1] = f
+    end
     if name then _G[name] = f end
     return f
 end
@@ -203,6 +259,8 @@ STUB.roster = nil -- { {name=, rank=, class=} } when in raid
 STUB.party = nil  -- { {name=, class=, leader=} } when in party
 
 function UnitName(unit) if unit == "player" then return STUB.player end end
+STUB.realm = "Realm"
+function GetRealmName() return STUB.realm end
 function UnitGUID(unit) if unit == "player" then return STUB.guid end end
 function UnitClass(unit)
     if unit == "player" then return "Hunter", "HUNTER" end

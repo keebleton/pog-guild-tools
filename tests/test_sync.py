@@ -390,8 +390,10 @@ anna.run("""local ns = ...
     STUB.roster = { { name = "Anna" }, { name = "Mira" }, { name = "Bob" } }
     STUB.instance = { "Skyreach Spire", "raid" }
     STUB.isLeader = true
-    ns.Attendance:Check()
-    for _ = 1, 12 do STUB.Advance(300) end
+    ns.Attendance:Check()""", anna.ns)
+# an hour of raid passes for everyone (one server clock: records from the future are refused)
+pump(clients, 3600, step=5)
+anna.run("""local ns = ...
     ns.Attendance:End()
     STUB.roster, STUB.isLeader = nil, false
     STUB.instance = { "Stormwind", "none" }""", anna.ns)

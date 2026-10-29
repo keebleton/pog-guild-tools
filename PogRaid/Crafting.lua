@@ -74,6 +74,7 @@ local function changed()
     Crafting.index = nil
     Crafting:Changed()
 end
+ns.OnGuildChanged(function() Crafting.index = nil end)
 
 Sync:Register({
     name = "profs", code = "k", order = 3,
