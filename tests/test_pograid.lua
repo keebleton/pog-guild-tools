@@ -378,6 +378,21 @@ do
     b.name = "My plan"
     Editor:FocusBoss("Stormcaller Vael", 0.3, 0.4)
     check(b.name == "My plan", "boss: never renames a board you named")
+    -- the boss menu lists the map's bosses, and copes with a client without the Encounter Journal
+    local shown
+    local realShow = ns.UI.ShowMenu
+    ns.UI.ShowMenu = function(_, e) shown = e end
+    Editor:BossMenu()
+    check(shown and shown[1].text == "Stormcaller Vael" and not shown[1].disabled, "boss: the menu lists the map's bosses")
+    local ej, ejInfo = C_EncounterJournal, EJ_GetEncounterInfo
+    C_EncounterJournal, EJ_GetEncounterInfo = nil, nil
+    local okMenu = pcall(Editor.BossMenu, Editor)
+    check(okMenu and shown[1].disabled, "boss: no Encounter Journal on this client: an empty menu, no error")
+    C_EncounterJournal = ej
+    Editor:BossMenu()
+    check(shown[1].text == "Encounter 3001", "boss: a boss the journal can't name still shows")
+    EJ_GetEncounterInfo = ejInfo
+    ns.UI.ShowMenu = realShow
 
     local before = #ns.db.order
     Editor:NewBoard()
@@ -837,6 +852,8 @@ do
     -- invites: solo invites 4, converts on first join, then the rest
     STUB.invites, STUB.converts = {}, 0
     STUB.party, STUB.roster = nil, nil
+    local wasLeader, wasAssist = STUB.isLeader, STUB.isAssist
+    STUB.isLeader, STUB.isAssist = true, false -- (whoever invites leads once the first one accepts)
     Roster:Invite()
     check(#STUB.invites == 4 and #Roster.pendingInvites == 15, "invite: 4 now while solo (one marked out is skipped)")
     for _, n in ipairs(STUB.invites) do check(n ~= "Raider07-Realm", "invite: skips players marked out") end
@@ -850,6 +867,27 @@ do
     STUB.invites = {}
     Roster:Invite()
     check(#STUB.invites == 18, "invite: again only invites who is missing")
+    -- 0.16.2: someone who can't invite is told so, and nothing waits
+    STUB.invites, STUB.printed = {}, {}
+    STUB.isLeader = false
+    Roster:Invite()
+    check(#STUB.invites == 0 and printedContains("only the raid leader or an assistant can invite"),
+        "invite: a raider who isn't leader or assist is told, nothing sent")
+    STUB.roster, STUB.party = nil, { { name = "Raider01", class = "WARRIOR" } }
+    STUB.converts = 0
+    Roster:Invite()
+    check(STUB.converts == 0 and Roster.pendingInvites == nil and printedContains("only the party leader can invite"),
+        "invite: in someone else's party, no convert and nothing waiting")
+    -- invites waiting for a raid are dropped if nobody accepts for two minutes
+    STUB.party, STUB.isLeader = nil, true
+    Roster:Invite()
+    check(Roster.pendingInvites and #Roster.pendingInvites > 0, "invite: (solo: the rest wait for the raid)")
+    STUB.Advance(Roster.PENDING_FOR + 1)
+    STUB.invites = {}
+    STUB.roster = { { name = "Jake", rank = 2, class = "HUNTER" }, { name = "Raider01", class = "WARRIOR" } }
+    STUB.Fire("GROUP_ROSTER_UPDATE")
+    check(Roster.pendingInvites == nil and #STUB.invites == 0, "invite: and don't go out hours later in some other raid")
+    STUB.isLeader, STUB.isAssist = wasLeader, wasAssist
 
     -- arrange: build a raid of the 19 invited (+ Jake, not rostered), all in wrong groups
     STUB.roster = { { name = "Jake", rank = 2, class = "HUNTER", sub = 1 } }
@@ -1176,6 +1214,79 @@ do
     check(c == 1 and st == "present", "late: leaving in the last 15 minutes is fine")
     Att:DeleteSession(sl)
 
+    -- 0.16.2: late and early count from when the raid gathered and broke up, not from when the
+    -- recorder zoned in or left (here they're in 30 minutes early and stay 40 minutes after)
+    raid({ 1 })
+    Att:Check()
+    local sg = Att:Active()
+    mins(30)
+    raid({ 1, 2, 3, 4, 5, 6 })
+    mins(10)
+    raid({ 1, 2, 3, 4, 5, 6, 7 })
+    mins(15)
+    raid({ 1, 2, 3, 4, 5, 6, 7, 8 })
+    mins(80)
+    raid({ 1, 2, 3, 4, 5, 6, 7 })
+    mins(15)
+    raid({ 1 })
+    mins(40)
+    Att:End()
+    local function cg(n) return Att:Credit(sg, n), Att:Status(sg, n) end
+    local from, to = Att:Times(sg)
+    -- (each change shows at the next 5-minute snapshot: the raid is first seen at +35, gone after +150)
+    check(from == sg.start + 35 * 60 and to == sg.start + 150 * 60, "gathered: when half the raid had arrived, and left")
+    c, st = cg("Raider02-Realm")
+    check(c == 1 and st == "present", "gathered: arriving with the raid is on time, though the recorder zoned in 30 minutes earlier")
+    c, st = cg("Raider07-Realm")
+    check(c == 1 and st == "present", "gathered: 10 minutes after it gathered is still on time")
+    c, st = cg("Raider08-Realm")
+    check(c == 0.5 and st == "late", "gathered: 25 minutes after is late (leaving 15 before it broke up is fine)")
+    c, st = cg("Raider03-Realm")
+    check(c == 1 and st == "present", "gathered: leaving with the raid isn't early, though the recorder stayed 40 minutes")
+    Att:DeleteSession(sg)
+
+    -- 0.16.2: the night is shared as it goes (after each boss, every 15 minutes), so a crash or
+    -- disconnect doesn't lose it
+    local nights = ns.Sync:Store("nights")
+    raid({ 1, 2, 3, 4, 5 })
+    Att:Check()
+    local sv = Att:Active()
+    check(nights[sv.id] == nil, "live: nothing shared the moment recording starts")
+    STUB.Fire("ENCOUNTER_END", 3001, "Stormcaller Vael", 14, 20, 1)
+    check(nights[sv.id] and nights[sv.id].stop == nil and nights[sv.id].bosses:find("Stormcaller Vael", 1, true),
+        "live: shared after a boss, still open")
+    local rev1 = nights[sv.id].rev
+    mins(15)
+    check(nights[sv.id].rev > rev1 and nights[sv.id].snaps == sv.snaps, "live: and again every 15 minutes")
+    -- the game crashes: everything since the last /reload is gone, but another officer has the night
+    local liveRec = {}
+    for k, v in pairs(nights[sv.id]) do liveRec[k] = v end
+    G.sessions[sv.id], G.activeSession, nights[sv.id] = nil, nil, nil
+    Att:Changed()
+    check(ns.Sync:Apply(ns.Sync.collections.nights, liveRec), "live: (it comes back from another officer)")
+    local back = G.sessions[sv.id]
+    check(back and back.live and back.stop == nil and back.lastSnap > back.start and Att:Active() == nil,
+        "live: a night still going arrives open, with when it was last seen")
+    check(not select(2, Att:LateEarly(back, "Raider05-Realm")), "live: nobody has left early from a night still going")
+    STUB.printed = {}
+    Att:Check()
+    check(Att:Active() == back and printedContains("carrying on recording") and not back.live and #Att:Sessions() >= 1,
+        "live: back in the raid, the recorder carries on with that night instead of starting another")
+    local snapsBefore = back.snaps
+    mins(5)
+    check(back.snaps == snapsBefore + 1, "live: and keeps snapshotting it")
+    Att:End()
+    check(back.stop and nights[sv.id].stop == back.stop, "live: ending it shares the finished night")
+    Att:DeleteSession(back)
+
+    -- one error mustn't stop recording for the rest of the night
+    local realCheck, calls = Att.Check, 0
+    Att.Check = function() calls = calls + 1 error("boom") end
+    pcall(STUB.Advance, Att.CHECK_EVERY + 1)
+    pcall(STUB.Advance, Att.CHECK_EVERY + 1)
+    Att.Check = realCheck
+    check(calls >= 2, "attendance: an error in one check doesn't stop the next")
+
     -- "I'll be late / leave early": one click, shared, and the leaders hear it
     STUB.printed = {}
     Att:NoticeMenu()[2].func()
@@ -1278,6 +1389,11 @@ do
     check(Loot:Entries()[1].link == blue and Loot:Entries()[1].player == "Raider02-Realm", "loot: stacked item message keeps a clean link")
     STUB.Fire("CHAT_MSG_LOOT", "Raider02 receives loot: " .. green .. ".")
     check(#Loot:Entries() == 3, "loot: below Rare skipped by default")
+    local seenBeforeQuest = #G.seenLoot
+    STUB.Fire("CHAT_MSG_LOOT", "You receive item: " .. STUB.Link(18000, "Quest Reward Blue", "0070dd") .. ".")
+    STUB.Fire("CHAT_MSG_LOOT", "You receive item: " .. STUB.Link(18001, "Bought Blue", "0070dd") .. "x2.")
+    check(#Loot:Entries() == 3 and #G.seenLoot == seenBeforeQuest,
+        "loot: quest rewards and vendor buys ('You receive item') aren't raid loot or a drop")
     -- pugs in the raid (added to the pool by the attendance snapshot) are not guild members
     G.players["Pugsley"] = { manual = true, class = "ROGUE" }
     check(G.scanned and G.players["Raider01-Realm"].inGuild, "loot: (guild roster read for these)")
@@ -1673,6 +1789,25 @@ do
     check(pop:IsShown() and pop.text:GetText():find("Raider08", 1, true), "join: next request shows")
     STUB.Script(pop.no, "OnClick")
     check(STUB.sent[2].text == "K0" .. myId and #STUB.invites == 1 and not pop:IsShown(), "join: No thanks declines, no invite")
+    -- 0.16.2: updating the listing keeps the requests waiting, and asks for the old listing still count
+    STUB.sent, STUB.invites = {}, {}
+    STUB.Fire("CHAT_MSG_ADDON", "PogRaid", "J" .. myId, "WHISPER", "Raider09-Realm")
+    Social:PostGroup("Stockades", "a tank", "")
+    local newId = Social:MyGroup().id
+    check(newId ~= myId and Social:RequestCount() == 1 and pop:IsShown() and pop.text:GetText():find("Raider09", 1, true),
+        "join: updating the listing keeps the request and its pop-up")
+    STUB.Fire("CHAT_MSG_ADDON", "PogRaid", "J" .. myId, "WHISPER", "Raider10-Realm")
+    check(Social:RequestCount() == 2, "join: someone who saw the listing before the update can still ask")
+    STUB.Script(pop.yes, "OnClick")
+    check(STUB.invites[1] == "Raider09" and STUB.sent[1].text == "K1" .. myId, "join: and Invite still invites them")
+    -- a brand-new group: the last one's requests are gone, pop-up included
+    Social:Remove("lfg", Social:MyGroup())
+    Social:PostGroup("Deadmines", "", "")
+    check(Social:RequestCount() == 0 and not pop:IsShown(), "join: a new group starts without the last one's requests")
+    STUB.Fire("CHAT_MSG_ADDON", "PogRaid", "J" .. myId, "WHISPER", "Raider11-Realm")
+    check(Social:RequestCount() == 0, "join: or asks for its old listings")
+    Social:Remove("lfg", Social:MyGroup())
+    Social:PostGroup("Stockades", "", "")
     -- asking to join someone else's listing
     STUB.sent = {}
     -- someone else's listing can be whispered
@@ -2854,6 +2989,19 @@ do
     ns.Sync:Write("profs", { id = "Jake-Realm", author = "Jake-Realm", t = ns.Now(), list = "Cooking:150:225" })
     C:PublishProfessions()
     check(ns.Sync:Store("profs")["Jake-Realm"].list == "Cooking:150:225", "crafting: unreadable professions leave the shared list alone")
+    -- the classic skill list: a collapsed Professions header shows no rows under it, which
+    -- mustn't wipe what was shared (0.16.2)
+    local skills = { { skillName = "Professions", isHeader = true }, { skillName = "Secondary Skills", isHeader = true } }
+    local realSkill = C_SkillInfo
+    C_SkillInfo = { GetNumSkillLines = function() return #skills end, GetSkillLineInfo = function(i) return skills[i] end }
+    local _, readable, from = C:ReadProfessions()
+    C:PublishProfessions()
+    check(readable and from == "skills" and ns.Sync:Store("profs")["Jake-Realm"].list == "Cooking:150:225",
+        "crafting: a collapsed Professions header in the skill list leaves the shared list alone")
+    table.insert(skills, 2, { skillName = "Alchemy", skillRank = 120, skillMaxRank = 150 })
+    C:PublishProfessions()
+    check(ns.Sync:Store("profs")["Jake-Realm"].list == "Alchemy:120:150", "crafting: and the skill list is read when it shows them")
+    C_SkillInfo = realSkill
     ns.Editor:ShowTab("home")
 end
 
@@ -4997,6 +5145,84 @@ do
     PogRaidDB.guilds[keyA] = G0
     STUB.Fire("ADDON_LOADED", "PogRaid")
     check(ns.db.guild == G0, "guilds: (test guild restored)")
+end
+
+-- Group listings: a malformed "2/5" is refused, and an old one can't break Home (0.16.2) -
+do
+    local Sync, Home = ns.Sync, ns.Home
+    local def = Sync.collections.lfg
+    local now = ns.Now()
+    local function listing(over)
+        local r = { id = "odd-1", rev = now, t = now, by = "Raider05-Realm", author = "Raider05-Realm", what = "Deadmines",
+            exp = now + 1800, size = 2, max = 5 }
+        for k, v in pairs(over or {}) do r[k] = v end
+        return r
+    end
+    check(not Sync:Apply(def, listing({ max = false })) and not Sync:Apply(def, listing({ size = 0 }))
+        and not Sync:Apply(def, listing({ size = 2.5 })) and not Sync:Apply(def, listing({ max = 99 })),
+        "lfg: a listing with a size and no max, or odd numbers, is refused")
+    local bad = listing()
+    bad.max = nil
+    check(not Sync:Apply(def, bad), "lfg: (a size with no max)")
+    -- one saved by an older version before this check
+    Sync:Store("lfg")["odd-1"] = bad
+    ns.Editor:ShowTab("home")
+    local ok = pcall(Home.Refresh, Home)
+    local row
+    for _, r in ipairs(Home.groupCard.rows or {}) do if r.item == bad or (r.item and r.item.id == "odd-1") then row = r end end
+    check(ok and (row == nil or row.right:GetText() == "2/5"), "lfg: Home still draws, showing it as 2/5")
+    Sync:Store("lfg")["odd-1"] = nil
+    Home:Refresh()
+end
+
+-- Duels: a stray third report on a match can't split the guild's standings (0.16.2) -------
+do
+    local D, Sync = ns.Duels, ns.Sync
+    local def = Sync.collections.duels
+    local now = ns.Now()
+    local function report(author, a, b, winner)
+        return { id = "m-stray:" .. author, rev = now, t = now, by = author, author = author, match = "m-stray",
+            a = a, b = b, winner = winner }
+    end
+    check(Sync:Apply(def, report("Raider01-Realm", "Raider01-Realm", "Raider02-Realm", "Raider01-Realm"))
+        and Sync:Apply(def, report("Raider02-Realm", "Raider01-Realm", "Raider02-Realm", "Raider01-Realm")),
+        "duels: (both players report the same result)")
+    -- a third report on the same match, claiming a different pairing
+    check(Sync:Apply(def, report("Raider03-Realm", "Raider03-Realm", "Raider01-Realm", "Raider03-Realm")),
+        "duels: (a stray third report arrives)")
+    -- every client walks the reports in its own order: try both ways round
+    local realPairs = pairs
+    local function ordered(desc)
+        return function(t)
+            local keys = {}
+            for k in realPairs(t) do keys[#keys + 1] = k end
+            table.sort(keys, function(x, y)
+                x, y = tostring(x), tostring(y)
+                if desc then return x > y end
+                return x < y
+            end)
+            local i = 0
+            return function()
+                i = i + 1
+                local k = keys[i]
+                if k ~= nil then return k, t[k] end
+            end, t, nil
+        end
+    end
+    local outcomes = {}
+    for _, desc in ipairs({ false, true }) do
+        pairs = ordered(desc)
+        local ok, list = pcall(D.Confirmed, D)
+        pairs = realPairs
+        local hit
+        for _, c in ipairs(ok and list or {}) do if c.id == "m-stray" then hit = c end end
+        outcomes[#outcomes + 1] = hit and (hit.a .. ">" .. hit.winner) or "none"
+    end
+    check(outcomes[1] == "Raider01-Realm>Raider01-Realm" and outcomes[2] == outcomes[1],
+        "duels: the agreed match counts for everyone, whatever order a stray third report comes in ("
+        .. table.concat(outcomes, " / ") .. ")")
+    for _, who in ipairs({ "Raider01-Realm", "Raider02-Realm", "Raider03-Realm" }) do Sync:Store("duels")["m-stray:" .. who] = nil end
+    D.cache = nil
 end
 
 return results

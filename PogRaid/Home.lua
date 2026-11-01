@@ -802,7 +802,7 @@ function Home:GroupTooltip(row)
     GameTooltip:AddLine("Posted by " .. colorName(g.author), 0.8, 0.8, 0.85)
     if g.need then GameTooltip:AddDoubleLine("Looking for", g.need, 0.6, 0.6, 0.65, 1, 1, 1) end
     if g.size then
-        GameTooltip:AddDoubleLine("Group", g.size .. "/" .. g.max .. (ns.Social:IsFull(g) and ", full" or ""),
+        GameTooltip:AddDoubleLine("Group", g.size .. "/" .. (g.max or 5) .. (ns.Social:IsFull(g) and ", full" or ""),
             0.6, 0.6, 0.65, 1, 1, 1)
     end
     GameTooltip:AddDoubleLine("Time left", math.max(0, math.ceil((g.exp - ns.Now()) / 60)) .. "m", 0.6, 0.6, 0.65, 1, 1, 1)
@@ -836,7 +836,7 @@ function Home:RefreshGroups()
     fillRows(c.lfm, groups, function(row, g)
         row.text:SetText(g.what)
         local full = ns.Social:IsFull(g)
-        row.right:SetText(g.size and ((g.size .. "/" .. g.max) .. (full and " full" or "")) or "")
+        row.right:SetText(g.size and ((g.size .. "/" .. (g.max or 5)) .. (full and " full" or "")) or "")
         row.right:SetTextColor(full and 0.95 or 0.5, full and 0.45 or 0.85, full and 0.4 or 0.55)
         local left = math.max(0, math.ceil((g.exp - ns.Now()) / 60))
         local status = left .. "m left"

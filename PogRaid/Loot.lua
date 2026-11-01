@@ -195,13 +195,13 @@ function Loot:ChatPatterns()
         local p = toPattern(fmt)
         if p then list[#list + 1] = { p = p, self = self_ } end
     end
-    -- multiple-count formats first, or "x2" would stick to the item
+    -- multiple-count formats first, or "x2" would stick to the item. Not the
+    -- "You receive item:" lines (LOOT_ITEM_PUSHED_SELF): those are quest
+    -- rewards, vendor buys and things made in your bags, never a drop.
     add(LOOT_ITEM_MULTIPLE, false)
     add(LOOT_ITEM_SELF_MULTIPLE, true)
-    add(LOOT_ITEM_PUSHED_SELF_MULTIPLE, true)
     add(LOOT_ITEM, false)
     add(LOOT_ITEM_SELF, true)
-    add(LOOT_ITEM_PUSHED_SELF, true)
     self.patterns = list
     return list
 end

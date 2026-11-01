@@ -1,7 +1,7 @@
 -- PogRaid core: saved data, event dispatch, slash commands, API probe.
 local ADDON, ns = ...
 
-ns.VERSION = "0.16.1"
+ns.VERSION = "0.16.2"
 ns.MEDIA = "Interface\\AddOns\\" .. ADDON .. "\\Media\\"
 
 -- Page grid: every tab's page is PAGE_H tall. The Raid tab's pages (Roster,
@@ -333,7 +333,9 @@ function ns.Probe()
         local groupID = C_Map.GetMapGroupID(mapID)
         local floors = groupID and C_Map.GetMapGroupMembersInfo(groupID)
         ns.Print(("floors in this map group: %d"):format(floors and #floors or 0))
-        local ok, bosses = pcall(C_EncounterJournal.GetEncountersOnMap, mapID)
+        local EJ = C_EncounterJournal
+        local ok, bosses = false, nil
+        if EJ and EJ.GetEncountersOnMap then ok, bosses = pcall(EJ.GetEncountersOnMap, mapID) end
         ns.Print(("bosses on this map (Encounter Journal): %s"):format(ok and tostring(bosses and #bosses or 0) or "call failed"))
     end
 

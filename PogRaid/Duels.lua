@@ -67,11 +67,19 @@ function Duels:Confirmed()
     end
     local out = {}
     for id, m in pairs(byMatch) do
-        local any
-        for _, r in pairs(m.reports) do any = r break end
-        local ra, rb = m.reports[any.a], m.reports[any.b]
-        if ra and rb and ra.winner == rb.winner and ra.a == rb.a and ra.b == rb.b then
-            out[#out + 1] = { id = id, t = ra.t, a = ra.a, b = ra.b, winner = ra.winner }
+        -- the two players' own reports must agree. Looked for the same way on
+        -- every client (by author, in order), so a stray third report on the
+        -- match can't make some count it and others not.
+        local authors = {}
+        for author in pairs(m.reports) do authors[#authors + 1] = author end
+        table.sort(authors)
+        for _, author in ipairs(authors) do
+            local r = m.reports[author]
+            local ra, rb = m.reports[r.a], m.reports[r.b]
+            if ra and rb and ra.winner == rb.winner and ra.a == rb.a and ra.b == rb.b then
+                out[#out + 1] = { id = id, t = ra.t, a = ra.a, b = ra.b, winner = ra.winner }
+                break
+            end
         end
     end
     table.sort(out, function(x, y)

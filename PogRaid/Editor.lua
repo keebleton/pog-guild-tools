@@ -738,11 +738,14 @@ end
 function Editor:BossMenu(btn)
     local b = current()
     local entries = {}
-    if b and b.map then
-        local ok, list = pcall(C_EncounterJournal.GetEncountersOnMap, b.map)
-        if ok and list then
+    local EJ = C_EncounterJournal
+    if b and b.map and EJ and EJ.GetEncountersOnMap then
+        local ok, list = pcall(EJ.GetEncountersOnMap, b.map)
+        if ok and type(list) == "table" then
             for _, e in ipairs(list) do
-                local name = EJ_GetEncounterInfo(e.encounterID) or ("Encounter " .. e.encounterID)
+                local okName, name = false, nil
+                if EJ_GetEncounterInfo then okName, name = pcall(EJ_GetEncounterInfo, e.encounterID) end
+                name = okName and name or ("Encounter " .. tostring(e.encounterID))
                 entries[#entries + 1] = { text = name, func = function() self:FocusBoss(name, e.mapX, e.mapY) end }
             end
         end

@@ -468,6 +468,23 @@ local function invite(name)
     return ok
 end
 
+local function convertToRaid()
+    local fn = (C_PartyInfo and C_PartyInfo.ConvertToRaid) or ConvertToRaid
+    if fn then pcall(fn) end
+end
+
+-- In a raid the leader or an assistant can invite; in a party only the
+-- leader (who also makes it a raid).
+local function canInvite()
+    if not IsInGroup() then return true end
+    if IsInRaid() then return UnitIsGroupLeader("player") or UnitIsGroupAssistant("player") end
+    return UnitIsGroupLeader("player")
+end
+
+-- Invites waiting for the group to become a raid are dropped after this
+-- long (nobody accepted), so they can't go out hours later.
+Roster.PENDING_FOR = 120
+
 function Roster:Invite()
     local r = self:Current()
     if not r then return end
@@ -483,14 +500,19 @@ function Roster:Invite()
         ns.Print("everyone on the roster is already in your group")
         return
     end
+    if not canInvite() then
+        ns.Print(IsInRaid() and "only the raid leader or an assistant can invite" or "only the party leader can invite")
+        return
+    end
     -- A party holds 5, so outside a raid invite 4 now and the rest after
     -- the group converts to a raid.
+    self.pendingAt = GetTime()
     if IsInRaid() then
         for _, n in ipairs(todo) do invite(n) end
         self.pendingInvites = nil
     elseif IsInGroup() then
         -- convert first; the rest go out once we are a raid
-        C_PartyInfo.ConvertToRaid()
+        convertToRaid()
         self.pendingInvites = todo
     else
         local room = math.min(4, #todo)
@@ -501,9 +523,12 @@ function Roster:Invite()
 end
 
 function Roster:OnGroupChanged()
-    if self.pendingInvites and IsInGroup() then
+    if self.pendingInvites and GetTime() - (self.pendingAt or 0) > Roster.PENDING_FOR then
+        self.pendingInvites = nil
+    end
+    if self.pendingInvites and IsInGroup() and canInvite() then
         if not IsInRaid() then
-            C_PartyInfo.ConvertToRaid()
+            convertToRaid()
         else
             local todo = self.pendingInvites
             self.pendingInvites = nil

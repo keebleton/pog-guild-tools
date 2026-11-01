@@ -393,6 +393,12 @@ anna.run("""local ns = ...
     ns.Attendance:Check()""", anna.ns)
 # an hour of raid passes for everyone (one server clock: records from the future are refused)
 pump(clients, 3600, step=5)
+# the night is shared as it goes: another officer already has it, still open
+check(jake.run("""local ns = ...
+    for _, s in ipairs(ns.Attendance:Sessions()) do
+        if s.rec == 'Anna-Realm' and not s.stop then return s.live and s.present['Mira-Realm'] ~= nil end
+    end
+    return false""", jake.ns) is True, "attendance: an officer's night reaches the other officers while it's still going")
 anna.run("""local ns = ...
     ns.Attendance:End()
     STUB.roster, STUB.isLeader = nil, false

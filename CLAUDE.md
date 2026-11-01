@@ -117,10 +117,15 @@ spaced by label width so every gap is equal (`Editor:LayoutTabs`). Games: Wowdle
 out, ruled-out ones dark and faint, `Wowdle.KEY_OPEN/KEY_OUT`), Sapper Sweeper (tiles act on the press, LeftButtonDown:
 fast clicks drifting onto the next tile were lost), Gem Cutter (real 2048 rules), Ranked Duels (Elo 1200, K 32, both players' reports must agree).
 Attendance: weekly (a raid week, Tuesday reset, counts as a player's best night). A night is 100%, or 50% for arriving
-more than 15 min after the start or leaving more than 15 min before the end, unless they said so ahead (`notice`
-records from "Late / early..." or /pog late, early, ontime: full credit); bench counts as there. Officers share nights
-(`nights` records, officer-only); two recordings of one raid show once (time and player overlap). Nights recorded
-before 0.13.1 (no first/last times) keep the old share-of-snapshots credit and aren't shared.
+more than 15 min after the raid gathered or leaving more than 15 min before it broke up, unless they said so ahead
+(`notice` records from "Late / early..." or /pog late, early, ontime: full credit); bench counts as there. Since
+0.16.2 "gathered" = when half the night's players had arrived and "broke up" = when half had left (`Att:Times`), so
+when the recorder zoned in or stayed behind doesn't matter. Officers share nights (`nights` records, officer-only);
+two recordings of one raid show once (time and player overlap). Since 0.16.2 a night is shared as it goes (after each
+boss and every 15 min, `Att:Checkpoint`), shows as "live" to other officers, and a recorder who crashed (addon data
+is only saved at logout or /reload) carries on with the copy that comes back (`Att:Resumable`). Nights recorded
+before 0.13.1 (no first/last times) keep the old share-of-snapshots credit and aren't shared. Loot ignores
+"You receive item:" lines (quest rewards, vendor buys).
 Crafting: professions + recipe IDs shared per player; recipes read only from your own open profession window.
 Poisons and Lockpicking (rogue skills in the skill list) are never read, shared or shown. First Aid, Fishing,
 Herbalism, Mining and Skinning are shared but not listed in the directory (`Crafting.HIDDEN`). The results card's art

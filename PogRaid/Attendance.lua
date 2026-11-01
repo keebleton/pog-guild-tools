@@ -3,15 +3,21 @@
 --
 -- A session (one raid night) is snapshotted every 5 minutes and after each
 -- boss, noting when each player was first and last seen. A night counts 100%,
--- or 50% for arriving more than GRACE after the start or leaving more than
--- GRACE before the end, unless they said so ahead of time ("I'll be late" /
--- "I'll leave early": shared `notice` records, full credit). Bench players on
--- that night's roster count as there. Officers can override any credit.
+-- or 50% for arriving more than GRACE after the raid gathered or leaving more
+-- than GRACE before it broke up, unless they said so ahead of time ("I'll be
+-- late" / "I'll leave early": shared `notice` records, full credit). The raid
+-- "gathered" when half its players had arrived and "broke up" when half had
+-- left, so it doesn't matter when the recorder zoned in or stayed behind.
+-- Bench players on that night's roster count as there. Officers can override
+-- any credit.
 --
 -- Weekly: a raid week (Tuesday reset) counts as a player's best night that
 -- week, so with two raid teams raiding either one counts. Nights are shared
 -- between officers (`nights` records), so both teams' nights add up; two
--- officers recording the same raid show as one night.
+-- officers recording the same raid show as one night. A night is shared as
+-- it goes (after each boss and every SHARE_EVERY), so a crash or disconnect
+-- doesn't lose it: other officers already hold it, and the recorder picks
+-- it up again on getting back.
 --
 -- Layout (same grid as the other tabs):
 --   [Start raid][End raid]  [session name ............]
@@ -44,6 +50,7 @@ Att.STALE = 4 * 3600   -- a session untouched this long is closed on sight
 Att.CHECK_EVERY = 30
 Att.GRACE = 15 * 60    -- this late, or this early out, still counts as there
 Att.KEEP = 365 * 86400 -- shared nights kept a year
+Att.SHARE_EVERY = 900  -- a night being recorded is shared this often (and after each boss)
 
 local function G() return ns.db.guild end
 local function display(name) return name and Ambiguate(name, "short") end
@@ -229,21 +236,81 @@ function Att:Check()
         if IsInRaid() then
             s.lastSeen = now
             if now - s.lastSnap >= Att.SNAP_EVERY then self:Snapshot(s) end
+            self:Checkpoint(s)
         elseif now - s.lastSeen >= Att.END_AFTER then
             self:End(s)
         end
     elseif IsInRaid() and select(2, GetInstanceInfo()) == "raid" and self:ShouldRecord() then
-        self:Start()
+        s = self:Resumable()
+        if s then self:Resume(s) else self:Start() end
     end
 end
 
--- Arrived more than GRACE after the start, left more than GRACE before the
--- end (only once the night is over).
+-- A night we were recording that never ended on this computer (the game
+-- crashed or disconnected before saving), which came back from another
+-- officer's copy: carry on with it rather than starting a second one.
+function Att:Resumable()
+    local now, me, best = ns.Now(), ns.Sync:Me(), nil
+    for _, s in pairs(G().sessions) do
+        if not s.deleted and not s.stop and s.rec == me and now - (s.lastSnap or s.start) < Att.STALE
+            and (not best or s.start > best.start) then
+            best = s
+        end
+    end
+    return best
+end
+
+function Att:Resume(s)
+    s.firstAt, s.lastAt = s.firstAt or {}, s.lastAt or {}
+    s.live, s.lastSeen = nil, ns.Now()
+    G().activeSession = s.id
+    self.viewing = s.id
+    ns.Print(("attendance: carrying on recording '%s'"):format(s.name))
+    self:Snapshot(s)
+end
+
+-- Share the night we're recording now and then, so it isn't only here.
+function Att:Checkpoint(s, force)
+    if not s or s.stop then return end
+    if force or ns.Now() - (s.sharedAt or s.start) >= Att.SHARE_EVERY then
+        s.sharedAt = ns.Now()
+        self:Share(s)
+    end
+end
+
+-- Over: ended, or another officer's live night that stopped hearing from
+-- its recorder long ago.
+function Att:Over(s)
+    return s.stop ~= nil or (G().activeSession ~= s.id and ns.Now() - (s.lastSnap or s.start) > Att.STALE)
+end
+
+-- When the raid gathered (half its players had arrived) and broke up (half
+-- had left). Recomputed only when the night changes.
+local times = setmetatable({}, { __mode = "k" })
+function Att:Times(s)
+    local t = times[s]
+    if t and t.snaps == s.snaps and t.lastSnap == s.lastSnap then return t.from, t.to end
+    local firsts, lasts = {}, {}
+    for n in pairs(s.present) do
+        if s.firstAt[n] then firsts[#firsts + 1] = s.firstAt[n] end
+        if s.lastAt[n] then lasts[#lasts + 1] = s.lastAt[n] end
+    end
+    table.sort(firsts)
+    table.sort(lasts, function(a, b) return a > b end)
+    local from = firsts[math.max(1, math.ceil(#firsts / 2))] or s.start
+    local to = lasts[math.max(1, math.ceil(#lasts / 2))] or s.stop or s.lastSnap
+    times[s] = { snaps = s.snaps, lastSnap = s.lastSnap, from = from, to = to }
+    return from, to
+end
+
+-- Arrived more than GRACE after the raid gathered, left more than GRACE
+-- before it broke up (only once the night is over).
 function Att:LateEarly(s, name)
     local first, last = s.firstAt and s.firstAt[name], s.lastAt and s.lastAt[name]
     if not first then return false, false end
-    local late = first - s.start > Att.GRACE
-    local early = s.stop ~= nil and s.stop - last > Att.GRACE
+    local from, to = self:Times(s)
+    local late = first - from > Att.GRACE
+    local early = self:Over(s) and to - last > Att.GRACE
     return late, early
 end
 
@@ -395,7 +462,7 @@ function Att:FromRecord(rec)
     end
     local s = { id = rec.id, name = rec.name or "Raid", start = rec.start, stop = rec.stop, lastSnap = rec.stop,
         snaps = rec.snaps, present = {}, benchSnaps = {}, overrides = {}, bosses = {}, rec = rec.author,
-        rosterId = cur and cur.rosterId, rev = rec.rev, by = rec.by }
+        rosterId = cur and cur.rosterId, rev = rec.rev, by = rec.by, live = rec.stop == nil or nil }
     local timed = false
     for n, c, f, l in tostring(rec.seen or ""):gmatch("([^:/]+):(%d+):?(%d*):?(%d*)") do
         s.present[n] = tonumber(c)
@@ -408,6 +475,11 @@ function Att:FromRecord(rec)
     end
     if timed or (rec.seen or "") == "" then
         s.firstAt, s.lastAt = s.firstAt or {}, s.lastAt or {}
+    end
+    -- a night still being recorded: its last snapshot is its latest sighting
+    if not s.lastSnap then
+        s.lastSnap = rec.start
+        for _, at in pairs(s.lastAt or {}) do s.lastSnap = math.max(s.lastSnap, at) end
     end
     for n, c in tostring(rec.bench or ""):gmatch("([^:/]+):(%d+)") do s.benchSnaps[n] = tonumber(c) end
     for n, c in tostring(rec.over or ""):gmatch("([^:/]+):([%d%.]+)") do s.overrides[n] = tonumber(c) end
@@ -1017,9 +1089,10 @@ end
 ------------------------------------------------------------------------
 local function check() if ns.db then Att:Check() end end
 
+-- (the next check is set up first: one error mustn't stop recording for the night)
 local function tick()
-    check()
     C_Timer.After(Att.CHECK_EVERY, tick)
+    check()
 end
 
 ns.On("PLAYER_LOGIN", function()
@@ -1033,6 +1106,7 @@ ns.On("ENCOUNTER_END", function(encounterID, encounterName, _, _, success)
     if not s then return end
     table.insert(s.bosses, { id = encounterID, name = encounterName, success = success == 1, t = ns.Now() })
     Att:Snapshot(s)
+    Att:Checkpoint(s, true)
 end)
 
 ns.Editor:RegisterTab("attendance", "Attendance", 2,

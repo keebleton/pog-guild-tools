@@ -119,7 +119,9 @@ end
 ------------------------------------------------------------------------
 -- { { name, rank, max } }, from the profession slots (or the classic
 -- skill list under the profession headers, if that's what the client has).
--- Second result: false when the client couldn't tell us at all.
+-- Second result: false when the client couldn't tell us at all. Third:
+-- "slots" or "skills", where it came from (the skill list hides what's under
+-- a collapsed header, so an empty reading from it proves nothing).
 function Crafting:ReadProfessions()
     local out = {}
     local known = (GetProfessions and GetProfessionInfo) or (C_SkillInfo and C_SkillInfo.GetNumSkillLines)
@@ -136,7 +138,9 @@ function Crafting:ReadProfessions()
             end
         end
     end
+    local from = "slots"
     if not out[1] and C_SkillInfo and C_SkillInfo.GetNumSkillLines then
+        from = "skills"
         local wanted = { [PROFESSIONS or "Professions"] = true, [SECONDARY_SKILLS or "Secondary Skills"] = true,
             ["Professions"] = true, ["Secondary Skills"] = true }
         local under = false
@@ -163,7 +167,7 @@ function Crafting:ReadProfessions()
         if Crafting.SKIP[out[i].name] then table.remove(out, i) end
     end
     table.sort(out, function(a, b) return a.name < b.name end)
-    return out, true
+    return out, true, from
 end
 
 local function listString(profs)
@@ -178,10 +182,12 @@ end
 -- dropped are withdrawn.
 function Crafting:PublishProfessions()
     if not Sync:GuildName() then return end
-    local profs, readable = self:ReadProfessions()
+    local profs, readable, from = self:ReadProfessions()
     if not readable then return end
     local cur = (Sync:Store("profs") or {})[me()]
     if not profs[1] and not cur then return end
+    -- nothing under a (maybe collapsed) Professions header: keep what we shared
+    if not profs[1] and from == "skills" then return end
     local list = listString(profs)
     if list == "" then list = nil end
     if not cur or cur.deleted or cur.list ~= list then
