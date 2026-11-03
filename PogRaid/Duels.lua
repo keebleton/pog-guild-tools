@@ -67,11 +67,19 @@ function Duels:Confirmed()
     end
     local out = {}
     for id, m in pairs(byMatch) do
-        local any
-        for _, r in pairs(m.reports) do any = r break end
-        local ra, rb = m.reports[any.a], m.reports[any.b]
-        if ra and rb and ra.winner == rb.winner and ra.a == rb.a and ra.b == rb.b then
-            out[#out + 1] = { id = id, t = ra.t, a = ra.a, b = ra.b, winner = ra.winner }
+        -- the two players' own reports must agree. Looked for the same way on
+        -- every client (by author, in order), so a stray third report on the
+        -- match can't make some count it and others not.
+        local authors = {}
+        for author in pairs(m.reports) do authors[#authors + 1] = author end
+        table.sort(authors)
+        for _, author in ipairs(authors) do
+            local r = m.reports[author]
+            local ra, rb = m.reports[r.a], m.reports[r.b]
+            if ra and rb and ra.winner == rb.winner and ra.a == rb.a and ra.b == rb.b then
+                out[#out + 1] = { id = id, t = ra.t, a = ra.a, b = ra.b, winner = ra.winner }
+                break
+            end
         end
     end
     table.sort(out, function(x, y)
@@ -81,7 +89,9 @@ function Duels:Confirmed()
     return out
 end
 
--- Replays every confirmed match. Cached until a report arrives.
+-- Replays every confirmed match. Cached until a report arrives (or the
+-- guild changes).
+ns.OnGuildChanged(function() Duels.cache = nil end)
 function Duels:Table()
     if self.cache then return self.cache end
     local players, history = {}, {}
@@ -490,6 +500,7 @@ function Duels:Refresh()
         end
     end
     board.empty:SetShown(#list == 0)
+    if self.boardArt then self.boardArt:SetSparse(#list == 0) end -- an empty card shows its whole picture
 end
 
 ------------------------------------------------------------------------
@@ -536,7 +547,9 @@ function Popup:Ask(from, id, t)
     self.current = ask
     self.frame.text:SetText(("%s (%d) challenges you to a ranked duel"):format(colorName(from),
         math.floor(Duels:Rating(from) + 0.5)))
+    local was = self.frame:IsShown()
     self.frame:Show()
+    if not was then UI.FadeIn(self.frame, 0.2) end -- (a little motion: UI experiment)
     ns.Sound("IG_PLAYER_INVITE")
     -- no answer in time counts as a decline
     C_Timer.After(Duels.ANSWER_WAIT - 5, function()

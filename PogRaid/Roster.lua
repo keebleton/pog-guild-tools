@@ -103,6 +103,7 @@ end
 -- loaded yet, and when the guild window hides offline members it only
 -- updates who it can see, so offline raiders never look like they left.
 function Roster:ScanGuild()
+    ns.UseGuild(ns.GuildKey()) -- (this guild's own players, not another's)
     if not IsInGuild() then return end
     local count = GetNumGuildMembers()
     if not count or count == 0 then return end
@@ -141,6 +142,7 @@ function Roster:ScanGuild()
         end
     end
     if complete then
+        G().fullScan = true -- (every member seen: Sync:IsOfficer stops guessing)
         for name, p in pairs(players) do
             if p.inGuild and not seen[name] then
                 p.inGuild = false
@@ -466,6 +468,23 @@ local function invite(name)
     return ok
 end
 
+local function convertToRaid()
+    local fn = (C_PartyInfo and C_PartyInfo.ConvertToRaid) or ConvertToRaid
+    if fn then pcall(fn) end
+end
+
+-- In a raid the leader or an assistant can invite; in a party only the
+-- leader (who also makes it a raid).
+local function canInvite()
+    if not IsInGroup() then return true end
+    if IsInRaid() then return UnitIsGroupLeader("player") or UnitIsGroupAssistant("player") end
+    return UnitIsGroupLeader("player")
+end
+
+-- Invites waiting for the group to become a raid are dropped after this
+-- long (nobody accepted), so they can't go out hours later.
+Roster.PENDING_FOR = 120
+
 function Roster:Invite()
     local r = self:Current()
     if not r then return end
@@ -481,14 +500,19 @@ function Roster:Invite()
         ns.Print("everyone on the roster is already in your group")
         return
     end
+    if not canInvite() then
+        ns.Print(IsInRaid() and "only the raid leader or an assistant can invite" or "only the party leader can invite")
+        return
+    end
     -- A party holds 5, so outside a raid invite 4 now and the rest after
     -- the group converts to a raid.
+    self.pendingAt = GetTime()
     if IsInRaid() then
         for _, n in ipairs(todo) do invite(n) end
         self.pendingInvites = nil
     elseif IsInGroup() then
         -- convert first; the rest go out once we are a raid
-        C_PartyInfo.ConvertToRaid()
+        convertToRaid()
         self.pendingInvites = todo
     else
         local room = math.min(4, #todo)
@@ -499,9 +523,12 @@ function Roster:Invite()
 end
 
 function Roster:OnGroupChanged()
-    if self.pendingInvites and IsInGroup() then
+    if self.pendingInvites and GetTime() - (self.pendingAt or 0) > Roster.PENDING_FOR then
+        self.pendingInvites = nil
+    end
+    if self.pendingInvites and IsInGroup() and canInvite() then
         if not IsInRaid() then
-            C_PartyInfo.ConvertToRaid()
+            convertToRaid()
         else
             local todo = self.pendingInvites
             self.pendingInvites = nil
@@ -647,12 +674,12 @@ function Roster:ShowTooltip(name, row)
     GameTooltip:Show()
 end
 
--- showLevel: add the level after the name when below the cap (pool only).
+-- No levels after names (Jake: everyone raiding will be max level).
 -- Spot bars: darker when empty, a touch lighter with someone in it.
 local WELL_EMPTY = { 0, 0, 0, 0.28 }
 local WELL_FILLED = { 1, 1, 1, 0.05 }
 
-function Roster:FillRow(row, name, note, noteColor, showLevel)
+function Roster:FillRow(row, name, note, noteColor)
     row.player = name
     if row.well then
         local c = name and WELL_FILLED or WELL_EMPTY
@@ -673,11 +700,7 @@ function Roster:FillRow(row, name, note, noteColor, showLevel)
     else
         row.roleBar:Hide()
     end
-    local label = display(name)
-    if showLevel and p and p.level and p.level < maxLevel() then
-        label = label .. " |cff7a7a82" .. p.level .. "|r"
-    end
-    row.name:SetText(label)
+    row.name:SetText(display(name))
     row.name:SetTextColor(classColor(p and p.class))
     row.note:SetText(note or "")
     local c = noteColor or { 0.55, 0.55, 0.6 }
@@ -705,10 +728,12 @@ function Roster:Build(page)
     search:SetScript("OnEnterPressed", search.ClearFocus)
     self.searchBox = search
     local ranks = UI.Button(page, "Ranks", 80, BAR_H, function(b) UI.ShowMenu(b, self:RankEntries()) end)
+    UI.DropArrow(ranks)
     ranks:SetPoint("TOPLEFT", PAD + POOL_W - 80, -ROW1_Y)
 
     -- Row 1, right: roster picker, name, size
     local pick = UI.Button(page, "Rosters", 110, BAR_H, function(b) UI.ShowMenu(b, self:RosterEntries()) end)
+    UI.DropArrow(pick)
     pick:SetPoint("TOPLEFT", RX, -ROW1_Y)
     local nameBox = UI.EditBox(page, 250, BAR_H)
     nameBox:SetPoint("TOPLEFT", RX + 110 + GAP, -ROW1_Y)
@@ -738,9 +763,6 @@ function Roster:Build(page)
     end
 
     -- Row 2, left: pool summary + add
-    self.poolInfo = UI.Text(page, 11)
-    self.poolInfo:SetPoint("LEFT", page, "TOPLEFT", PAD + 2, -(ROW2_Y + BAR_H / 2))
-    self.poolInfo:SetTextColor(0.6, 0.6, 0.65)
     local add = UI.Button(page, "Add player", 84, BAR_H, function()
         UI.Prompt(self.poolPanel, 0, 0, "Player name (pug or alt)", "", function(text)
             local name = self:AddManual(text)
@@ -1092,12 +1114,6 @@ function Roster:RefreshPool()
     local names = self:PoolNames()
     self.poolOffset = clamp(self.poolOffset or 0, 0, math.max(0, #names - self.poolVisible))
     self.poolHint:Set(self.poolOffset, self.poolVisible, #names)
-    local online, avail = 0, 0
-    for _, n in ipairs(names) do
-        if self.online[n] then online = online + 1 end
-        if not (r and r.marks[n] == "out") then avail = avail + 1 end
-    end
-    self.poolInfo:SetText(("%d raiders, %d online"):format(#names, online))
     if #names == 0 then
         if not IsInGuild() then
             self.poolEmpty:SetText("You are not in a guild.\nUse Add player for pugs.")
@@ -1123,7 +1139,7 @@ function Roster:RefreshPool()
             end
             row:SetAlpha((where or (r and r.marks[name] == "out")) and 0.45 or 1)
         end
-        self:FillRow(row, name, note, color, true)
+        self:FillRow(row, name, note, color)
         row.dot:SetShown(name ~= nil and self.online[name] == true)
         row:SetShown(name ~= nil)
     end
@@ -1137,6 +1153,7 @@ ns.On("GUILD_ROSTER_UPDATE", function()
     if Roster.page and Roster.page:IsShown() then Roster:Refresh() end
 end)
 ns.On("GROUP_ROSTER_UPDATE", function() Roster:OnGroupChanged() end)
+ns.OnGuildChanged(function() wipe(Roster.online) end)
 ns.On("PLAYER_LOGIN", function()
     C_Timer.After(5, function() Roster:RequestGuild() end)
 end)

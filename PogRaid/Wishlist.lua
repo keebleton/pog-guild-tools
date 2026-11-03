@@ -421,7 +421,9 @@ local RX = PAD + LEFT_W + PAD
 local RW = FRAME_W - RX - PAD
 local LIST_Y = TITLE_H + BAR_H + GAP
 local LIST_H = FRAME_H - PAD - LIST_Y
-local SIDE_ROW = 24
+-- the side list's rows share the card's height (Jake: fit the space), leaving
+-- room at the bottom for the DungeonJournal note when it shows
+local SIDE_NOTE_H, SIDE_ICON = 40, 22
 local ROW_H = 34
 -- the character sheet: two columns of slots, the model between them
 local SLOT, PITCH, EDGE, TEXT_W = 36, 58, 16, 140
@@ -725,6 +727,63 @@ end
 -- Every journal item for a list, best item level first (unknown last):
 -- { id, link, ilvl, kind, slot, from, dungeon }. `list` is a slot list, or
 -- { search = "words" } for gear whose name has them.
+-- "Where to get them" (Jake: its own entry in the side list, shown like a
+-- slot's list): what's still wanted, grouped by where it drops, the dungeon
+-- with the most of it first (a run planner), unknown sources last.
+Wishlist.WHERE = { name = "Where to get them", where = true }
+Wishlist.WHERE_GAP = 14 -- space above each dungeon after the first (Jake)
+Wishlist.WHERE_HEAD_H = 24 -- a dungeon's row: short, so its items sit right under it (Jake)
+
+-- A browse row as a dungeon heading (its name from the icon's edge, level at
+-- the right, vertically centred) or back to an item row.
+local function headMode(row, on)
+    if row.head == on then return end
+    row.head = on
+    row:SetHeight(on and Wishlist.WHERE_HEAD_H or ROW_H)
+    row.name:ClearAllPoints()
+    row.right:ClearAllPoints()
+    if on then
+        row.name:SetPoint("LEFT", 8, 0)
+        row.right:SetPoint("RIGHT", -10, 0)
+    else
+        row.name:SetPoint("TOPLEFT", 44, -4)
+        row.right:SetPoint("TOPRIGHT", -10, -4)
+    end
+    row.name:SetPoint("RIGHT", row.right, "LEFT", -8, 0)
+end
+Wishlist.ELSEWHERE = "Elsewhere"
+function Wishlist:WhereToGet()
+    local ids, wanted = {}, {}
+    for _, it in ipairs(self:Mine()) do
+        if not it.got then
+            ids[it.id] = true
+            wanted[#wanted + 1] = it
+        end
+    end
+    local sources = Journal:Sources(ids)
+    local groups, order = {}, {}
+    for _, it in ipairs(wanted) do
+        local src = sources[it.id]
+        local d = src and src.dungeon or Wishlist.ELSEWHERE
+        if not groups[d] then
+            groups[d] = {}
+            order[#order + 1] = d
+        end
+        table.insert(groups[d], { item = it, from = src and src.from or "" })
+    end
+    table.sort(order, function(a, b)
+        if (a == Wishlist.ELSEWHERE) ~= (b == Wishlist.ELSEWHERE) then return b == Wishlist.ELSEWHERE end
+        if #groups[a] ~= #groups[b] then return #groups[a] > #groups[b] end
+        return a < b
+    end)
+    local out = {}
+    for _, d in ipairs(order) do
+        out[#out + 1] = { dungeon = d, level = ns.Dungeons and ns.Dungeons.LevelOf and ns.Dungeons:LevelOf(d) }
+        for _, e in ipairs(groups[d]) do out[#out + 1] = e end
+    end
+    return out
+end
+
 function Wishlist:Items(list)
     local seen, out = {}, {}
     for _, dg in ipairs(Journal:List()) do
@@ -782,15 +841,18 @@ function Wishlist:Build(page)
     side:SetSize(LEFT_W, LIST_H)
     UI.Card(side)
     side.rows = {}
-    local entries = { { set = true, icon = "Interface\\Icons\\INV_Misc_Note_01" } }
+    local entries = { { set = true, icon = "Interface\\Icons\\INV_Misc_Note_01" },
+        { label = Wishlist.WHERE.name, list = Wishlist.WHERE, icon = "Interface\\Icons\\INV_Misc_Map_01" } }
     for i, l in ipairs(Wishlist.LISTS) do
         entries[#entries + 1] = { label = l.name, list = l, index = i, icon = emptyIcon(slotOf(l.slot)) }
     end
+    local rowH = math.floor((LIST_H - 8 - (Journal:DB() and 0 or SIDE_NOTE_H)) / #entries)
+    side.rowH = rowH
     for i, e in ipairs(entries) do
         local row = CreateFrame("Button", nil, side)
-        row:SetHeight(SIDE_ROW)
-        row:SetPoint("TOPLEFT", 2, -(4 + (i - 1) * SIDE_ROW))
-        row:SetPoint("TOPRIGHT", -2, -(4 + (i - 1) * SIDE_ROW))
+        row:SetHeight(rowH)
+        row:SetPoint("TOPLEFT", 2, -(4 + (i - 1) * rowH))
+        row:SetPoint("TOPRIGHT", -2, -(4 + (i - 1) * rowH))
         row.sel = row:CreateTexture(nil, "BACKGROUND")
         row.sel:SetAllPoints()
         UI.SelBar(row.sel, 0.12)
@@ -798,12 +860,12 @@ function Wishlist:Build(page)
         hl:SetAllPoints()
         UI.Hover(hl, 0.05)
         row.icon = row:CreateTexture(nil, "ARTWORK")
-        row.icon:SetSize(16, 16)
-        row.icon:SetPoint("LEFT", 8, 0)
+        row.icon:SetSize(SIDE_ICON, SIDE_ICON)
+        row.icon:SetPoint("LEFT", 10, 0)
         row.icon:SetTexture(e.icon)
         row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        row.name = UI.Text(row, 11)
-        row.name:SetPoint("LEFT", 32, 0)
+        row.name = UI.Text(row, 12)
+        row.name:SetPoint("LEFT", 10 + SIDE_ICON + 10, 0)
         row.name:SetText(e.label or "")
         row.entry = e
         row:SetScript("OnClick", function(r)
@@ -825,7 +887,8 @@ function Wishlist:Build(page)
     -- right: title row, then the character sheet (or a slot's items)
     self.title = UI.Text(page, 13)
     self.title:SetPoint("LEFT", page, "TOPLEFT", RX + 2, -(TITLE_H + BAR_H / 2))
-    self.setsBtn = UI.Button(page, "Wishlists", 84, 20, function(b) self:SetsMenu(b) end)
+    self.setsBtn = UI.Button(page, "Wishlists", 96, 20, function(b) self:SetsMenu(b) end)
+    UI.DropArrow(self.setsBtn)
     self.setsBtn:SetPoint("RIGHT", page, "TOPLEFT", RX + RW, -(TITLE_H + BAR_H / 2))
     local card = CreateFrame("Frame", nil, page)
     card:SetPoint("TOPLEFT", RX, -LIST_Y)
@@ -876,6 +939,14 @@ function Wishlist:Build(page)
         row.sub:SetTextColor(0.6, 0.6, 0.65)
         row:SetScript("OnClick", function(r, button) self:RowClick(r, button) end)
         row:SetScript("OnEnter", function(r)
+            local e = r.where
+            if e and e.item and GameTooltip then
+                UI.ItemTip(r, e.item.link)
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine(e.from ~= "" and (e.from .. ", " .. r.dungeon) or r.dungeon, 0.5, 0.85, 0.55)
+                GameTooltip:Show()
+                return
+            end
             local it = r.data
             if not it or not GameTooltip then return end
             UI.ItemTip(r, it.link)
@@ -971,7 +1042,68 @@ function Wishlist:RefreshDoll()
     self:Dress()
 end
 
+function Wishlist:RefreshWhere()
+    local browse = self.browse
+    local items = self:WhereToGet()
+    self.title:SetText(Wishlist.WHERE.name)
+    self.offset = math.max(0, math.min(self.offset or 0, #items - browse.visible))
+    browse.hint:Set(self.offset, browse.visible, #items)
+    -- the dungeon each row falls under (also for rows scrolled past their heading)
+    local dungeon
+    for i = 1, self.offset do if items[i].dungeon then dungeon = items[i].dungeon end end
+    local y = 4
+    for i, row in ipairs(browse.rows) do
+        local e = items[i + self.offset]
+        row.data, row.where = nil, e
+        -- a little space before each dungeon after the first; rows that no
+        -- longer fit are left for scrolling
+        if e and e.dungeon and i > 1 then y = y + Wishlist.WHERE_GAP end
+        headMode(row, e ~= nil and e.dungeon ~= nil)
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", 2, -y)
+        row:SetPoint("TOPRIGHT", -2, -y)
+        y = y + ((e and e.dungeon) and Wishlist.WHERE_HEAD_H or ROW_H)
+        if e and y > LIST_H - 4 then e = nil end
+        if e then
+            if e.dungeon then dungeon = e.dungeon end
+            row.dungeon = dungeon
+            if e.dungeon then
+                row.icon:Hide()
+                row.name:SetText(e.dungeon)
+                row.name:SetTextColor(UI.TITLE[1], UI.TITLE[2], UI.TITLE[3])
+                row.sub:SetText("")
+                row.right:SetText(e.level or "")
+                row.right:SetTextColor(0.55, 0.55, 0.6)
+            else
+                row.icon:Show()
+                row.icon:SetTexture(iconOf(e.item.id))
+                row.name:SetText(colored(e.item.link))
+                row.name:SetTextColor(1, 1, 1)
+                row.sub:SetText(e.from)
+                local l = Wishlist.ListFor(e.item.slot)
+                row.right:SetText(l and l.name or "")
+                row.right:SetTextColor(0.85, 0.85, 0.88)
+            end
+            row.right2:SetText("")
+            row:Show()
+        else
+            row:Hide()
+        end
+    end
+    browse.empty:SetText("Click a slot on the sheet to pick gear, and this lists where to get it.")
+    browse.empty:SetShown(#items == 0)
+end
+
 function Wishlist:RefreshBrowse()
+    if self.list == Wishlist.WHERE and not self.search then return self:RefreshWhere() end
+    for i, row in ipairs(self.browse.rows) do
+        row.where = nil
+        row.icon:Show()
+        headMode(row, false)
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", 2, -(4 + (i - 1) * ROW_H))
+        row:SetPoint("TOPRIGHT", -2, -(4 + (i - 1) * ROW_H))
+    end
     local l = self.search and { search = self.search, name = "Search" } or self.list
     local items = self:Items(l)
     local browse = self.browse
@@ -1012,6 +1144,12 @@ end
 
 -- A slot's list: a click adds the item, or takes it off again.
 function Wishlist:RowClick(row, button)
+    local e = row.where
+    if e then
+        -- an item opens its slot's list (a dungeon heading does nothing: Jake)
+        if e.item then self:OpenList(e.item.slot) end
+        return
+    end
     local it = row.data
     if not it then return end
     if IsShiftKeyDown and IsShiftKeyDown() and ChatEdit_InsertLink then

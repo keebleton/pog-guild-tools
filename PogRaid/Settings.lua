@@ -69,9 +69,7 @@ function Settings:ThemePicked()
     local t = UI.Theme(S().theme)
     self.themeBtn:SetLabel(t and t.name or "")
     local pending = S().theme ~= UI.theme
-    if self.reloadBtn and not (InCombatLockdown and InCombatLockdown()) then
-        self.reloadBtn:SetShown(pending)
-    end
+    if self.reloadBtn then self.reloadBtn:Offer(pending) end
     if pending then
         ns.Print(("theme: %s. %s"):format(t and t.name or "?",
             self.reloadBtn and "Click Reload to apply (or type /reload)." or "Type /reload to apply."))
@@ -127,12 +125,13 @@ function Settings:Build(page)
         end
         UI.ShowMenu(b, menu)
     end)
+    UI.DropArrow(self.themeBtn)
     self.themeBtn:SetPoint("TOPRIGHT", gen, "TOPRIGHT", -12, y)
-    self.reloadBtn = UI.ReloadButton(gen, "Reload to apply", 130, 22)
-    if self.reloadBtn then
-        self.reloadBtn:SetPoint("TOPRIGHT", gen, "TOPRIGHT", -12, y - 26)
-        self.reloadBtn:Hide()
-    end
+    -- (on UIParent, not in the window: see UI.ReloadButton)
+    local reloadY = y - 26
+    self.reloadBtn = UI.ReloadButton(gen, "Reload to apply", 130, 22, function(b)
+        b:SetPoint("TOPRIGHT", gen, "TOPRIGHT", -12, reloadY)
+    end)
     self.general = gen
 
     -- Officer ranks
@@ -253,8 +252,10 @@ function Settings:Refresh()
             if cc then row.name:SetTextColor(cc.r, cc.g, cc.b) else row.name:SetTextColor(UI.TEXT[1], UI.TEXT[2], UI.TEXT[3]) end
             row.dot:SetShown(e.online)
             local old = ns.Version.Compare(e.version, newest) == -1
-            row.version:SetText(e.version .. (old and "  (update)" or ""))
-            if old then row.version:SetTextColor(0.95, 0.45, 0.4) else row.version:SetTextColor(0.4, 0.85, 0.45) end
+            -- an old version is just a quieter colour (UI experiment: "(update)" on
+            -- every line was noise); the newest is green
+            row.version:SetText(e.version)
+            if old then row.version:SetTextColor(0.75, 0.52, 0.42) else row.version:SetTextColor(0.4, 0.85, 0.45) end
             row.seen:SetText(e.online and "online" or (ns.Home and ns.Home.Ago(e.t) or ""))
             row:Show()
         else
@@ -262,6 +263,7 @@ function Settings:Refresh()
         end
     end
     who.empty:SetShown(#list == 0)
+    if self.whoArt then self.whoArt:SetSparse(#list == 0) end -- an empty card shows its whole picture
 end
 
 ns.Editor:RegisterTab("settings", "Settings", 10,

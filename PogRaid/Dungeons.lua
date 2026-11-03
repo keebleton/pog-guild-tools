@@ -178,7 +178,47 @@ local function sortRoles(set)
 end
 Dungeons.SortRoles = sortRoles
 
+Dungeons.ROLE_ORDER = { "T", "H", "D" }
+Dungeons.ROLE_OFF_ALPHA = 0.3 -- a role someone isn't looking as
+
+-- A group slot: the member's role icon (an older version's listing has no
+-- roles: a greyed icon), or the game's empty-slot dot ("groupfinder-icon-
+-- emptyslot"), else a small dark disc.
+Dungeons.SLOT = 18
+Dungeons.EMPTY_SLOT = "groupfinder-icon-emptyslot"
+function Dungeons.SlotIcon(tex, role, filled)
+    tex:SetVertexColor(1, 1, 1)
+    if tex.SetDesaturated then tex:SetDesaturated(false) end
+    tex:SetAlpha(1)
+    if filled then
+        tex:SetSize(Dungeons.SLOT, Dungeons.SLOT)
+        Dungeons.RoleIcon(tex, role ~= "" and role or "D")
+        if role == nil or role == "" then
+            if tex.SetDesaturated then tex:SetDesaturated(true) end
+            tex:SetAlpha(0.6)
+        end
+        tex.slotRole = role ~= "" and role or nil
+        return
+    end
+    tex.slotRole = nil
+    tex:SetSize(10, 10)
+    local ok = false
+    if C_Texture and C_Texture.GetAtlasInfo and tex.SetAtlas then
+        local got, info = pcall(C_Texture.GetAtlasInfo, Dungeons.EMPTY_SLOT)
+        ok = got and type(info) == "table" and pcall(tex.SetAtlas, tex, Dungeons.EMPTY_SLOT)
+    end
+    if not ok then
+        tex:SetTexture(ns.MEDIA .. "disc")
+        tex:SetTexCoord(0, 1, 0, 1)
+        tex:SetVertexColor(0.05, 0.05, 0.06)
+    end
+    tex.empty = true
+end
+
+-- Our roles ("TH"); "" when we've picked none (saved as "-": Jake wanted the
+-- last one to come off too), else from our profile until we pick.
 function Dungeons:Role()
+    if ns.db.lookRole == "-" then return "" end
     if ns.db.lookRole and ns.db.lookRole ~= "" then return ns.db.lookRole end
     local content = ns.Profiles and ns.Profiles:Content(me()) or {}
     local set = {}
@@ -201,7 +241,7 @@ local function write(list)
         end
     else
         Sync:Write("lfd", { id = who, author = who, t = now, exp = now + Dungeons.LOOK_HOURS * 3600,
-            list = table.concat(list, ","), role = Dungeons:Role(), note = Dungeons:Note() })
+            list = table.concat(list, ","), role = Dungeons:Role() ~= "" and Dungeons:Role() or nil, note = Dungeons:Note() })
     end
     Dungeons:Changed()
 end
@@ -219,14 +259,13 @@ end
 
 function Dungeons:StopLooking() write({}) end
 
--- Roles toggle: any of the three, at least one.
+-- Roles toggle: any of the three, or none.
 function Dungeons:SetRole(key)
     local set = {}
     for k in self:Role():gmatch(".") do set[k] = true end
     set[key] = not set[key] or nil
     local roles = sortRoles(set)
-    if roles == "" then return end
-    ns.db.lookRole = roles
+    ns.db.lookRole = roles ~= "" and roles or "-"
     local rec = self:MyLooking()
     if rec then write(split(rec.list)) else self:Changed() end
 end
@@ -245,6 +284,13 @@ end
 Dungeons.LEVEL_FIX = { ["Blackfathom Deeps"] = "22-32" }
 
 -- The dungeons by level: { name, level, min, max }.
+-- A dungeon's level range as the list shows it ("22-32"), or nil.
+function Dungeons:LevelOf(name)
+    for _, e in ipairs(self:List()) do
+        if e.name == name then return e.level end
+    end
+end
+
 function Dungeons:List()
     local out = {}
     local journal = ns.Journal and ns.Journal:List() or {}
@@ -272,7 +318,8 @@ local RW = FRAME_W - RX - PAD
 local LIST_Y = TITLE_H
 local LIST_H = FRAME_H - PAD - LIST_Y
 local HEAD_H = 26
-local YOU_H = HEAD_H + 10 + 30 + 8 + 24 + 12
+local ROLE_TILE_H, ROLE_ICON = 56, 36 -- the role tiles: just a big icon (Jake: no names), named on hover
+local YOU_H = HEAD_H + 10 + ROLE_TILE_H + 8 + 24 + 12
 local DUNGEON_ROW = 26
 local LEVEL_W = 40 -- the level ranges: one right-aligned column
 local TILE_W = math.floor((RW - 24 - 8) / 2)
@@ -284,24 +331,16 @@ local ROLES_W = 8 + 3 * 21 + 8 -- room for three role icons before a name
 Dungeons.layout = { RX = RX, RW = RW, LIST_Y = LIST_Y, LIST_H = LIST_H, YOU_H = YOU_H, GROUPS_H = GROUPS_H,
     TILE_W = TILE_W, TILE_H = TILE_H }
 
-local function card(page, title, x, y, w, h, icon)
+-- (no icons on card titles: Jake, as on Home)
+local function card(page, title, x, y, w, h)
     local c = CreateFrame("Frame", nil, page)
     c:SetPoint("TOPLEFT", x, -y)
     c:SetSize(w, h)
     UI.Card(c)
     c.title = UI.SectionTitle(c, title)
-    if icon and (not ns.Art or ns.Art.Has({ kind = "file", path = icon }) ~= false) then
-        c.icon = c:CreateTexture(nil, "ARTWORK")
-        c.icon:SetSize(14, 14)
-        c.icon:SetPoint("LEFT", c, "TOPLEFT", 10, -HEAD_H / 2)
-        c.icon:SetTexture(icon)
-        c.icon:SetTexCoord(0.04, 0.96, 0.04, 0.96) -- (a light crop: some icons' art runs to the edge)
-        c.title:SetPoint("LEFT", c, "TOPLEFT", 10 + 14 + 6, -HEAD_H / 2)
-    else
-        c.title:SetPoint("LEFT", c, "TOPLEFT", 10, -HEAD_H / 2)
-    end
+    c.title:SetPoint("LEFT", c, "TOPLEFT", 10, -UI.HeadMid(HEAD_H))
     c.meta = UI.Text(c, 10)
-    c.meta:SetPoint("RIGHT", c, "TOPRIGHT", -10, -HEAD_H / 2)
+    c.meta:SetPoint("RIGHT", c, "TOPRIGHT", -10, -UI.HeadMid(HEAD_H))
     c.meta:SetTextColor(0.5, 0.5, 0.55)
     local line = c:CreateTexture(nil, "ARTWORK")
     line:SetPoint("TOPLEFT", 1, -HEAD_H)
@@ -328,26 +367,44 @@ end
 function Dungeons:BuildYou(page)
     local c = card(page, "You", PAD, LIST_Y, LEFT_W, YOU_H)
     c.stop = UI.Button(c, "Stop looking", 90, 18, function() self:StopLooking() end)
-    c.stop:SetPoint("RIGHT", c, "TOPRIGHT", -5, -HEAD_H / 2)
+    c.stop:SetPoint("RIGHT", c, "TOPRIGHT", -UI.HeadInset(), -UI.HeadMid(HEAD_H))
+    -- role tiles (Jake: the small icons blurred and the pick looked odd): the
+    -- game's large role icon, big and sharp, over its name; picked = gold edge
+    -- and full colour, else greyed; any of them, or none
     c.roles = {}
-    local bw = math.floor((LEFT_W - 24 - 8) / 3)
+    local bw = math.floor((LEFT_W - 24 - 2 * 6) / 3)
     for i, r in ipairs({ Dungeons.ROLES[2], Dungeons.ROLES[3], Dungeons.ROLES[1] }) do
-        local b = UI.Button(c, r[2], bw, 30, function() self:SetRole(r[1]) end)
-        b:SetPoint("TOPLEFT", 12 + (i - 1) * (bw + 4), -(HEAD_H + 10))
+        local b = CreateFrame("Button", nil, c)
+        b:SetSize(bw, ROLE_TILE_H)
+        b:SetPoint("TOPLEFT", 12 + (i - 1) * (bw + 6), -(HEAD_H + 10))
+        UI.Tile(b)
         b.icon = b:CreateTexture(nil, "ARTWORK")
-        b.icon:SetSize(18, 18)
+        b.icon:SetSize(ROLE_ICON, ROLE_ICON)
+        b.icon:SetPoint("CENTER")
         Dungeons.RoleIcon(b.icon, r[1])
-        local tw = math.floor(b.label:GetStringWidth() + 0.5)
-        local x0 = math.floor((bw - (18 + 5 + tw)) / 2)
-        b.icon:SetPoint("LEFT", x0, 0)
-        b.label:ClearAllPoints()
-        b.label:SetPoint("LEFT", x0 + 18 + 5, 0)
-        b.label:SetJustifyH("LEFT")
+        b.label = UI.Text(b, 11) -- (the name, kept for the tooltip; not shown)
+        b.label:SetText(r[2])
+        b.label:Hide()
         b.key = r[1]
+        b:SetScript("OnClick", function() self:SetRole(r[1]) end)
+        b:SetScript("OnEnter", function(f)
+            if not GameTooltip then return end
+            GameTooltip:SetOwner(f, "ANCHOR_TOP")
+            GameTooltip:AddLine(r[2], 1, 1, 1)
+            GameTooltip:Show()
+        end)
+        b:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+        function b:SetSelected(on)
+            self.selected = on and true or false
+            UI.TileSelected(self, self.selected)
+            if self.icon.SetDesaturated then self.icon:SetDesaturated(not self.selected) end
+            self.icon:SetAlpha(self.selected and 1 or Dungeons.ROLE_OFF_ALPHA + 0.15)
+        end
+        b:SetSelected(false)
         c.roles[i] = b
     end
     local note = UI.EditBox(c, LEFT_W - 24, 24)
-    note:SetPoint("TOPLEFT", 12, -(HEAD_H + 10 + 30 + 8))
+    note:SetPoint("TOPLEFT", 12, -(HEAD_H + 10 + ROLE_TILE_H + 8))
     note:SetMaxLetters(Dungeons.MAX_NOTE)
     note.placeholder = UI.Text(note, 11)
     note.placeholder:SetPoint("LEFT", 8, 0)
@@ -458,13 +515,16 @@ local function tile(self, parent)
     t.who:SetPoint("RIGHT", -10, 0)
     t.who:SetJustifyH("LEFT")
     t.who:SetWordWrap(false)
-    t.pips = {}
+    -- the group as the game's group finder shows it (Jake): a role icon per
+    -- member, tanks first, then a small dot per open slot
+    t.slots = {}
     for i = 1, 5 do
         local p = t:CreateTexture(nil, "ARTWORK")
-        p:SetSize(12, 12)
-        p:SetPoint("BOTTOMLEFT", 12 + (i - 1) * 15, 15)
-        t.pips[i] = p
+        p:SetSize(Dungeons.SLOT, Dungeons.SLOT)
+        p:SetPoint("BOTTOMLEFT", 12 + (i - 1) * (Dungeons.SLOT + 3), 13)
+        t.slots[i] = p
     end
+    t.pips = t.slots
     t.size = UI.Text(t, 10)
     t.size:SetPoint("BOTTOMLEFT", 12, 15)
     t.join = UI.Button(t, "Join", 84, 22, function()
@@ -485,12 +545,8 @@ local function tile(self, parent)
 end
 
 function Dungeons:BuildGroups(page)
-    local c = card(page, "Groups", RX, LIST_Y, RW, GROUPS_H, "Interface\\Icons\\INV_Misc_Spyglass_02")
-    -- posting a group sits in the card's header, as on Home
-    self.postBtn = UI.Button(c, "Post group", 74, 18, function()
-        if ns.Home then ns.Home:PostGroupDialog() end
-    end)
-    self.postBtn:SetPoint("RIGHT", c, "TOPRIGHT", -5, -HEAD_H / 2)
+    -- (no Post group in the header: Jake; the empty board and Home's LFM card post)
+    local c = card(page, "Groups", RX, LIST_Y, RW, GROUPS_H)
     c.offset = 0
     c.tiles = {}
     for i = 1, 4 do
@@ -505,13 +561,30 @@ function Dungeons:BuildGroups(page)
         c.offset = c.offset - d * 2
         self:Refresh()
     end)
+    -- nothing up and nobody looking: one board with the next step (UI experiment)
+    local q = CreateFrame("Frame", nil, c)
+    q:SetSize(RW - 40, 120)
+    q:SetPoint("CENTER", 0, 10)
+    q.title = UI.Headline(q, 18)
+    q.title:SetPoint("TOP", 0, 0)
+    q.title:SetText("No groups up yet")
+    q.text = UI.Text(q, 12)
+    q.text:SetPoint("TOP", q.title, "BOTTOM", 0, -10)
+    q.text:SetWidth(RW - 80)
+    q.text:SetJustifyH("CENTER")
+    q.text:SetTextColor(0.7, 0.7, 0.72)
+    q.text:SetText("select dungeons on the left to list yourself") -- (Jake's words)
+    q.post = UI.Button(q, "Post a group", 130, 24, function() if ns.Home then ns.Home:PostGroupDialog() end end)
+    q.post:SetPoint("TOP", q.text, "BOTTOM", 0, -16)
+    q:Hide()
+    c.quiet = q
     self.groups = c
 end
 
 function Dungeons:BuildLooking(page)
     local y = LIST_Y + GROUPS_H + GAP
     local h = LIST_H - GROUPS_H - GAP
-    local c = card(page, "Looking for group", RX, y, RW, h, "Interface\\Icons\\Ability_Warrior_BattleShout")
+    local c = card(page, "Looking for group", RX, y, RW, h)
     c.offset = 0
     c.visible = math.floor((h - HEAD_H - 8) / LOOK_ROW)
     c.hint = UI.ScrollHint(c, HEAD_H + 4, 4)
@@ -570,7 +643,6 @@ Dungeons.TimeLeft = timeLeft
 function Dungeons:Refresh()
     if not self.page then return end
     local inGuild = Sync:GuildName() ~= nil
-    self.postBtn:SetShown(inGuild)
     local looking = self:Looking()
     local groups = ns.Social:Groups()
     local mine = self:MyLooking()
@@ -611,6 +683,12 @@ function Dungeons:Refresh()
 
     self:RefreshGroups(groups, inGuild)
     self:RefreshLooking(looking, inGuild, mine)
+    -- quiet: the two empty cards become one board with the next step
+    local quiet = inGuild and #groups == 0 and #looking == 0
+    self.groups:SetHeight(quiet and LIST_H or GROUPS_H)
+    self.groups.quiet:SetShown(quiet)
+    self.looking:SetShown(not quiet)
+    if quiet then self.groups.empty:Hide() end
 end
 
 function Dungeons:RefreshGroups(groups, inGuild)
@@ -628,9 +706,9 @@ function Dungeons:RefreshGroups(groups, inGuild)
             t.who:SetText(colorName(g.author) .. (g.need and ("  |cff9a9aa2needs " .. g.need .. "|r") or ""))
             t.left:SetText(math.max(0, math.ceil((g.exp - ns.Now()) / 60)) .. "m left")
             local size, max = g.size or 1, g.max or 5
-            for k, p in ipairs(t.pips) do
+            for k, p in ipairs(t.slots) do
                 p:SetShown(max == 5)
-                if k <= size then p:SetColorTexture(0.4, 0.85, 0.45, 0.95) else p:SetColorTexture(1, 1, 1, 0.12) end
+                Dungeons.SlotIcon(p, k <= size and ((g.roles or ""):sub(k, k)) or nil, k <= size)
             end
             t.size:SetShown(max ~= 5)
             t.size:SetText(size .. "/" .. max)
@@ -668,15 +746,17 @@ function Dungeons:RefreshLooking(looking, inGuild, mine)
         local l = looking[i + c.offset]
         row.item = l
         if l then
-            local k = 0
-            for key in tostring(l.role or "D"):gmatch(".") do
-                k = k + 1
-                if row.roles[k] then
-                    Dungeons.RoleIcon(row.roles[k], key)
-                    row.roles[k]:Show()
-                end
+            -- all three roles, Tank, Heals, DPS, in place: theirs bright, the
+            -- others greyed (Jake: a gap before the name otherwise)
+            local mine = tostring(l.role or "") -- (no roles picked: all greyed)
+            for k, key in ipairs(Dungeons.ROLE_ORDER) do
+                local t = row.roles[k]
+                Dungeons.RoleIcon(t, key)
+                local on = mine:find(key, 1, true) ~= nil
+                if t.SetDesaturated then t:SetDesaturated(not on) end
+                t:SetAlpha(on and 1 or Dungeons.ROLE_OFF_ALPHA)
+                t:Show()
             end
-            for j = k + 1, 3 do row.roles[j]:Hide() end
             row.text:SetText(colorName(l.name) .. (l.level and ("  |cff8a8a92" .. l.level .. "|r") or ""))
             local names = {}
             for _, d in ipairs(l.list) do

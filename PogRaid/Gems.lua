@@ -281,6 +281,13 @@ function Gems:Build(view, top, height)
         if not InCombatLockdown() then f:SetPropagateKeyboardInput(dir == nil) end
         if dir then self:Move(dir) end
     end)
+    -- combat starting gives every key back to the game: both calls are still
+    -- allowed then, and after it the board couldn't let go of the keyboard
+    -- until combat ended (a pull with the mouse over it ate every key)
+    ns.On("PLAYER_REGEN_DISABLED", function()
+        board:SetPropagateKeyboardInput(true)
+        board:EnableKeyboard(false)
+    end)
     -- mouse drag: the longer axis of the drag is the direction
     board:SetScript("OnMouseDown", function()
         self.dragFrom = { GetCursorPosition() }

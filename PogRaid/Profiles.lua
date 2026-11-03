@@ -683,9 +683,9 @@ local function card(page, title, x, y, w, h)
     c:SetSize(w, h)
     UI.Card(c)
     c.title = UI.SectionTitle(c, title)
-    c.title:SetPoint("LEFT", c, "TOPLEFT", 10, -HEAD_H / 2)
+    c.title:SetPoint("LEFT", c, "TOPLEFT", 10, -UI.HeadMid(HEAD_H))
     c.meta = UI.Text(c, 10)
-    c.meta:SetPoint("RIGHT", c, "TOPRIGHT", -10, -HEAD_H / 2)
+    c.meta:SetPoint("RIGHT", c, "TOPRIGHT", -10, -UI.HeadMid(HEAD_H))
     c.meta:SetTextColor(0.5, 0.5, 0.55)
     local line = c:CreateTexture(nil, "ARTWORK")
     line:SetPoint("TOPLEFT", 1, -HEAD_H)
@@ -837,8 +837,8 @@ function Profiles:Members()
             end
         end
     end
-    -- set-up profiles first, then everyone else, each alphabetical by the
-    -- name shown (nickname or main)
+    -- online first (on any of their characters; Jake), then set-up profiles,
+    -- then everyone else, each alphabetical by the name shown (nickname or main)
     local online, custom, shown = {}, {}, {}
     for _, m in ipairs(out) do
         online[m] = anyOnline(self, m) ~= nil
@@ -846,6 +846,7 @@ function Profiles:Members()
         shown[m] = self:Name(m):lower()
     end
     table.sort(out, function(a, b)
+        if online[a] ~= online[b] then return online[a] end
         if custom[a] ~= custom[b] then return custom[a] end
         if shown[a] ~= shown[b] then return shown[a] < shown[b] end
         return a < b
@@ -873,13 +874,12 @@ function Profiles:RefreshList()
         row.member = name
         if name then
             local p = G().players[name] or {}
-            local alts = #self:Linked(name) - 1
             row.pic:Set(name)
             local nick = self:Content(name).nick
             local cr, cg, cb = classColor(name)
             local label = nick and ("|cff%02x%02x%02x%s|r  |cff8a8a92%s|r"):format(cr * 255, cg * 255, cb * 255, nick, display(name))
                 or colorName(name)
-            row.name:SetText(label .. (alts > 0 and ("  |cff8a8a92+%d|r"):format(alts) or ""))
+            row.name:SetText(label) -- (no "+1" alt count: fewer numbers)
             row.status:SetText(self:Content(name).status or "")
             row.level:SetText(p.level or "")
             row.dot:SetShown(online[name] == true)
@@ -897,21 +897,23 @@ end
 ------------------------------------------------------------------------
 -- Banner: portrait, name, status, buttons, song
 ------------------------------------------------------------------------
+Profiles.WASH = 0.22 -- the banner's colour wash at its left edge
 function Profiles:BuildBanner(page)
     local b = CreateFrame("Frame", nil, page)
     b:SetPoint("TOPLEFT", RX, -TITLE_H)
     b:SetSize(RW, BANNER_H)
     UI.Card(b)
     self.banner = b
-    b.strip = b:CreateTexture(nil, "ARTWORK")
-    b.strip:SetPoint("TOPLEFT")
-    b.strip:SetPoint("TOPRIGHT")
-    b.strip:SetHeight(3)
+    -- their colour as a soft wash from the left (it was a hard 3px line on top
+    -- that matched nothing else: UI experiment)
+    b.wash = b:CreateTexture(nil, "BACKGROUND", nil, 3)
+    b.wash:SetAllPoints()
+    b.wash:SetColorTexture(1, 1, 1, 1)
     b.pic = portrait(b, PORTRAIT)
     b.pic:SetPoint("TOPLEFT", 14, -(BANNER_H - PORTRAIT - 4) / 2)
     local tx = 14 + PORTRAIT + 4 + 14
-    b.name = UI.Text(b, 18)
-    b.name:SetPoint("TOPLEFT", tx, -16)
+    b.name = UI.Headline(b, 22) -- the page's headline: who this is
+    b.name:SetPoint("TOPLEFT", tx, -14)
     b.info = UI.Text(b, 11)
     b.info:SetPoint("TOPLEFT", tx, -40)
     b.info:SetTextColor(0.7, 0.7, 0.75)
@@ -923,16 +925,12 @@ function Profiles:BuildBanner(page)
     b.online = UI.Text(b, 10)
     b.online:SetPoint("TOPLEFT", tx, -78)
 
-    -- own profile: Edit, Portrait, Color, Song. Others: Whisper, Invite.
+    -- own profile: one Edit profile menu (status, nickname, favourites,
+    -- portrait, colour, song, roles: it was four buttons). Others: Whisper, Invite.
     local function btn(label, w, fn) return UI.Button(b, label, w, 22, fn) end
-    b.edit = btn("Edit", 54, function(x) UI.ShowMenu(x, self:EditMenu()) end)
-    b.portraitBtn = btn("Portrait", 70, function(x) self:PickPortrait(x) end)
-    b.colorBtn = btn("Color", 58, function(x) self:PickColor(x) end)
-    b.songBtn = btn("Song", 54, function(x) UI.ShowMenu(x, self:SongMenu()) end)
-    b.songBtn:SetPoint("TOPRIGHT", -10, -12)
-    b.colorBtn:SetPoint("RIGHT", b.songBtn, "LEFT", -4, 0)
-    b.portraitBtn:SetPoint("RIGHT", b.colorBtn, "LEFT", -4, 0)
-    b.edit:SetPoint("RIGHT", b.portraitBtn, "LEFT", -4, 0)
+    b.edit = btn("Edit profile", 110, function(x) UI.ShowMenu(x, self:EditMenu()) end)
+    UI.DropArrow(b.edit)
+    b.edit:SetPoint("TOPRIGHT", -10, -12)
     b.invite = btn("Invite", 60, function() if self.viewing then ns.Home.Invite(self.viewing) end end)
     b.invite:SetPoint("TOPRIGHT", -10, -12)
     b.whisper = btn("Whisper", 66, function() if self.viewing then ns.Home.Whisper(self.viewing) end end)
@@ -961,7 +959,10 @@ function Profiles:RefreshBanner()
     local p = G().players[name] or {}
     local mine = self:IsMine(name)
     local r, g, bl = self:Color(name)
-    b.strip:SetColorTexture(r, g, bl, 1)
+    local ok = CreateColor and b.wash.SetGradient and pcall(b.wash.SetGradient, b.wash, "HORIZONTAL",
+        CreateColor(r, g, bl, Profiles.WASH), CreateColor(r, g, bl, 0))
+    if not ok then b.wash:SetColorTexture(r, g, bl, Profiles.WASH / 2) end
+    b.washColor = { r, g, bl }
     b.pic:Set(name)
     local nick = content.nick
     if nick then
@@ -1005,7 +1006,7 @@ function Profiles:RefreshBanner()
         b.online:SetText("Offline")
     end
     if on then b.online:SetTextColor(0.4, 0.85, 0.45) else b.online:SetTextColor(0.5, 0.5, 0.55) end
-    for _, x in ipairs({ b.edit, b.portraitBtn, b.colorBtn, b.songBtn }) do x:SetShown(mine) end
+    b.edit:SetShown(mine)
     b.whisper:SetShown(not mine)
     b.invite:SetShown(not mine)
     local song = self:Song(name)
@@ -1039,6 +1040,9 @@ function Profiles:EditMenu()
                     self:Save({ fav1 = clean(raid, Profiles.MAX_FAV), fav2 = clean(dungeon, Profiles.MAX_FAV) })
                 end)
         end },
+        { text = "Portrait...", func = function() self:PickPortrait(self.banner.edit) end },
+        { text = "Color...", func = function() self:PickColor(self.banner.edit) end },
+        { text = "Song...", func = function() UI.ShowMenu(self.banner.edit, self:SongMenu()) end },
         { text = "Main role", header = true },
     }
     local current = content.role and ROLE[content.role]
@@ -1271,6 +1275,17 @@ local function inspectButton(self, parent)
     return btn
 end
 
+-- The Character card's numbers (Gear.STATS keys): label, colour (health green,
+-- mana blue, the rest the soft label colour).
+-- Health and mana as bars, like the game's unit frames (Jake), the stats close
+-- together under them.
+Profiles.STAT_BARS = { { "hp", "Health", { 0.10, 0.72, 0.15 } }, { "mana", "Mana", { 0.12, 0.38, 0.92 } } }
+Profiles.STAT_ROWS = { { "str", "Strength" }, { "agi", "Agility" }, { "sta", "Stamina" }, { "int", "Intellect" },
+    { "spi", "Spirit" }, { "armor", "Armor" } }
+Profiles.STAT_BAR = "Interface\\TargetingFrame\\UI-StatusBar"
+Profiles.STAT_BAR_H, Profiles.STAT_BAR_GAP, Profiles.STAT_BARS_GAP, Profiles.STAT_ROW_H = 16, 3, 8, 13
+Profiles.STAT_COL_W = 128 -- the stats sit in a narrower column, centred, names near their numbers (Jake)
+
 function Profiles:BuildCharacter(page)
     local c = CreateFrame("Frame", nil, page)
     c:SetPoint("TOPLEFT", COL2_X, -BODY_Y)
@@ -1336,17 +1351,73 @@ function Profiles:BuildCharacter(page)
     for i, s in ipairs(MINI.bottom) do
         icon(s, math.floor((mw - rowW) / 2) + (i - 1) * (MINI_ICON + MINI_ROW_GAP), lastY)
     end
-    -- the middle: their class icon (no model), Inspect above the weapons
-    c.miniInspect = inspectButton(self, c)
-    c.miniInspect:SetPoint("TOP", c, "TOPLEFT", COL_W / 2, -(8 + inspectY))
-    c.miniInspect:SetFrameLevel(c:GetFrameLevel() + 4)
-    c.miniInspect:Hide()
+    -- the middle: the model or their numbers, a button above the weapons to
+    -- switch between them (Jake; clicking the art or a gear icon opens Inspect)
+    c.viewBtn = UI.Button(c, "Show stats", INSPECT_W + 12, INSPECT_H, function()
+        ns.db.frames.charStats = not self:StatsView()
+        self:RefreshCharacter()
+    end)
+    c.viewBtn:SetPoint("TOP", c, "TOPLEFT", COL_W / 2, -(8 + inspectY))
+    c.viewBtn:SetFrameLevel(c:GetFrameLevel() + 4)
+    c.viewBtn:Hide()
     c.classIcon = portrait(c, 48)
     c.classIcon:SetPoint("CENTER", c, "TOPLEFT", COL_W / 2, -(8 + math.floor((miniTop + inspectY) / 2)))
     c.classIcon:Hide()
+    -- ... or, when they've shared them, their character sheet's numbers (Jake)
+    local st = CreateFrame("Frame", nil, c)
+    st:SetSize(modelW - 20, 100) -- (its height is set by what shows)
+    st:SetPoint("CENTER", c, "TOPLEFT", COL_W / 2, -(8 + math.floor((miniTop + inspectY) / 2)))
+    st:SetFrameLevel(c:GetFrameLevel() + 4)
+    st.bg = st:CreateTexture(nil, "BACKGROUND")
+    st.bg:SetPoint("TOPLEFT", -8, 6)
+    st.bg:SetPoint("BOTTOMRIGHT", 8, -6)
+    st.bg:SetColorTexture(0, 0, 0, 0.55)
+    st.bars = {}
+    for _, r in ipairs(Profiles.STAT_BARS) do
+        local b = CreateFrame("Frame", nil, st)
+        b:SetSize(modelW - 20, Profiles.STAT_BAR_H)
+        b.bg = b:CreateTexture(nil, "BACKGROUND")
+        b.bg:SetAllPoints()
+        b.bg:SetColorTexture(0, 0, 0, 0.7)
+        b.fill = b:CreateTexture(nil, "BORDER")
+        b.fill:SetPoint("TOPLEFT", 1, -1)
+        b.fill:SetPoint("BOTTOMRIGHT", -1, 1)
+        b.fill:SetTexture(Profiles.STAT_BAR)
+        b.fill:SetVertexColor(r[3][1], r[3][2], r[3][3])
+        b.label = UI.Text(b, 10)
+        b.label:SetPoint("LEFT", 5, 0)
+        b.label:SetText(r[2])
+        b.label:SetTextColor(1, 1, 1)
+        b.value = UI.Text(b, 11)
+        b.value:SetPoint("RIGHT", -5, 0)
+        b.value:SetJustifyH("RIGHT")
+        b.value:SetTextColor(1, 1, 1)
+        b.key = r[1]
+        st.bars[#st.bars + 1] = b
+    end
+    st.rows = {}
+    for i, r in ipairs(Profiles.STAT_ROWS) do
+        local label = UI.Text(st, 10)
+        label:SetText(r[2])
+        label:SetTextColor(0.72, 0.70, 0.64)
+        local value = UI.Text(st, 11)
+        value:SetJustifyH("RIGHT")
+        st.rows[i] = { key = r[1], label = label, value = value }
+    end
+    st:Hide()
+    c.stats = st
     local btn = inspectButton(self, c)
     btn:SetPoint("BOTTOM", 0, 16) -- 8px inside the art, which is 8px inside the card
     c.inspect = btn
+end
+
+-- The Character card shows numbers rather than the model (the toggle; on by
+-- default while Jake works on their look).
+Profiles.STATS_DEFAULT = true
+function Profiles:StatsView()
+    local v = ns.db.frames.charStats
+    if v == nil then return Profiles.STATS_DEFAULT end
+    return v
 end
 
 function Profiles:RefreshCharacter()
@@ -1357,7 +1428,23 @@ function Profiles:RefreshCharacter()
     self.charFor = who
     local p = G().players[who]
     if c.backdrop then c.backdrop:SetClass(p and p.class) end
-    local shows = Gear and Gear:Dress(c.model, who) or false
+    -- their numbers: ours read live, others' from what they shared
+    local mine = Gear and Gear:UnitOf(who) == "player"
+    local stats = Gear and (mine and Gear.Stats({ st = Gear.StatsNow() }) or (rec and Gear.Stats(rec))) or nil
+    local live = Gear and Gear:UnitOf(who) ~= nil and c.model ~= nil
+    -- the model stays hidden while showing numbers, and while the Inspect
+    -- window is open (a model draws through windows over it: Jake saw ours
+    -- inside Inspect)
+    local inspecting = Gear and Gear.window and Gear.window:IsShown()
+    local useStats = stats ~= nil and (not live or self:StatsView())
+    local shows = false
+    if live and not useStats and not inspecting then
+        shows = Gear:Dress(c.model, who)
+    elseif c.model then
+        c.model:Hide()
+        c.model.dressed = nil -- (dressed again when it shows)
+    end
+    if c.backdrop and c.backdrop.shadow then c.backdrop.shadow:SetShown(shows) end
     -- their gear around the model (ours as we wear it now), or around their
     -- class icon; nothing shown or shared: their portrait
     local ids
@@ -1369,9 +1456,39 @@ function Profiles:RefreshCharacter()
     c.pic:SetShown(not shows and not ids)
     if not shows and not ids then c.pic:Set(self.viewing) end
     c.inspect:SetShown(ids == nil)
-    c.miniInspect:SetShown(ids ~= nil)
-    c.classIcon:SetShown(ids ~= nil and not shows)
-    if ids and not shows then
+    if not ids then stats, useStats = nil, false end
+    c.viewBtn:SetShown(ids ~= nil and live and stats ~= nil)
+    c.viewBtn:SetLabel(useStats and "Show model" or "Show stats")
+    c.stats:SetShown(useStats)
+    if useStats then
+        -- the bars (no mana bar for rage and energy classes), then the stats
+        local y = 0
+        for _, b in ipairs(c.stats.bars) do
+            local v = stats[b.key] or 0
+            local show = not (b.key == "mana" and v == 0)
+            b:SetShown(show)
+            if show then
+                b:ClearAllPoints()
+                b:SetPoint("TOPLEFT", 0, -y)
+                b.value:SetText(tostring(v))
+                y = y + Profiles.STAT_BAR_H + Profiles.STAT_BAR_GAP
+            end
+        end
+        y = y - Profiles.STAT_BAR_GAP + Profiles.STAT_BARS_GAP
+        local inset = math.max(0, math.floor((c.stats:GetWidth() - Profiles.STAT_COL_W) / 2))
+        for _, r in ipairs(c.stats.rows) do
+            r.label:ClearAllPoints()
+            r.label:SetPoint("TOPLEFT", inset, -y)
+            r.value:ClearAllPoints()
+            r.value:SetPoint("TOPRIGHT", -inset, -y)
+            r.value:SetText(tostring(stats[r.key] or 0))
+            y = y + Profiles.STAT_ROW_H
+        end
+        c.stats:SetHeight(y)
+    end
+    local icon = ids ~= nil and not shows and not useStats and not (live and inspecting)
+    c.classIcon:SetShown(icon)
+    if icon then
         local i = p and p.class and CLASS_ICON[p.class]
         c.classIcon.icon:SetTexture(i and self.ICONS[i][1] or NO_ICON)
         c.classIcon.ring:SetColorTexture(classColor(who))
@@ -1423,7 +1540,8 @@ function Profiles:BuildProfessions(page)
         end
         UI.ShowMenu(x, menu)
     end)
-    c.switch:SetPoint("RIGHT", c, "TOPRIGHT", -5, -HEAD_H / 2)
+    c.switch:SetPoint("RIGHT", c, "TOPRIGHT", -UI.HeadInset(), -UI.HeadMid(HEAD_H))
+    UI.DropArrow(c.switch)
     c.tiles = {}
     local w = (COL_W - 16 - TILE_GAP) / 2
     for i = 1, 2 do
@@ -1436,19 +1554,17 @@ function Profiles:BuildProfessions(page)
         local hl = t:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints()
         UI.Hover(hl, 0.05)
-        t.pic = portrait(t, 44)
-        t.pic:SetPoint("TOP", 0, -14)
+        -- (no recipe count: Jake; the icon and text are bigger to fill the tile)
+        t.pic = portrait(t, 56)
+        t.pic:SetPoint("TOP", 0, -16)
         t.pic.ring:SetColorTexture(1, 1, 1, 0.12)
-        t.name = UI.Text(t, 13)
-        t.name:SetPoint("TOP", t.pic, "BOTTOM", 0, -8)
-        t.skill = UI.Text(t, 11)
-        t.skill:SetPoint("TOP", t.name, "BOTTOM", 0, -5)
+        t.name = UI.Text(t, 15)
+        t.name:SetPoint("TOP", t.pic, "BOTTOM", 0, -10)
+        t.skill = UI.Text(t, 12)
+        t.skill:SetPoint("TOP", t.name, "BOTTOM", 0, -6)
         t.skill:SetTextColor(0.7, 0.7, 0.75)
-        t.recipes = UI.Text(t, 10)
-        t.recipes:SetPoint("TOP", t.skill, "BOTTOM", 0, -5)
-        t.recipes:SetTextColor(0.55, 0.55, 0.6)
-        t.hint = UI.Text(t, 10)
-        t.hint:SetPoint("BOTTOM", 0, 10)
+        t.hint = UI.Text(t, 11)
+        t.hint:SetPoint("BOTTOM", 0, 12)
         t.hint:SetTextColor(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3])
         t:SetScript("OnClick", function(tile)
             if tile.prof and not tile.prof.gathering then self:OpenBook(self.profChar or self.viewing, tile.prof.name) end
@@ -1467,7 +1583,7 @@ function Profiles:RefreshProfessions()
     end
     self.profChar = name
     c.switch:SetShown(#linked > 1)
-    c.switch:SetLabel(display(name) .. " v")
+    c.switch:SetLabel(display(name))
     local profs = self:Professions(name)
     for i, t in ipairs(c.tiles) do
         local p = profs[i]
@@ -1476,9 +1592,8 @@ function Profiles:RefreshProfessions()
             t.pic.icon:SetTexture(p.icon)
             t.name:SetText(p.name)
             t.skill:SetText(("%d / %d"):format(p.rank, p.max))
-            t.recipes:SetText(p.gathering and "gathering" or (p.recipes and (p.recipes == 1 and "1 recipe"
-                or (p.recipes .. " recipes")) or "recipes not shared yet"))
-            t.hint:SetText(p.gathering and "" or "Browse recipes")
+            t.hint:SetText(p.gathering and "" or (p.recipes and "Browse recipes" or "Recipes not shared yet"))
+            if p.recipes then t.hint:SetTextColor(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3]) else t.hint:SetTextColor(0.55, 0.55, 0.6) end
         end
         t:SetShown(p ~= nil)
     end
@@ -1584,7 +1699,7 @@ function Profiles:RefreshBook()
         if x.name == b.prof then p = x end
     end
     f.title:SetText(("%s's %s"):format(colorName(b.name), b.prof))
-    f.meta:SetText(p and ("%d / %d, %s"):format(p.rank, p.max, #recipes == 1 and "1 recipe" or (#recipes .. " recipes")) or "")
+    f.meta:SetText(p and ("%d / %d"):format(p.rank, p.max) or "")
     local visible = #f.rows
     f.offset = math.max(0, math.min(f.offset or 0, math.ceil((#recipes - visible) / 2) * 2))
     f.hint:Set(f.offset / 2, f.perCol, math.ceil(#recipes / 2))
@@ -1625,7 +1740,7 @@ function Profiles:BuildTop(page)
         if #menu == 1 then menu[2] = { text = "Nobody yet", disabled = true } end
         UI.ShowMenu(b, menu)
     end)
-    c.all:SetPoint("RIGHT", c, "TOPRIGHT", -5, -HEAD_H / 2)
+    c.all:SetPoint("RIGHT", c, "TOPRIGHT", -UI.HeadInset(), -UI.HeadMid(HEAD_H))
     c.tiles = {}
     local inner = COL_W - 16
     local gap = (inner - Profiles.TOP * TILE_W) / (Profiles.TOP - 1)
@@ -1700,7 +1815,7 @@ function Profiles:BuildKudos(page)
     self.kudosCard = c
     UI.Parchment(c)
     c.give = UI.Button(c, "Give kudos", 80, 18, function(x) UI.ShowMenu(x, self:KudosMenu()) end)
-    c.give:SetPoint("RIGHT", c, "TOPRIGHT", -5, -HEAD_H / 2)
+    c.give:SetPoint("RIGHT", c, "TOPRIGHT", -UI.HeadInset(), -UI.HeadMid(HEAD_H))
     c.offset = 0
     c.visible = math.floor((KUDOS_H - HEAD_H - 8) / KUDOS_ROW_H)
     c.rows = {}

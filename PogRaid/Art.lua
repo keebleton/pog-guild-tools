@@ -365,9 +365,34 @@ end
 -- art:Set(classFile, tree) or art:Random() (any class's tree).
 Art.CARD_ALPHA = 0.7 -- page art, strong (Jake: was 0.3, which let the theme's surface through; full was too bright behind text)
 
+-- The art is the card's header, not wallpaper under its rows (UI experiment):
+-- full strength across the top where the title sits, fading to a scrim of
+-- the card's own colour behind the rows (`top` px clear, then `fade` px of
+-- gradient). ctl:SetSparse(true) lifts the scrim when the card is empty or
+-- nearly, so the whole picture shows.
+Art.SCRIM = { top = 40, fade = 110, alpha = 0.8 }
 function Art.CardArt(card)
     card.artLayer, card.artSub, card.artAlpha = "BACKGROUND", 1, Art.CARD_ALPHA
     local ctl = { card = card }
+    local S, c = Art.SCRIM, ns.UI.CARD
+    ctl.fade = card:CreateTexture(nil, "BACKGROUND", nil, 2)
+    ctl.fade:SetPoint("TOPLEFT", card, "TOPLEFT", 0, -S.top)
+    ctl.fade:SetPoint("TOPRIGHT", card, "TOPRIGHT", 0, -S.top)
+    ctl.fade:SetHeight(S.fade)
+    ctl.fade:SetColorTexture(1, 1, 1, 1)
+    local ok = CreateColor and ctl.fade.SetGradient and pcall(ctl.fade.SetGradient, ctl.fade, "VERTICAL",
+        CreateColor(c[1], c[2], c[3], S.alpha), CreateColor(c[1], c[2], c[3], 0))
+    if not ok then ctl.fade:SetColorTexture(c[1], c[2], c[3], S.alpha / 2) end
+    ctl.scrim = card:CreateTexture(nil, "BACKGROUND", nil, 2)
+    ctl.scrim:SetPoint("TOPLEFT", ctl.fade, "BOTTOMLEFT")
+    ctl.scrim:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT")
+    ctl.scrim:SetColorTexture(c[1], c[2], c[3], S.alpha)
+    function ctl:SetSparse(on)
+        self.sparse = on and true or false
+        local show = not self.sparse and self.item ~= nil
+        self.fade:SetShown(show)
+        self.scrim:SetShown(show)
+    end
     function ctl:Show(item)
         local art = item and Art.Has(item) ~= false and item or nil
         local key = art and (art.base or art.atlas or art.path)
@@ -375,6 +400,7 @@ function Art.CardArt(card)
         if not art then hideAll(card) end
         self.key = key
         self.item = art
+        self:SetSparse(self.sparse)
     end
     function ctl:Set(class, i) self:Show(class and Art.TreeArt(class, i)) end
     return ctl

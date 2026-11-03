@@ -21,6 +21,13 @@ local BOARD_Y = MSG_Y + MSG_H + 4
 local HELP_H = 0                                  -- (no controls hint under the board: Jake)
 local BOARD_MAX_H = FRAME_H - PAD - HELP_H - 6 - BOARD_Y
 local MAX_CELL = 40
+-- the game and its leaderboard on one page (Jake): the board from the page's
+-- left edge, the guild's times for the picked difficulty in a card filling the
+-- rest of the width and as tall as the game (bar to board bottom), so nothing
+-- floats (UI experiment). LB_W is its narrowest (Expert).
+local LB_W = 240
+local GAME_W = INNER_W - LB_W - GAP
+Games.layout = { LB_W = LB_W, GAME_W = GAME_W, STATUS_Y = STATUS_Y }
 
 local SAPPER_ICON = "Interface\\Icons\\Spell_Fire_SelfDestruct"
 local SAPPER_ITEM = 10646 -- Goblin Sapper Charge
@@ -221,7 +228,7 @@ function Games:Rank(level, who)
 end
 
 function Games:Changed()
-    if self.page and self.page:IsShown() and self.showingScores then self:RefreshScores() end
+    if self.page and self.page:IsShown() and self.mode == "sweeper" then self:RefreshScores() end
 end
 
 ------------------------------------------------------------------------
@@ -269,18 +276,13 @@ function Games:Build(page)
         tx = tx + t:GetWidth() + (UI.classic and UI.SUBTAB_GAP or 4)
     end
     self.levelButtons = {}
-    local x = FRAME_W - PAD - 100 - 12 - (3 * 96 + 2 * 4)
+    local x = FRAME_W - PAD - (3 * 96 + 2 * 4)
     for _, lv in ipairs(Games.LEVELS) do
-        local b = UI.Button(page, lv.label, 96, BAR_H, function()
-            self:ShowScores(false)
-            self:NewGame(lv.key)
-        end)
+        local b = UI.Button(page, lv.label, 96, BAR_H, function() self:NewGame(lv.key) end)
         b:SetPoint("TOPLEFT", x, -ROW1_Y)
         self.levelButtons[lv.key] = b
         x = x + 96 + 4
     end
-    self.scoresBtn = UI.Button(page, "Leaderboard", 100, BAR_H, function() self:ShowScores(not self.showingScores) end)
-    self.scoresBtn:SetPoint("TOPLEFT", FRAME_W - PAD - 100, -ROW1_Y)
 
     -- status bar: sappers left | new game | timer
     local bar = CreateFrame("Frame", nil, page)
@@ -354,10 +356,14 @@ function Games:SetMode(mode)
     local sweeper = mode == "sweeper"
     for key, t in pairs(self.modeTabs) do t:SetSelected(key == mode) end
     for _, b in pairs(self.levelButtons) do b:SetShown(sweeper) end
-    self.scoresBtn:SetShown(sweeper)
     for key, v in pairs(self.views) do v:SetShown(key == mode) end
     if sweeper then
-        self:ShowScores(self.showingScores or false)
+        self.scores:Show()
+        self.bar:Show()
+        self.board:Show()
+        self.bar.message:Show()
+        self:PublishAll()
+        self:RefreshScores()
     else
         self.scores:Hide()
         self.bar:Hide()
@@ -368,117 +374,102 @@ function Games:SetMode(mode)
     end
 end
 
--- Three columns, one per difficulty, in place of the board.
+-- The leaderboard card: the picked difficulty's fastest times.
 local SCORE_ROWS = 20
 local SCORE_H = 22
 
 function Games:BuildScores(page)
-    local panel = CreateFrame("Frame", nil, page)
-    panel:SetPoint("TOPLEFT", PAD, -STATUS_Y)
-    panel:SetSize(INNER_W, FRAME_H - PAD - STATUS_Y)
-    panel:Hide()
-    self.scores = panel
-    local colW = (INNER_W - 2 * 10) / 3
-    panel.cols = {}
-    for i, lv in ipairs(Games.LEVELS) do
-        local c = CreateFrame("Frame", nil, panel)
-        c:SetPoint("TOPLEFT", (i - 1) * (colW + 10), 0)
-        c:SetSize(colW, panel:GetHeight())
-        UI.Card(c)
-        c.title = UI.Text(c, 13)
-        c.title:SetPoint("TOPLEFT", 10, -9)
-        c.title:SetText(lv.label)
-        c.sub = UI.Text(c, 10)
-        c.sub:SetPoint("TOPRIGHT", -10, -11)
-        c.sub:SetTextColor(0.5, 0.5, 0.55)
-        c.sub:SetText(("%dx%d, %d sappers"):format(lv.cols, lv.rows, lv.mines))
-        local line = c:CreateTexture(nil, "ARTWORK")
-        line:SetPoint("TOPLEFT", 1, -32)
-        line:SetPoint("TOPRIGHT", -1, -32)
-        line:SetHeight(1)
-        UI.Line(line, 0.06)
-        c.rows = {}
-        for r = 1, SCORE_ROWS + 1 do
-            local row = CreateFrame("Frame", nil, c)
-            row:SetHeight(SCORE_H)
-            local y = -36 - (r - 1) * SCORE_H - (r > SCORE_ROWS and 8 or 0)
+    local c = CreateFrame("Frame", nil, page)
+    c:SetPoint("TOPLEFT", FRAME_W - PAD - LB_W, -STATUS_Y)
+    c:SetSize(LB_W, FRAME_H - PAD - STATUS_Y)
+    UI.Card(c)
+    self.scores = c
+    c.title = UI.SectionTitle(c, "Leaderboard")
+    c.title:SetPoint("LEFT", c, "TOPLEFT", 10, -UI.HeadMid(32))
+    c.sub = UI.Text(c, 11)
+    c.sub:SetPoint("RIGHT", c, "TOPRIGHT", -10, -UI.HeadMid(32))
+    c.sub:SetTextColor(0.6, 0.6, 0.65)
+    local line = c:CreateTexture(nil, "ARTWORK")
+    line:SetPoint("TOPLEFT", 1, -32)
+    line:SetPoint("TOPRIGHT", -1, -32)
+    line:SetHeight(1)
+    UI.Line(line, 0.06)
+    c.rows = {}
+    for r = 1, SCORE_ROWS + 1 do
+        local row = CreateFrame("Frame", nil, c)
+        row:SetHeight(SCORE_H)
+        if r > SCORE_ROWS then
+            -- your own place sits at the card's bottom
+            row:SetPoint("BOTTOMLEFT", 2, 6)
+            row:SetPoint("BOTTOMRIGHT", -2, 6)
+        else
+            local y = -36 - (r - 1) * SCORE_H
             row:SetPoint("TOPLEFT", 2, y)
             row:SetPoint("TOPRIGHT", -2, y)
-            row.mine = row:CreateTexture(nil, "BACKGROUND")
-            row.mine:SetAllPoints()
-            row.mine:SetColorTexture(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3], 0.16)
-            row.rank = UI.Text(row, 11)
-            row.rank:SetPoint("RIGHT", row, "LEFT", 32, 0)
-            row.rank:SetJustifyH("RIGHT")
-            row.rank:SetTextColor(0.6, 0.6, 0.65)
-            row.ago = UI.Text(row, 10)
-            row.ago:SetPoint("RIGHT", -8, 0)
-            row.ago:SetTextColor(0.5, 0.5, 0.55)
-            row.time = UI.Text(row, 12)
-            row.time:SetPoint("RIGHT", row, "RIGHT", -44, 0)
-            row.time:SetJustifyH("RIGHT")
-            row.name = UI.Text(row, 12)
-            row.name:SetPoint("LEFT", 42, 0)
-            row.name:SetPoint("RIGHT", row.time, "LEFT", -8, 0)
-            row.name:SetJustifyH("LEFT")
-            row.name:SetWordWrap(false)
-            c.rows[r] = row
         end
-        c.empty = UI.Text(c, 11)
-        c.empty:SetPoint("TOP", 0, -56)
-        c.empty:SetTextColor(0.5, 0.5, 0.55)
-        c.empty:SetText("No times yet.")
-        panel.cols[lv.key] = c
+        row.mine = row:CreateTexture(nil, "BACKGROUND")
+        row.mine:SetAllPoints()
+        row.mine:SetColorTexture(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3], 0.16)
+        row.rank = UI.Text(row, 11)
+        row.rank:SetPoint("RIGHT", row, "LEFT", 32, 0)
+        row.rank:SetJustifyH("RIGHT")
+        row.rank:SetTextColor(0.6, 0.6, 0.65)
+        row.ago = UI.Text(row, 10)
+        row.ago:SetPoint("RIGHT", -8, 0)
+        row.ago:SetTextColor(0.5, 0.5, 0.55)
+        row.time = UI.Text(row, 12)
+        row.time:SetPoint("RIGHT", row, "RIGHT", -44, 0)
+        row.time:SetJustifyH("RIGHT")
+        row.name = UI.Text(row, 12)
+        row.name:SetPoint("LEFT", 42, 0)
+        row.name:SetPoint("RIGHT", row.time, "LEFT", -8, 0)
+        row.name:SetJustifyH("LEFT")
+        row.name:SetWordWrap(false)
+        c.rows[r] = row
     end
-end
-
-function Games:ShowScores(on)
-    self.showingScores = on or nil
-    self.scores:SetShown(on)
-    self.bar:SetShown(not on)
-    self.board:SetShown(not on)
-    self.bar.message:SetShown(not on)
-    self.scoresBtn:SetLabel(on and "Back to game" or "Leaderboard")
-    self.scoresBtn:SetSelected(on)
-    if on then
-        self:PublishAll()
-        self:RefreshScores()
-    end
+    c.empty = UI.Text(c, 11)
+    c.empty:SetPoint("TOP", 0, -56)
+    c.empty:SetTextColor(0.5, 0.5, 0.55)
+    c.empty:SetText("No times yet.")
 end
 
 local MEDALS = { { 1, 0.82, 0.2 }, { 0.8, 0.82, 0.88 }, { 0.85, 0.55, 0.3 } }
 
 function Games:RefreshScores()
     local me = ns.Sync:Me()
+    local c, level = self.scores, self.level
     for _, lv in ipairs(Games.LEVELS) do
-        local c = self.scores.cols[lv.key]
-        local list = self:Leaderboard(lv.key)
-        local myRank = self:Rank(lv.key, me)
-        for r, row in ipairs(c.rows) do
-            local rec, rank = list[r], r
-            if r > SCORE_ROWS then
-                -- your own place, if you're below the top rows
-                rank = myRank
-                rec = (myRank and myRank > SCORE_ROWS) and list[myRank] or nil
-            end
-            if rec then
-                row.rank:SetText(rank .. ".")
-                local medal = MEDALS[rank]
-                if medal then row.rank:SetTextColor(medal[1], medal[2], medal[3]) else row.rank:SetTextColor(0.6, 0.6, 0.65) end
-                local p = ns.db.guild.players[rec.author]
-                local cc = p and p.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[p.class]
-                row.name:SetText(Ambiguate(rec.author, "short"))
-                if cc then row.name:SetTextColor(cc.r, cc.g, cc.b) else row.name:SetTextColor(UI.TEXT[1], UI.TEXT[2], UI.TEXT[3]) end
-                row.time:SetText(fmtBest(rec.best))
-                row.ago:SetText(ns.Home and ns.Home.Ago(rec.t) or "")
-                row.mine:SetShown(rec.author == me)
-                row:Show()
-            else
-                row:Hide()
-            end
-        end
-        c.empty:SetShown(#list == 0)
+        if lv.key == level then c.sub:SetText(lv.label) end
     end
+    local list = self:Leaderboard(level)
+    local myRank = self:Rank(level, me)
+    local fit = self.scoresFit or SCORE_ROWS
+    for r, row in ipairs(c.rows) do
+        local rec, rank = list[r], r
+        if r > SCORE_ROWS then
+            -- your own place, if you're below the rows that fit
+            rank = myRank
+            rec = (myRank and myRank > fit) and list[myRank] or nil
+        elseif r > fit then
+            rec = nil
+        end
+        if rec then
+            row.rank:SetText(rank .. ".")
+            local medal = MEDALS[rank]
+            if medal then row.rank:SetTextColor(medal[1], medal[2], medal[3]) else row.rank:SetTextColor(0.6, 0.6, 0.65) end
+            local p = ns.db.guild.players[rec.author]
+            local cc = p and p.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[p.class]
+            row.name:SetText(Ambiguate(rec.author, "short"))
+            if cc then row.name:SetTextColor(cc.r, cc.g, cc.b) else row.name:SetTextColor(UI.TEXT[1], UI.TEXT[2], UI.TEXT[3]) end
+            row.time:SetText(fmtBest(rec.best))
+            row.ago:SetText(ns.Home and ns.Home.Ago(rec.t) or "")
+            row.mine:SetShown(rec.author == me)
+            row:Show()
+        else
+            row:Hide()
+        end
+    end
+    c.empty:SetShown(#list == 0)
 end
 
 local function makeCell(board)
@@ -538,10 +529,17 @@ function Games:NewGame(key)
     for k, b in pairs(self.levelButtons) do b:SetSelected(k == lv.key) end
 
     -- size cells to fit the window, centre the board
-    local cell = math.min(math.floor((INNER_W - 4) / lv.cols), math.floor((BOARD_MAX_H - 4) / lv.rows), MAX_CELL)
+    local cell = math.min(math.floor((GAME_W - 4) / lv.cols), math.floor((BOARD_MAX_H - 4) / lv.rows), MAX_CELL)
     self.cellSize = cell
     local w, h = lv.cols * cell + 4, lv.rows * cell + 4
-    local bx = PAD + math.floor((INNER_W - w) / 2)
+    local bx = PAD
+    if self.scores then
+        local sh = (BOARD_Y - STATUS_Y) + h
+        self.scores:ClearAllPoints()
+        self.scores:SetPoint("TOPLEFT", self.page, "TOPLEFT", bx + w + GAP, -STATUS_Y)
+        self.scores:SetSize(INNER_W - w - GAP, sh)
+        self.scoresFit = math.min(SCORE_ROWS, math.floor((sh - 36 - SCORE_H - 14) / SCORE_H))
+    end
     self.board:ClearAllPoints()
     self.board:SetSize(w, h)
     self.board:SetPoint("TOPLEFT", self.page, "TOPLEFT", bx, -BOARD_Y)
@@ -567,6 +565,7 @@ function Games:NewGame(key)
     for i = n + 1, #self.cells do self.cells[i]:Hide() end
     self.page:SetScript("OnUpdate", nil)
     self:Refresh()
+    if self.scores then self:RefreshScores() end
 end
 
 function Games:Click(i, button)
