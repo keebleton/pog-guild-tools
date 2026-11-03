@@ -1,123 +1,118 @@
 # Pog Guild Tools
 
-Raid leader and guild tools for World of Warcraft: Forever (interface 16001). Tabs include **Home** (the dashboard `/pog` opens on), **Raid Plans** (formerly Boards) (draw a boss diagram on the raid's own map art and pop it up on everyone's screen) **Roster** (build raid rosters from the guild) **Attendance** (logs who raided) and **Loot** (who got what). Officer sync is next.
+A guild home base for **World of Warcraft: Forever**. Type **/pog** to open it. It looks like part of the game: the
+game's own window frame, gold lettering, buttons and sounds, in a choice of themes.
 
-- `PogRaid/` is the addon. It is linked (junction) into `_classic_beta_\Interface\AddOns\PogRaid`, so edits here are live after `/reload`.
-- `tests/` runs the real addon files against a stubbed client: `python tests/run_tests.py` (needs `pip install lupa`).
-- `tools/make_textures.py` regenerates `Media/disc.tga` and `Media/ring.tga`; `tools/make_logo.py` the gnome logo.
-- `Package for CurseForge.bat` builds `dist/PogGuildTools-<version>.zip` (the folder inside stays `PogRaid`).
-- `CLAUDE.md` has the project notes Claude reads on any computer.
+Everything your guild needs in one window: a message board and group finder, profiles, raid rosters, attendance, a loot
+log, a crafting directory, raid plans, and a few games to play while you wait for the summon.
 
-## Working on another computer
+## Install
 
-1. Install World of Warcraft (Forever), [Git](https://git-scm.com/download/win), [GitHub Desktop](https://desktop.github.com/), [Python](https://www.python.org/downloads/) (tick "Add python.exe to PATH") and Claude Code.
-2. In GitHub Desktop: File > Clone repository > `keebleton/pog-raid`.
-3. Double-click `Set up this PC.bat` in the cloned folder. It links the addon into WoW, installs what the tests need and runs them.
-4. Don't let the CurseForge app install or update Pog Guild Tools on a computer you develop on: it replaces the link with its own copy.
-5. Every session: **Fetch origin** (and Pull) in GitHub Desktop before you start, **Commit** and **Push origin** when you're done.
+- **CurseForge:** [Pog Guild Tools](https://www.curseforge.com/wow/addons/pog-guild-tools), or search "Pog Guild Tools"
+  in the CurseForge app.
+- **WowUp:** search "Pog Guild Tools".
+- **By hand:** download the zip from CurseForge and put the `PogRaid` folder inside it into
+  `World of Warcraft\_forever_\Interface\AddOns`.
 
-## Commands
-
-- `/pog` opens Home (again closes it); `/pog profile [name]` opens your profile or someone else's; `/pog home`, `/pog boards`, `/pog roster`, `/pog attendance`, `/pog loot`, `/pog games`, `/pog duels`, `/pog plans` and `/pog settings` open a tab; `/pog minimap` shows/hides the minimap button; `/pog late`, `/pog early` and `/pog ontime` tell the raid leaders about tonight
-- `/pog probe` reports what this client supports (map art, messaging lockdown, events) and runs a self-whisper round trip
-- `/pog test` sends the selected board to yourself, so you can see the viewer solo
-- `/pog check` lists who in the group has PogRaid
-- `/pog reset` recentres the windows
-
-## Editor
-
-Tools: Move, Marker, Player, Group (Tanks/Healers/Melee/Ranged), Arrow, Line, Pen, Rect, Circle, Text.
-
-For drawing your own rooms: Line draws walls (Shift locks it to 45 degree steps, ends snap to nearby wall ends and rectangle corners), Rect drags corner to corner (Shift for a square), Pen draws freehand and is simplified to at most 60 points so boards stay small. Rect and Circle have three fills: Zone (see-through), Solid (pillars, pits), Outline (walls only). Gray is the wall colour.
-
-Right-click deletes, the mouse wheel zooms, right-drag pans. Map picks your current map, a floor of the same instance, a blank grid, or a map ID. "Zoom to boss" uses the Encounter Journal's boss positions for the map.
-
-"Show to raid" sends the board to the group. Only boards from the leader or assistants are shown. While addon messages are locked (boss fights on the 12.0 API), the board waits and sends when they unlock.
+The shared features (message board, group finder, profiles, crafting, leaderboards, duels, raid plans, attendance) work
+between guildies who run Pog Guild Tools, so get your guild on it together.
 
 ## Home
 
-The dashboard `/pog` opens on. A card for the guild with its logo on a dark round plate (`Media/logo.tga`, made by `tools_make_logo.py <image>`), guild name, message of the day (hover for it in full plus the guild info; officers who can edit it get an Edit button), and a quiet line of counts ("66 members, 4 online"), at the top of the left column, laid out like the game's guild window. Below, three columns:
+Your guild at a glance: the guild's name and message of the day, who's online, level-ups and achievements, guild chat,
+and the guild's recent blue-and-better drops.
 
-- **Activity:** level-ups, achievements, joins and leaves from guild roster updates and guild achievement messages. **Online now** underneath (click to whisper or invite).
-- **Message board:** officers post (title + message), pin and delete; anyone with Pog Guild Tools comments in the thread and can delete their own comments. An open post takes the whole middle column.
-- **Guild chat** under the message board: the last 100 guild chat lines you saw, newest at the bottom like the chat window (scroll up for older ones; hover a line for all of it). Officers are guild ranks at or above rank index 1 by default (`PogRaidDB.guild.officerRank`).
-- **Group finder:** anyone posts what they are doing and who they need; one listing each, gone after 45 minutes. Listings show how full the group is (1/5, 3/5, 5/5 full; raids count against 10/20/40) and update as people join. Click a listing to **Request to join** (the poster gets a pop-up with Invite / No thanks, sent addon to addon by whisper) or whisper the poster; click your own listing to answer requests. When a guildie posts a new group, a small pop-up fades in above your chat box ("Flyne is forming a group for Deadmines"); click it to ask to join, right-click to dismiss (Settings: New group pop-ups). **Recent loot** (blue and up) underneath: what you and your group get, plus every guildie's own drops, shared for a day (the game only shows each player their own group's loot).
-
-The board and group finder are shared between everyone in the guild running Pog Guild Tools (Sync.lua): changes go out on the guild addon channel as they happen, and people who log in later catch up by comparing a fingerprint of what each addon holds and trading only the differences. Data is kept per guild. `tests/test_sync.py` runs four clients side by side to test this.
-
-## LFG
-
-Everything about getting a group together. On the left, **You**: your role (Tank, Heals or DPS, with the game's role icons; your profile's main role until you pick) and an optional note, then every dungeon by level, the ones in your level range standing out. Click the dungeons you want (each gets a tick) and you're looking (four hours, or until **Stop looking**; changing anything renews it). **Post group** sits in the Groups card's header.
-
-On the right, **Groups**: the guild's group listings (the same ones as Home's group finder) as tiles, with what it is, who leads it and what they need, how full it is and the time left. **Join** asks to join; your own has **Manage** (answer requests, close it). Below, **Looking for group**: everyone looking, with their role, level, dungeons and note; the ones after the same dungeons as you come first, those dungeons marked. Click someone to whisper or invite them. Who's looking is shared with the guild (collection `lfd`, one record per player).
-
-## Wishlist
-
-Up to three wishlists per character (the Wishlists button makes, switches, renames (e.g. "Healing set") and deletes them), each a character sheet of the gear you're after, one item per slot (17 slots: no shirt or tabard), with your character in the middle wearing it (drag to turn), on your class's dressing room art. One list per character. The **Search...** box at the top left finds gear by name (best item level first); shift-click an item from bags, chat or a loot window into it to add it straight away: it goes into its slot (a second ring or trinket takes the other slot; otherwise it replaces what's there). Only gear can be added.
-
-The left side lists each kind of slot (rings together, trinkets together). Pick one, or click an empty slot on the sheet, to see every item for it from DungeonJournal, best item level first, with where it drops (boss and dungeon, or the quest); click an item to add it or take it off. Items in your bags or equipped get a green tick (also when you add something you already have). Click an item on the sheet to mark it got or not yet, browse its slot, or remove it; shift-click links it in chat. What you still want is shared with the guild (collection `wish`, one record of item IDs per player) for dungeon buddy matching later.
+- **Message board.** Officers post announcements and can pin them; everyone with Pog Guild Tools can comment.
+- **Group finder.** Post what you're doing and who you need. Listings show how full the group is (2/5) and expire after
+  45 minutes. Guildies ask to join with one click and you get a pop-up to invite them. When someone posts a group, a
+  small pop-up lets you ask to join right away.
 
 ## Profiles
 
-A page for every guild member running Pog Guild Tools, MySpace style, one per account. The list on the left shows guild accounts confirmed to have Pog Guild Tools (their addon has been heard, or they've shared a profile or professions), one row each, online first, with a search box that finds any of their characters. Click anyone, or pick View profile from a name's menu on Home, Roster or Crafting.
+A page for every guildie running Pog Guild Tools, one per account.
 
-- **One profile per account.** Status, About me, favorites, main role, portrait, color and song are kept for your whole account and every character you play shares them. Opening any of someone's characters shows their account's page, named after their highest level character or the nickname they set (the character's name always shows beside a nickname, so nobody can pass as someone else). The Professions card starts on the character you opened and can switch between their characters. Two characters count as one account only when each lists the other, so nobody can attach themselves to your page; a character joins once it logs in with Pog Guild Tools. You can let a character go from the Characters line.
-- **Banner:** portrait, name, level, class, rank, main role (DPS, Tank or Heals), status line, online (or online on another of their characters), and their profile song (Play / Stop).
-- **About me**, their characters and two favorites (raid, dungeon).
-- **Professions:** their two main professions (no Cooking, First Aid or Fishing) with skill and recipe count. Click one to browse their recipes, with a search box.
-- **Character:** their current character (the one they last played with Pog Guild Tools) as a 3D model, on their class's dressing room backdrop (or a glow in their class color). **Inspect** (or click the model) opens their character sheet: what they were most recently wearing, slot by slot, with where each item drops; click an item to add it to your wishlist, shift-click to link it. Everyone's addon shares their own character's gear (collection `gear`: item IDs, race and sex), at login and shortly after their gear changes, since the game only lets you inspect people standing next to you. Their gear icons are laid out around it like the character pane (yours as you wear them right now; hover for the item, click for Inspect). The model is drawn live for you and anyone you target or group with (the game can't draw anyone further away); otherwise their class icon sits in the middle, or their portrait if they haven't shared their gear yet.
-- **Most played with:** the five guild accounts you group with most (counted every minute across all your characters, guild members only, at least 10 minutes together). Automatic.
-- **Kudos:** the latest kudos someone was given, each with its kind, who gave it and their message (hover for the whole message). No counts are shown anywhere, so nobody sees how many anyone has. Give kudos on someone's page picks a kind (Clutch heals, Great tank, Big damage, Carried me, Helpful, Generous, Great leader, GGWP) and asks for a few words (required); each kind once a week per person (the week turns over at the Tuesday reset), and one given this week can be taken back from the same menu. Your own characters can't give each other kudos.
+- **Make it yours.** A nickname, a status line, About Me, favorites, main role, a portrait from thousands of classic
+  icons, a theme color and a profile song that plays when guildies visit. Set it once and all your characters share it.
+- **Kudos.** Recognize guildies for Clutch heals, Great tank, Carried me, GGWP and more, with a few words saying why.
+- **Professions.** Their two main professions, with their recipes a click away.
+- **Character.** Their gear laid out like the character pane, with their stats (or their character in 3D when they're
+  nearby), and Inspect to see what they were most recently wearing, even when they're offline. Click an item to add it
+  to your own wishlist.
+- **Most played with.** Fills itself with the guildies you group with most.
 
-On your own page, Edit sets the status, About me, nickname, favorites and main role; Portrait picks from about 4,000 classic-art icons (48 favorites first, then pages of the classic icons the client offers for macros); Color picks the theme color (or your class color); Song picks one of 21 classic music tracks. Someone else's song plays when you open their page (Settings: Play profile songs), stops when you leave, and never plays on your own page by itself. Profiles and kudos are shared through Sync (collections `profile` and `kudos`); Most played with times stay on your computer.
+## LFG
 
-## Roster
+- **Find a group.** Tick the dungeons you want, pick your roles (tank, healer, DPS, any mix), add a note, and the guild
+  sees you're looking for the next four hours. Dungeons in your level range stand out.
+- **Groups at a glance.** Every group listing as a tile with how full it is and what it needs, and a Join button right
+  on it. People after the same dungeons as you are listed first.
 
-The pool on the left is the guild, filtered by the ranks you tick under Ranks (max level only unless you untick it), plus pugs added by name. Click a raider to drop them in the first open slot, or drag them into a group, onto the bench, or back to the pool; dragging between slots swaps. Right-click a raider in the pool to mark them available, tentative or out (from Discord signups) or to mark them Tank or Healer (roles are only what you set, never guessed from class; marked players get a thin blue or green stripe and count in the composition panel); right-click a slot to remove. 10/20/40 sets the raid size (shrinking benches the extra groups). Rosters are saved per raid night under Rosters, where you can duplicate or delete them.
+## Wishlist
 
-Invite roster invites everyone on the groups who is not in your group and not marked out (4 first when solo, then converts to a raid and invites the rest). Arrange groups moves raid members into their planned groups, one move per roster update. Copy for Discord gives a paste-ready text version.
+- **Plan your gear.** A character sheet of the gear you're after, one item per slot, with your character in the middle
+  wearing it. Shift-click items in from your bags, chat or any loot window. Keep up to three wishlists and name them.
+- **Browse by slot.** Pick any slot to see every item for it, best item level first, and where it drops. Items tick
+  themselves off when you get them.
 
-Every roster and player record carries an id, revision time and author so officer sync can merge them later.
+## Raid
 
-## Attendance
+- **Roster.** Build raid rosters from your guild with drag and drop: 10, 20 or 40 players, a bench, tanks and healers
+  marked by hand, available / tentative / out, composition counts, one-click invites and automatic group arranging.
+  Copy the roster for Discord.
+- **Attendance.** Records itself while an officer, the raid leader or an assistant is in the raid, and counts by the
+  week: raid with either team and the week counts. Arriving late or leaving early without a word counts half, measured
+  from when the raid actually gathered and broke up. Say "I'll be late" or "I'll leave early" with one click (or
+  `/pog late`, `/pog early`) and you keep full credit. Officers' raid nights are shared as they happen, so both teams
+  add up and a crash doesn't lose the night.
+- **Loot log.** Who got what, from which boss, on which night, with main spec / off spec tags. CSV and Discord export.
+- **Raid Plans.** Draw on the raid's own map, or sketch a room from scratch, then place raid markers, players, role
+  groups, arrows and labels. Press "Show to raid" and it pops up on everyone's screen, with their own spot highlighted.
 
-Records itself while you are in a raid group inside a raid instance and you are leader, assistant or a guild officer (Options turns that off; Start raid / End raid work by hand). A snapshot every 5 minutes and after every boss notes who is in the raid and online, and when each player was first and last seen; a night ends 10 minutes after you leave the raid group.
+## Crafting
 
-- **A night counts 100%**, or **50%** for arriving more than 15 minutes after it started or leaving more than 15 minutes before it ended. Anyone who said so ahead of time gets full credit: **Late / early...** in the Attendance tab (or `/pog late`, `/pog early`, `/pog ontime`) shares "I'll be late" or "I'll leave early" for tonight, and raid leaders and officers get a chat note. The night shows "late", "left early" or "late (said so)".
-- **Bench** players on that night's roster count as there (Options turns this off), and being called in from the bench isn't late. Right-click a player on a night to set present / half / absent, or Add player for a sub the snapshots missed.
-- **Weekly:** a raid week (from the Tuesday reset) counts as a player's best night that week, so with two raid teams raiding with either one counts, and never twice. Summary shows each raider's attendance over the last 4 and 8 raid weeks and all weeks (click a column header to sort); hovering a raider in the Roster tab shows it too. Copy as CSV for a spreadsheet, Copy for Discord for a post.
-- **Shared between officers:** nights recorded by officers (guild ranks ticked in Settings) reach every other addon, so both teams' nights add up in everyone's weekly numbers. Two officers recording the same raid show as one night. Raiders see the attendance too.
+- **Who can make it?** Search any recipe and see which guildies know it, online crafters first, with a click to whisper
+  them. Works for crafters who are offline too.
+- **Profession directory.** Every profession in the guild, who has it and their skill.
+- Your professions share themselves. Open each of your profession windows once and your recipes join the search.
 
-## Loot
+## Games
 
-Logs loot while an attendance night is recording, from every source the client reports (boss loot event, loot roll history, chat loot messages); the same item for the same player within 2 minutes is one entry. Rare quality and up by default (Options). Loot within 10 minutes of a kill is credited to that boss. Right-click an entry to tag it (Main spec, Off spec, Alt, Disenchanted, Guild bank), give it to someone else after a trade, or delete it. Add loot: shift-click the item into the box, then type who got it. Filter by night, by player (left list) or search. Hovering a raider in the Roster tab shows their attendance, main-spec loot over the last 8 nights and their last item.
+- **Wowdle.** A daily WoW word puzzle, the same word for the whole guild, with everyone's results for the day.
+- **Sapper Sweeper.** Minesweeper with Goblin Sapper Charges, in Apprentice, Journeyman and Expert, with a guild
+  leaderboard.
+- **Gem Cutter.** Slide and merge gems up to a Large Opal, with a guild best-score board.
+- **Ranked Duels.** Challenge a guildie, duel, and the result counts once both addons agree. Chess-style ratings and a
+  win/loss leaderboard.
 
-## Games: Sapper Sweeper
+## Settings
 
-Minesweeper with Goblin Sapper Charges. Apprentice (9x9, 10 sappers), Journeyman (16x16, 40), Expert (30x16, 99); tiles size themselves to fit the window. Left-click reveals, right-click marks a tile with a skull, clicking a revealed number whose skulls are all placed opens the tiles around it. The first click is always safe. The gnome button starts a new game; best times are kept per difficulty (`PogRaidDB.games`). **Leaderboard** swaps the board for the guild's top 20 per difficulty (tenths of a second, your row highlighted, your rank underneath if you are outside the top 20). New bests are shared through the same sync as the message board, one record per player per difficulty.
+- **Themes:** Night, Stone, Ember, Sandstone or Leather, each on its own textured surface, or the plain modern look.
+- The minimap button (easy to hide), sounds, pop-ups, profile songs, which guild ranks count as officers, and who in the
+  guild has Pog Guild Tools and on which version.
 
-## Games: Gem Cutter
+## Commands
 
-2048 with gems (same rules as 2048: checked against a separate reference 2048 over 300 spam games, same average score and tiles). Slide with the arrow keys or WASD while the mouse is over the board (keys are only captured while hovering), drag with the mouse, or use the on-screen arrows. Two of the same gem merge into the next: Rough Stone, Malachite, Tigerseye ... Star Ruby, **Large Opal** (the 2048 tile), Huge Emerald, Azerothian Diamond, Arcane Crystal, Black Diamond (real item icons, border climbs the rarity colours). Best score and biggest gem are shared on a guild leaderboard; a game in progress survives a reload. `/pog gems`.
+- `/pog` opens and closes the window.
+- `/pog home`, `/pog roster`, `/pog attendance`, `/pog loot`, `/pog plans`, `/pog crafting`, `/pog games`,
+  `/pog settings` open a tab. `/pog wowdle`, `/pog gems` and `/pog duels` open a game.
+- `/pog profile` opens your profile; `/pog profile Name` opens someone else's.
+- `/pog late`, `/pog early` and `/pog ontime` tell the raid leaders about tonight.
+- `/pog minimap` shows or hides the minimap button. `/pog reset` puts the windows back in the middle of the screen.
+- `/pog bug` lists any Pog Guild Tools errors in a box you can copy, ready to send to the author.
 
-## Games: Wowdle
+## For officers
 
-A daily WoW word of 5 to 8 letters (singular words and names, no plurals; six tries, green / gold / grey). The page says how long today's word is and the grid resizes to fit. The whole guild gets the same word, which changes at the daily reset. Type straight away or use the on-screen keyboard. Today in the guild lists who solved it and in how many (hover for their colour squares, never the letters); your stats show games played, win %, streak, best streak and guess distribution; Copy result gives Discord squares; Post to guild puts just the score ("Wowdle #12  4/6") in the chat box after /g, ready to send with Enter (addons can't post chat themselves on Forever). Any letters of the right length count as a guess (no dictionary is bundled). `/pog wowdle`.
+- Officers are the guild master and the rank below by default. Change which ranks count in **Settings > Officer ranks**;
+  it's shared with the whole guild.
+- Attendance starts by itself when you lead, assist or are an officer inside a raid instance. Start raid / End raid on
+  the Attendance tab work by hand too.
+- Pog Guild Tools tells you in chat when a newer version is out. Keep the guild on the same version where you can.
 
-## Games: Ranked Duels
+## Good to know
 
-Chess-style ratings for duels between guildies. Challenge someone from the Ranked Duels page (your target, or anyone online) or from Home's Online now menu; they get a pop-up and must accept before the duel is ranked. The challenger then presses Send duel (a normal WoW duel). Both addons read the game's result ("X has defeated Y in a duel"; fleeing is a loss) and share a report; a match counts only when both reports agree. Every addon replays confirmed matches in order (start 1200, K = 32), so the guild leaderboard (rank, rating, W-L, win %) is the same for everyone. `/pog duels` opens the page.
+- Everything is stored in the game's own saved data, per account. No outside services or websites.
+- Built for big guilds: shared data catches up in small pieces within the game's message limits, and raid plans always
+  go out first.
 
-## Settings, minimap button, versions
-
-**Settings** tab: show/hide the minimap button, pop-up sounds, group join pop-ups, ranked duel challenges (off = declined automatically), and a **Theme**: Night (deep blue, the default), Stone, Ember, Sandstone or Leather (grey marble, red-brown marble, soft warm stone, tan leather; the game's look: gold, the metal window frame, red buttons, check boxes, list highlights and sounds, in different colours) or Plain (the original modern look); after picking one, click **Reload to apply** (or type /reload); **officer ranks** (shared guild-wide through sync, changeable by officers only, guild master always included); and **who has Pog Guild Tools** with versions (old ones flagged). The **minimap button** (gnome) opens Pog Guild Tools on left-click, offers Settings / Hide on right-click, and drags around the ring; `/pog minimap` brings a hidden one back, and Pog Guild Tools is also in Blizzard's AddOns menu. The **version check** is one tiny guild message at login, one whispered reply per addon (at most every 10 minutes per person), and after that the version rides on the sync check-in; a newer version gives one chat note.
-
-## First in-game checks (beta)
-
-1. `/pog probe` in town: map art found, self whisper test replies.
-2. `/pog`, draw a few items on each tool, `/pog test`: viewer pops up and matches.
-3. Inside a Forever raid: `/pog probe` again (map art for the new raid, bosses on map, messaging restricted during a pull?).
-4. With a second player: leader shows a board, the other player sees it; "Close on raid" closes it.
-5. Roster tab: guild raiders show up, rank filter works, Invite roster actually sends invites (the call may need a click per invite on this client), Arrange groups moves people.
-6. Attendance: lead or assist a raid group inside a raid instance, check the tab shows Recording (the night says "live"); boss kills appear on the night.
-7. Loot: with attendance recording, loot a boss; check the Loot tab logs it once, with the boss name.
+Found a bug or have an idea? Leave a comment on the [CurseForge page](https://www.curseforge.com/wow/addons/pog-guild-tools),
+and include what `/pog bug` shows if something broke.

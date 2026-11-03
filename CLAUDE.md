@@ -6,6 +6,9 @@ Jake's guild addon **Pog Guild Tools** (shown everywhere in game, docs and on Cu
 launchers and plain-English steps. Read this whole file before changing anything.
 
 ## Layout
+- `README.md` is for players: WowUp shows it as the addon's description (it lists the addon from the GitHub repo
+  keebleton/pog-guild-tools), so keep it plain English and current when features change. Developer setup, testing and
+  releasing live in `DEVELOPING.md`.
 - `PogRaid/`: the addon (Lua + `Media/*.tga`). Load order is `PogRaid.toc`. The folder name must stay `PogRaid`
   (SavedVariables `PogRaidDB` and the code are tied to it), whatever the zip is called.
 - `tests/`: headless tests running the real addon files against a stub client (lupa, Lua 5.1).
