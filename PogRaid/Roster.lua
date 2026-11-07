@@ -103,8 +103,12 @@ end
 -- loaded yet, and when the guild window hides offline members it only
 -- updates who it can see, so offline raiders never look like they left.
 function Roster:ScanGuild()
-    ns.UseGuild(ns.GuildKey()) -- (this guild's own players, not another's)
-    if not IsInGuild() then return end
+    -- only once the game says which guild this is: just after login it may
+    -- not, and a roster filed under the wrong guild split 0.16.2's data
+    local guildKey = ns.GuildKey()
+    if guildKey == ns.NO_GUILD then ns.UseGuild(guildKey) end
+    if not guildKey or guildKey == ns.NO_GUILD or not IsInGuild() then return end
+    ns.UseGuild(guildKey) -- (this guild's own players, not another's)
     local count = GetNumGuildMembers()
     if not count or count == 0 then return end
     local players = G().players

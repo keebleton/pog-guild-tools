@@ -282,15 +282,12 @@ end
 
 function Sync:Store(name)
     local guild = self:GuildName()
-    local key = guild and ns.GuildKey()
-    if not key then return nil end
+    if not guild then return nil end
     ns.db.sync = ns.db.sync or {}
-    local g = ns.db.sync[key]
+    local g = ns.db.sync[guild]
     if not g then
-        -- before 0.16.1 the guild's name alone was the key (no realm)
-        g = ns.db.sync[guild] or {}
-        ns.db.sync[guild] = nil
-        ns.db.sync[key] = g
+        g = {}
+        ns.db.sync[guild] = g
     end
     g[name] = g[name] or {}
     return g[name]
@@ -420,7 +417,7 @@ end
 
 -- Cached until something changes: { sums, members, tags, count }.
 function Sync:Index()
-    local guild = self:GuildName() and ns.GuildKey()
+    local guild = self:GuildName()
     if self.index and self.index.guild == guild then return self.index end
     local idx = { guild = guild, sums = {}, members = {}, tags = {}, count = 0 }
     for b = 0, Sync.BUCKETS - 1 do

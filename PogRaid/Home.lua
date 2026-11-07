@@ -203,16 +203,34 @@ function Home:FeedText(e)
     return ""
 end
 
+local function byLevel(a, b)
+    local la, lb = G().players[a].level or 0, G().players[b].level or 0
+    if la ~= lb then return la > lb end
+    return a < b
+end
+
 function Home:OnlineList()
     local out = {}
     for name in pairs(ns.Roster.online) do
         if G().players[name] then out[#out + 1] = name end
     end
-    table.sort(out, function(a, b)
-        local la, lb = G().players[a].level or 0, G().players[b].level or 0
-        if la ~= lb then return la > lb end
-        return a < b
-    end)
+    table.sort(out, byLevel)
+    return out
+end
+
+-- Show offline (Jake): everyone online as before, then the rest of the guild,
+-- highest level first, at the level they were last seen at.
+function Home:ShowingOffline() return ns.db.settings.homeOffline == true end
+
+function Home:MemberList()
+    local out = self:OnlineList()
+    if not self:ShowingOffline() then return out end
+    local offline = {}
+    for name, p in pairs(G().players) do
+        if p.inGuild and not ns.Roster.online[name] then offline[#offline + 1] = name end
+    end
+    table.sort(offline, byLevel)
+    for _, name in ipairs(offline) do out[#out + 1] = name end
     return out
 end
 
@@ -870,11 +888,22 @@ function Home:Build(page)
     end, nil, true)
 
     self.onlineCard = card(page, "Online now", LEFT_X, FEED_Y, LEFT_W, FEED_H)
+    self.onlineCard.toggle = headButton(self.onlineCard, "Show offline", 84, function()
+        ns.db.settings.homeOffline = not self:ShowingOffline() or nil
+        self.onlineCard.offset = 0
+        self:Refresh()
+    end)
     rowList(self.onlineCard, LINE_H, false, function(row)
         if row.item then ns.Roster:ShowTooltip(row.item, row) end
     end, function(row)
         local name = row.item
-        if name and name ~= ns.Sync:Me() then
+        -- someone offline can't be whispered or invited: just their profile
+        if name and not ns.Roster.online[name] then
+            if ns.Profiles:HasAddon(name) then
+                UI.ShowMenu(row, { { text = display(name), header = true },
+                    { text = "View profile", func = function() ns.Profiles:Open(name) end } })
+            end
+        elseif name and name ~= ns.Sync:Me() then
             local menu = {
                 { text = display(name), header = true },
                 { text = "Whisper", func = function() whisper(name) end },
@@ -960,13 +989,25 @@ function Home:Refresh()
     end
     self.chatFlash = nil
 
-    local online = self:OnlineList()
-    fillRows(self.onlineCard, online, function(row, name)
+    local offline = self:ShowingOffline()
+    self.onlineCard.toggle:SetLabel(offline and "Hide offline" or "Show offline")
+    self.onlineCard.toggle:SetShown(inGuild)
+    fillRows(self.onlineCard, self:MemberList(), function(row, name)
         local p = G().players[name]
         row.pic:SetTexture(Home.Portrait(name))
-        row.text:SetText(colorName(name))
-        row.right:SetText(((p.zone and p.zone ~= "") and (p.zone .. "  ") or "") .. (p.level or ""))
-    end, inGuild and "Nobody else online." or "")
+        if ns.Roster.online[name] then
+            row.text:SetText(colorName(name))
+            row.pic:SetDesaturated(false)
+            row.pic:SetAlpha(1)
+            row.right:SetText(((p.zone and p.zone ~= "") and (p.zone .. "  ") or "") .. (p.level or ""))
+        else
+            -- offline: greyed, with the level they were last seen at
+            row.text:SetText(("|cff7a7a82%s|r"):format(display(name)))
+            row.pic:SetDesaturated(true)
+            row.pic:SetAlpha(0.6)
+            row.right:SetText(p.level and tostring(p.level) or "")
+        end
+    end, inGuild and (offline and "Nobody in the guild yet." or "Nobody else online.") or "")
 
     self:RefreshBoard()
     self:RefreshGroups()

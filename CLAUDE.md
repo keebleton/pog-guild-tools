@@ -65,6 +65,14 @@ launchers and plain-English steps. Read this whole file before changing anything
 - A texture with a mask (SetMask, e.g. round portraits) errors on SetTexCoord: never crop a masked texture (the stub
   now errors too). Use a separate unmasked texture for icons that need cropping.
 - Addon messages: 10 per prefix, then 1 per second (per sender). Anything sent during a loading screen is lost.
+- Guild data is per guild (`PogRaidDB.guilds[name]`, sync stores `PogRaidDB.sync[name]`; `ns.db.guild` is a pointer,
+  dropped at logout), keyed by the guild's NAME only (`ns.GuildKey`). Found live after launch (0.16.2): on connected
+  realms `GetGuildInfo`'s 4th return (the guild's realm) comes and goes (Jake's characters on "CAMWOW US2 Realm 10",
+  guild on "US1 Realm 9"), so a name-plus-realm key split one guild into two tables that took turns. And just after
+  login `IsInGuild()` says false for a guilded character: only believed once the guild has loaded (`ns.guildKnown`:
+  PLAYER_GUILD_UPDATE or 20 s after login); `Roster:ScanGuild` records nothing until the game names the guild. DB v4
+  (`mergeSplitGuilds`) merges "Name-Realm" tables and stores into "Name" and empties guild rosters filed under
+  "(no guild)". Checked against a copy of Jake's real saved data.
 - Addons can't call ReloadUI ("Interface action failed because of an AddOn"; Jake hit it, Oct 2026; the stub errors
   too): `UI.ReloadButton` is a SecureActionButtonTemplate running the /reload macro on the player's click.
 - Addons cannot set the guild MOTD. Blizzard's guild professions API exists in the client but may not be fed.
@@ -135,8 +143,10 @@ Herbalism, Mining and Skinning are shared but not listed in the directory (`Craf
 follows the picked profession (`Crafting.ART`: Alchemy Elemental Shaman, Blacksmithing Arms Warrior, Cooking Resto
 Druid, Enchanting Disc Priest, Engineering Arcane Mage, Leatherworking Feral Druid, Tailoring Frost Mage; others the
 page's own).
-Home: three columns from the top: the guild card and Activity over Online now (Online now lines up with the other
-columns' lower cards); Message board over Guild chat (Jake, Oct 2026: chat got its own card;
+Home: three columns from the top: the guild card and Online now over Activity (Activity lines up with the other
+columns' lower cards). Online now's "Show offline" header button (Jake, Nov 2026; `settings.homeOffline`, per
+account) lists the rest of the guild under who's online, highest level first, greyed, with the level they were last
+seen at (offline rows: profile menu only, no whisper/invite); Message board over Guild chat (Jake, Oct 2026: chat got its own card;
 newest line at the bottom like the chat window, `fillRows(..., bottomUp)`; an open post grows the board over the chat,
 the art re-cropped); Group finder over Recent loot. The MOTD comes from GUILD_MOTD's text when heard (Home.heardMOTD;
 asking right after a change can give the old one), else C_GuildInfo.GetMOTD (also when the event brought a blank: at

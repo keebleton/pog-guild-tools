@@ -1,7 +1,7 @@
 -- PogRaid core: saved data, event dispatch, slash commands, API probe.
 local ADDON, ns = ...
 
-ns.VERSION = "0.16.2"
+ns.VERSION = "0.16.3"
 ns.MEDIA = "Interface\\AddOns\\" .. ADDON .. "\\Media\\"
 
 -- Page grid: every tab's page is PAGE_H tall. The Raid tab's pages (Roster,
@@ -157,7 +157,7 @@ end
 ------------------------------------------------------------------------
 -- Saved data
 ------------------------------------------------------------------------
-local DB_VERSION = 3
+local DB_VERSION = 4
 
 local function NewBoard(name)
     return { name = name or "New plan", map = nil, zoom = 1, cx = 0.5, cy = 0.5, items = {} }
@@ -182,10 +182,15 @@ function ns.DeleteBoard(id)
 end
 
 ------------------------------------------------------------------------
--- Guild data: one table per guild (and realm), so an alt in another guild
--- keeps its own roster, attendance, loot and activity instead of marking the
--- first guild as having left. ns.db.guild is the one in use: only a pointer
--- into db.guilds, dropped at logout so it isn't saved twice.
+-- Guild data: one table per guild, so an alt in another guild keeps its own
+-- roster, attendance, loot and activity instead of marking the first guild
+-- as having left. ns.db.guild is the one in use: only a pointer into
+-- db.guilds, dropped at logout so it isn't saved twice.
+--
+-- Keyed by the guild's name alone. 0.16.1 and 0.16.2 added its realm, but on
+-- connected realms the game names the guild's realm only some of the time,
+-- so one guild ended up with two tables (and two sync stores) that took
+-- turns; version 4 merges them back (mergeSplitGuilds).
 ------------------------------------------------------------------------
 local NO_GUILD = "(no guild)"
 ns.NO_GUILD = NO_GUILD
@@ -202,14 +207,17 @@ local function fillGuild(g)
     return g
 end
 
--- "Guild-Realm" for our guild, NO_GUILD outside one, nil while the client
--- hasn't told us yet (just after login).
+-- Our guild's name, NO_GUILD outside one, nil while the client can't say
+-- yet. Just after login the client says "not in a guild" even when we are
+-- (0.16.2 filed a whole guild roster under "no guild" that way), so that's
+-- only believed once the guild has had time to load (ns.guildKnown).
 function ns.GuildKey()
-    if not IsInGuild() then return NO_GUILD end
-    local name, _, _, realm = GetGuildInfo("player")
-    if not name or name == "" then return nil end
-    realm = realm or (GetNormalizedRealmName and GetNormalizedRealmName()) or (GetRealmName and GetRealmName()) or ""
-    return name .. "-" .. realm
+    if IsInGuild() then
+        local name = GetGuildInfo("player")
+        if name and name ~= "" then return name end
+        return nil
+    end
+    return ns.guildKnown and NO_GUILD or nil
 end
 
 local function charKey()
@@ -249,8 +257,123 @@ function ns.UseGuild(key)
 end
 
 local function useCurrentGuild() ns.UseGuild(ns.GuildKey()) end
-ns.On("PLAYER_LOGIN", useCurrentGuild)
-ns.On("PLAYER_GUILD_UPDATE", useCurrentGuild)
+-- The guild has loaded (or there isn't one) once the client says so, or a
+-- while after login.
+local function guildKnown()
+    ns.guildKnown = true
+    useCurrentGuild()
+end
+ns.GUILD_LOAD_WAIT = 20
+ns.On("PLAYER_LOGIN", function()
+    useCurrentGuild()
+    C_Timer.After(ns.GUILD_LOAD_WAIT, guildKnown)
+end)
+ns.On("PLAYER_GUILD_UPDATE", guildKnown)
+
+-- v4: merge what 0.16.1 and 0.16.2 split ("Name-Realm" keys) back into one
+-- table and one sync store per guild name, and empty the roster that the
+-- login race filed under "no guild". Nothing a player made is dropped: of two
+-- copies of a record the newer one is kept, and lists are joined.
+local function guildName(key)
+    return key ~= NO_GUILD and key:match("^([^-]+)%-.") or nil
+end
+
+local function newer(a, b)
+    if not a then return b end
+    if not b then return a end
+    if (b.rev or 0) ~= (a.rev or 0) then return (b.rev or 0) > (a.rev or 0) and b or a end
+    return a
+end
+
+local function joinList(a, b, max, keyOf)
+    local seen, out = {}, {}
+    for _, list in ipairs({ a or {}, b or {} }) do
+        for _, e in ipairs(list) do
+            local k = keyOf(e)
+            if not seen[k] then
+                seen[k] = true
+                out[#out + 1] = e
+            end
+        end
+    end
+    table.sort(out, function(x, y) return (x.t or 0) > (y.t or 0) end)
+    for i = #out, max + 1, -1 do out[i] = nil end
+    return out
+end
+
+local function lastActive(g)
+    local t = 0
+    for _, list in ipairs({ g.feed or {}, g.chat or {} }) do
+        for _, e in ipairs(list) do t = math.max(t, e.t or 0) end
+    end
+    return t
+end
+
+local function mergeGuildTables(into, from)
+    for name, p in pairs(from.players or {}) do into.players[name] = into.players[name] or p end
+    for _, field in ipairs({ "rosters", "sessions", "loot" }) do
+        for id, rec in pairs(from[field] or {}) do into[field][id] = newer(into[field][id], rec) end
+    end
+    into.feed = joinList(into.feed, from.feed, 60, function(e)
+        return tostring(e.t) .. (e.kind or "") .. tostring(e.name) .. tostring(e.value) end)
+    into.chat = joinList(into.chat, from.chat, 100, function(e) return tostring(e.t) .. tostring(e.name) .. tostring(e.text) end)
+    into.seenLoot = joinList(into.seenLoot, from.seenLoot, 100, function(e)
+        return tostring(e.t) .. tostring(e.player) .. tostring(e.itemID) end)
+    into.scanned = into.scanned or from.scanned
+    into.fullScan = into.fullScan or from.fullScan
+    into.activeSession = into.activeSession or from.activeSession
+    for _, field in ipairs({ "officerRank", "benchCredit", "attAuto", "lootMinQuality" }) do
+        if into[field] == nil then into[field] = from[field] end
+    end
+end
+
+local function mergeSplitGuilds(db)
+    local groups = {}
+    for key in pairs(db.guilds) do
+        local name = guildName(key)
+        if name then
+            groups[name] = groups[name] or {}
+            table.insert(groups[name], key)
+        end
+    end
+    for name, keys in pairs(groups) do
+        -- the one used most recently is the base; the others join it
+        local all = {}
+        if db.guilds[name] then all[1] = db.guilds[name] end
+        for _, k in ipairs(keys) do all[#all + 1] = db.guilds[k] end
+        table.sort(all, function(a, b) return lastActive(a) > lastActive(b) end)
+        local base = fillGuild(all[1])
+        for i = 2, #all do mergeGuildTables(base, fillGuild(all[i])) end
+        for _, k in ipairs(keys) do db.guilds[k] = nil end
+        db.guilds[name] = base
+    end
+    -- shared records: one store per guild name, the newer copy of each record
+    -- (keys gathered first: adding stores while walking the list skips some)
+    local split = {}
+    for key in pairs(db.sync or {}) do
+        if guildName(key) then split[#split + 1] = key end
+    end
+    for _, key in ipairs(split) do
+        local name, store = guildName(key), db.sync[key]
+        local target = db.sync[name] or {}
+        db.sync[name] = target
+        for collection, recs in pairs(store) do
+            target[collection] = target[collection] or {}
+            for id, rec in pairs(recs) do target[collection][id] = newer(target[collection][id], rec) end
+        end
+        db.sync[key] = nil
+    end
+    for char, key in pairs(db.charGuild) do db.charGuild[char] = guildName(key) or key end
+    -- "no guild" never holds a guild roster: drop what the login race filed
+    -- there (guild members, their activity and guild chat), keep the rest
+    local none = db.guilds[NO_GUILD]
+    if none then
+        for name, p in pairs(none.players or {}) do
+            if p.inGuild then none.players[name] = nil end
+        end
+        none.feed, none.chat, none.scanned, none.fullScan = {}, {}, nil, nil
+    end
+end
 ns.On("PLAYER_LOGOUT", function()
     if ns.db then ns.db.guild = nil end
 end)
@@ -269,6 +392,7 @@ ns.On("ADDON_LOADED", function(name)
     -- v3: per-guild data; the old single table waits for its guild
     if (db.version or 1) < 3 and db.guild then db.legacyGuild = fillGuild(db.guild) end
     db.guild = nil
+    if (db.version or 1) < 4 then mergeSplitGuilds(db) end
     db.settings = db.settings or {}
     local st = db.settings
     st.minimap = st.minimap or { angle = 220 }

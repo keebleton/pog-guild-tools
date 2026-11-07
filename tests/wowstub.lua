@@ -159,6 +159,7 @@ end
 function M:IsMouseOver() return STUB.hover == self end
 function M:SetEnabled(on) self.__disabled = not on end
 function M:SetAlpha(a) self.__alpha = a end
+function M:SetDesaturated(on) self.__desaturated = on and true or false end
 function M:GetAlpha() return self.__alpha or 1 end
 function M:IsEnabled() return not self.__disabled end
 
@@ -458,8 +459,14 @@ end
 -- guild -------------------------------------------------------------------
 STUB.guild = nil -- list of { name, rank, rankIndex, level, online, class }
 STUB.ranks = { "Guild Master", "Officer", "Raider", "Trial", "Social" }
-function IsInGuild() return STUB.guild ~= nil end
-function GetGuildInfo(unit) if STUB.guild then return STUB.guildName or "Pog Squad", "Member", 3 end end
+-- like the game: just after login it can say "not in a guild" (guildLoading), or know the guild without
+-- its name yet (guildNameLoading); on connected realms the guild's realm comes and goes (guildRealm)
+function IsInGuild() return STUB.guild ~= nil and not STUB.guildLoading end
+function GetGuildInfo(unit)
+    if STUB.guild and not STUB.guildLoading and not STUB.guildNameLoading then
+        return STUB.guildName or "Pog Squad", "Member", 3, STUB.guildRealm
+    end
+end
 function GetNumGuildMembers() return STUB.guild and #STUB.guild or 0 end
 function GetGuildRosterInfo(i)
     local m = STUB.guild and STUB.guild[i]

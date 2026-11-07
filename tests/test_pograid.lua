@@ -708,7 +708,7 @@ do
     PogRaidDB.version = 1
     PogRaidDB.guild.maxLevelOnly = true
     STUB.Fire("ADDON_LOADED", "PogRaid")
-    check(ns.db.guild.maxLevelOnly == false and ns.db.version == 3, "migration: old default filter turned off")
+    check(ns.db.guild.maxLevelOnly == false and ns.db.version == 4, "migration: old default filter turned off")
     ns.db.guild.maxLevelOnly = true
     STUB.Fire("ADDON_LOADED", "PogRaid")
     check(ns.db.guild.maxLevelOnly == true, "migration: a filter you turn on stays on")
@@ -1863,6 +1863,46 @@ do
     STUB.Script(rows[1], "OnEnter")
     check(GameTooltip.shown and GameTooltip.lines[1] == Ambiguate(rows[1].item, "short"), "home: hovering someone online shows their tooltip")
     STUB.Script(rows[1], "OnLeave")
+
+    -- Show offline (Jake): the rest of the guild under who's online, with the level they were last seen at
+    local tog = Home.onlineCard.toggle
+    check(tog:IsShown() and tog.label:GetText() == "Show offline" and #Home:MemberList() == #onlineNames,
+        "offline: a Show offline button, off by default")
+    STUB.Script(tog, "OnClick")
+    local members = Home:MemberList()
+    local offlineNames = {}
+    for i = #onlineNames + 1, #members do offlineNames[#offlineNames + 1] = members[i] end
+    local everyoneOff = true
+    for _, n in ipairs(offlineNames) do if Roster.online[n] or not G.players[n].inGuild then everyoneOff = false end end
+    check(tog.label:GetText() == "Hide offline" and ns.db.settings.homeOffline == true and #offlineNames > 0 and everyoneOff
+        and members[1] == onlineNames[1], "offline: online first, then guild members who are offline")
+    local sorted = true
+    for i = 2, #offlineNames do
+        if (G.players[offlineNames[i - 1]].level or 0) < (G.players[offlineNames[i]].level or 0) then sorted = false end
+    end
+    check(sorted, "offline: highest level first")
+    -- the first offline row on screen
+    local offRow
+    for _ = 1, 20 do
+        for _, r in ipairs(rows) do if r:IsShown() and r.item and not Roster.online[r.item] then offRow = offRow or r end end
+        if offRow then break end
+        Home.onlineCard.offset = Home.onlineCard.offset + 2
+        Home:Refresh()
+    end
+    local offP = offRow and G.players[offRow.item]
+    check(offRow and offRow.right:GetText() == tostring(offP.level) and offRow.text:GetText():find("^|cff7a7a82")
+        and offRow.pic.__desaturated, "offline: greyed out, with their level")
+    local menu
+    local realShow = ns.UI.ShowMenu
+    ns.UI.ShowMenu = function(_, e) menu = e end
+    STUB.Script(offRow, "OnClick", "LeftButton")
+    ns.UI.ShowMenu = realShow
+    local canWhisper = false
+    for _, e in ipairs(menu or {}) do if e.text == "Whisper" or e.text == "Invite to group" then canWhisper = true end end
+    check(not canWhisper, "offline: no whisper or invite for someone offline")
+    STUB.Script(tog, "OnClick")
+    check(tog.label:GetText() == "Show offline" and not ns.db.settings.homeOffline and #Home:MemberList() == #onlineNames
+        and Home.onlineCard.offset == 0, "offline: and back to just who's online")
 
     -- feed, chat and loot rows
     check(Home.feedCard.rows[1].item == G.feed[1] and Home.feedCard.rows[1].right:GetText() ~= "", "home: activity rows with age")
@@ -5098,7 +5138,7 @@ do
         return n
     end
     local membersA, inA, feedA = ns.Count(G0.players), inGuild(G0), #G0.feed
-    check(keyA == "Pog Squad-Realm" and ns.db.guilds[keyA] == G0, "guilds: our guild's data lives under its name and realm")
+    check(keyA == "Pog Squad" and ns.db.guilds[keyA] == G0, "guilds: our guild's data lives under its name")
 
     -- an alt in another guild
     STUB.player, STUB.guildName = "Bankalt", "Other Guild"
@@ -5106,7 +5146,7 @@ do
         { name = "Stranger-Realm", rankIndex = 1, level = 60, online = false, class = "PRIEST" } }
     STUB.Fire("PLAYER_GUILD_UPDATE")
     local GB = ns.db.guild
-    check(GB ~= G0 and ns.GuildKey() == "Other Guild-Realm" and ns.db.guilds[keyA] == G0, "guilds: another guild gets its own data")
+    check(GB ~= G0 and ns.GuildKey() == "Other Guild" and ns.db.guilds[keyA] == G0, "guilds: another guild gets its own data")
     ns.Roster:ScanGuild()
     ns.Roster:ScanGuild()
     check(inGuild(G0) == inA and #G0.feed == feedA and ns.Count(GB.players) == 2 and inGuild(GB) == 2 and #GB.feed == 0,
@@ -5145,6 +5185,99 @@ do
     PogRaidDB.guilds[keyA] = G0
     STUB.Fire("ADDON_LOADED", "PogRaid")
     check(ns.db.guild == G0, "guilds: (test guild restored)")
+
+    -- 0.16.3: on connected realms the game names the guild's realm only some of the time; 0.16.2
+    -- keyed guilds by realm too and split one guild into two tables that took turns
+    local posts = ns.Sync:Store("posts")
+    for _, realm in ipairs({ "OtherRealm", false, "OtherRealm" }) do
+        STUB.guildRealm = realm or nil
+        STUB.Fire("PLAYER_GUILD_UPDATE")
+        STUB.Fire("GUILD_ROSTER_UPDATE")
+    end
+    STUB.guildRealm = nil
+    check(ns.db.guild == G0 and ns.GuildKey() == "Pog Squad" and ns.Sync:Store("posts") == posts and ns.Count(ns.db.guilds) == 2,
+        "guilds: one guild stays one table, whatever realm the game names for it")
+
+    -- just after login the game can say "not in a guild": no roster is filed under "no guild"
+    STUB.Fire("PLAYER_LOGOUT")
+    PogRaidDB.charGuild = {}
+    ns.guildKnown = nil
+    STUB.guildLoading = true
+    STUB.Fire("ADDON_LOADED", "PogRaid")
+    STUB.Fire("PLAYER_LOGIN")
+    check(ns.GuildKey() == nil and ns.guildKey == nil and ns.db.guild ~= G0, "guilds: 'not in a guild' just after login isn't believed yet")
+    local none = PogRaidDB.guilds[ns.NO_GUILD]
+    local noneBefore = none and ns.Count(none.players) or 0
+    STUB.guildLoading, STUB.guildNameLoading = nil, true
+    STUB.Fire("GUILD_ROSTER_UPDATE")
+    check((PogRaidDB.guilds[ns.NO_GUILD] and ns.Count(PogRaidDB.guilds[ns.NO_GUILD].players) or 0) == noneBefore and ns.db.guild ~= G0
+        and ns.Count(ns.db.guild.players) == 0 and #ns.db.guild.feed == 0,
+        "guilds: a roster before the game names the guild isn't filed anywhere")
+    STUB.guildNameLoading = nil
+    STUB.Fire("GUILD_ROSTER_UPDATE")
+    check(ns.db.guild == G0, "guilds: once it does, it's our guild's table")
+    STUB.Advance(ns.GUILD_LOAD_WAIT + 1)
+    check(ns.db.guild == G0, "guilds: (and stays it once the guild is known)")
+
+    -- someone really not in a guild: "no guild" once the guild had time to load
+    local savedG = STUB.guild
+    STUB.guild = nil
+    STUB.Fire("PLAYER_GUILD_UPDATE")
+    check(ns.GuildKey() == ns.NO_GUILD and ns.guildKey == ns.NO_GUILD, "guilds: out of a guild once the game is sure")
+    STUB.guild = savedG
+    STUB.Fire("PLAYER_GUILD_UPDATE")
+    check(ns.db.guild == G0, "guilds: (back in it)")
+
+    -- version 4 merges a guild split by 0.16.1 / 0.16.2 back into one, and empties "no guild"
+    STUB.Fire("PLAYER_LOGOUT")
+    local splitA = { players = { ["Jake-Realm"] = { inGuild = true, rankIndex = 0 }, ["Raider01-Realm"] = { inGuild = true } },
+        sessions = { n1 = { id = "n1", rev = 10, name = "Night A" } }, loot = {}, rosters = { r1 = { id = "r1", rev = 5, name = "Old" } },
+        feed = { { t = 200, kind = "level", name = "Raider01-Realm", value = 60 } }, chat = {}, seenLoot = {}, fullScan = true }
+    local splitB = { players = { ["Jake-Realm"] = { inGuild = true, rankIndex = 0 }, ["Raider02-Realm"] = { inGuild = true } },
+        sessions = { n2 = { id = "n2", rev = 20, name = "Night B" } }, loot = { l1 = { id = "l1", rev = 3 } },
+        rosters = { r1 = { id = "r1", rev = 9, name = "Newer" } },
+        feed = { { t = 300, kind = "join", name = "Raider02-Realm" } }, chat = {}, seenLoot = {} }
+    local bogus = { players = { ["Raider03-Realm"] = { inGuild = true }, ["Pugsley"] = { manual = true } },
+        sessions = { n3 = { id = "n3", rev = 1, name = "Pug night" } }, loot = {}, rosters = {},
+        feed = { { t = 100, kind = "join", name = "Raider03-Realm" } }, chat = { { t = 100, name = "x", text = "y" } }, seenLoot = {}, fullScan = true }
+    local realGuilds, realSync = PogRaidDB.guilds, PogRaidDB.sync
+    PogRaidDB.version = 3
+    PogRaidDB.guilds = { ["Pog Squad-Realm9"] = splitA, ["Pog Squad-Realm10"] = splitB, [ns.NO_GUILD] = bogus }
+    PogRaidDB.sync = {
+        ["Pog Squad-Realm9"] = { posts = { p1 = { id = "p1", rev = 50, title = "newer" } }, profile = { u1 = { id = "u1", rev = 1 } } },
+        ["Pog Squad-Realm10"] = { posts = { p1 = { id = "p1", rev = 40, title = "older" }, p2 = { id = "p2", rev = 7 } } } }
+    PogRaidDB.charGuild = { ["Jake-Realm"] = "Pog Squad-Realm10" }
+    STUB.Fire("ADDON_LOADED", "PogRaid")
+    local merged = PogRaidDB.guilds["Pog Squad"]
+    check(PogRaidDB.version == 4 and merged and PogRaidDB.guilds["Pog Squad-Realm9"] == nil and PogRaidDB.guilds["Pog Squad-Realm10"] == nil
+        and ns.db.guild == merged, "merge: one table for the guild, in use")
+    check(merged.players["Raider01-Realm"] and merged.players["Raider02-Realm"] and merged.sessions.n1 and merged.sessions.n2
+        and merged.loot.l1 and merged.rosters.r1.name == "Newer" and merged.fullScan,
+        "merge: everyone, every night and loot entry from both halves; the newer copy of a roster")
+    check(#merged.feed == 2 and merged.feed[1].t == 300, "merge: both halves' activity, newest first")
+    local store = PogRaidDB.sync["Pog Squad"]
+    check(store and PogRaidDB.sync["Pog Squad-Realm9"] == nil and store.posts.p1.title == "newer" and store.posts.p2 and store.profile.u1,
+        "merge: one shared store, the newer copy of each record")
+    check(PogRaidDB.charGuild["Jake-Realm"] == "Pog Squad", "merge: characters remember the guild by name")
+    -- the store names a real save had (found in Jake's data: one of them was skipped once)
+    PogRaidDB.version = 3
+    PogRaidDB.sync = {
+        ["pog-CAMWOWUS1Realm9RPPvP"] = { profs = { a = { id = "a", rev = 9 } }, drops = { d = { id = "d", rev = 1 } } },
+        ["pog-CAMWOWUS2Realm10RPPvP"] = { profs = { a = { id = "a", rev = 5 }, b = { id = "b", rev = 2 } } } }
+    STUB.Fire("ADDON_LOADED", "PogRaid")
+    local leftover = {}
+    for k in pairs(PogRaidDB.sync) do if k ~= "pog" and k ~= "Pog Squad" then leftover[#leftover + 1] = k end end
+    local pogStore = PogRaidDB.sync.pog
+    check(#leftover == 0 and pogStore and pogStore.profs.a.rev == 9 and pogStore.profs.b and pogStore.drops.d,
+        "merge: every split store is merged, none left behind (" .. table.concat(leftover, ", ") .. ")")
+    local nb = PogRaidDB.guilds[ns.NO_GUILD]
+    check(nb.players["Raider03-Realm"] == nil and nb.players["Pugsley"] and nb.sessions.n3 and #nb.feed == 0 and #nb.chat == 0
+        and not nb.fullScan, "merge: 'no guild' loses the guild roster filed there, keeps its own nights and pugs")
+    -- and the test's own data back
+    STUB.Fire("PLAYER_LOGOUT")
+    PogRaidDB.guilds, PogRaidDB.sync, PogRaidDB.charGuild = realGuilds, realSync, {}
+    STUB.Fire("ADDON_LOADED", "PogRaid")
+    check(ns.db.guild == G0, "merge: (test guild restored)")
 end
 
 -- Group listings: a malformed "2/5" is refused, and an old one can't break Home (0.16.2) -

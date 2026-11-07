@@ -14,7 +14,7 @@ The shared features (message board, group finder, profiles, crafting, leaderboar
 
 ## Home
 
-Your guild at a glance: the guild's name and message of the day, who's online, level-ups and achievements, guild chat, and the guild's recent blue-and-better drops.
+Your guild at a glance: the guild's name and message of the day, who's online (Show offline lists everyone else too, with their level), level-ups and achievements, guild chat, and the guild's recent blue-and-better drops.
 
 - **Message board.** Officers post announcements and can pin them; everyone with Pog Guild Tools can comment.
 - **Group finder.** Post what you're doing and who you need. Listings show how full the group is (2/5) and expire after 45 minutes. Guildies ask to join with one click and you get a pop-up to invite them. When someone posts a group, a small pop-up lets you ask to join right away.
