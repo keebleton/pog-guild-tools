@@ -27,8 +27,11 @@ launchers and plain-English steps. Read this whole file before changing anything
   sure a test fails. Copy only the .lua/.toc files, never `Media/`: the project is in OneDrive, and deleting a temp copy
   that included Media once deleted the real `PogRaid/Media` files (restored from git). The stub has hidden real-client behaviour three times (see Gotchas), so make the stub match the game.
 - Write multi-line edit scripts to a file with the Write tool; inline bash heredocs with quotes/backslashes break.
-- Version lives in `PogRaid/Core.lua` (`ns.VERSION`) and `PogRaid.toc` (`## Version`); bump both. CurseForge reviews
-  every upload (moderators work 8 AM to 3 PM CET, overnight in the US), so bundle changes; send test zips directly.
+- Version lives in `PogRaid/Core.lua` (`ns.VERSION`) and `PogRaid.toc` (`## Version`); bump both. Releasing = push a
+  `v<version>` tag: `.github/workflows/release.yml` checks the tag against both, runs the tests and the BigWigs packager
+  (`.pkgmeta`: `PogRaid/` moved to the zip's top, the rest ignored), which uploads to CurseForge (secret `CF_API_KEY`)
+  and makes the GitHub release with `release.json` for WowUp (DEVELOPING.md has the steps). CurseForge reviews every
+  upload (moderators work 8 AM to 3 PM CET, overnight in the US), so bundle changes; send test zips directly.
 - No em dashes in UI strings, docs or messages for Jake (they read as AI to him). Pixel-perfect alignment matters.
 - Fewer numbers (Jake, Oct 2026: "we're displaying too many numbers of stuff that isn't really relevant"): no counts
   that just tally a list (items, members, recipes, comments, crafters, snapshots, slots). Kept because they help:

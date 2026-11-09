@@ -33,12 +33,24 @@ Notes for working on the addon. The player-facing description is [README.md](REA
 
 ## Releasing
 
-1. Bump the version in both `PogRaid/Core.lua` (`ns.VERSION`) and `PogRaid/PogRaid.toc` (`## Version`).
-2. Run the tests.
-3. Double-click `Package for CurseForge.bat`, then upload the zip to CurseForge (project 1712125) for the Forever game
-   version. CurseForge reviews every upload, and its moderators work 8 AM to 3 PM CET (overnight in the US), so bundle
-   changes and allow a day.
-4. WowUp lists the addon from this GitHub repo.
+Releases are automatic: pushing a version tag runs `.github/workflows/release.yml` on GitHub. It checks the tag matches
+the addon's version, runs the tests, and then the [BigWigs packager](https://github.com/BigWigsMods/packager) (settings
+in `.pkgmeta`) builds `PogGuildTools-v<version>.zip` with just the `PogRaid` folder, uploads it to CurseForge (project
+1712125, from the `.toc`) with the commits since the last tag as its changelog, and makes the GitHub release with
+`release.json`, which WowUp installs from.
+
+1. Bump the version in both `PogRaid/Core.lua` (`ns.VERSION`) and `PogRaid/PogRaid.toc` (`## Version`), run the tests,
+   commit and push.
+2. Tag that commit `v<version>` (for example `v0.16.4`) and push the tag. In GitHub Desktop: History, right-click the
+   commit, Create Tag, then Push origin.
+3. Watch it on GitHub under Actions (about two minutes). CurseForge still reviews every upload, and its moderators work
+   8 AM to 3 PM CET (overnight in the US), so bundle changes and allow a day.
+
+One-time setup: a CurseForge API token (CurseForge account settings, API tokens) saved on GitHub as the repository secret
+`CF_API_KEY` (Settings > Secrets and variables > Actions). Without it the release still reaches GitHub and WowUp, but
+not CurseForge.
+
+By hand, if ever needed: double-click `Package for CurseForge.bat` and upload the zip on CurseForge.
 
 ## Commands for testing
 

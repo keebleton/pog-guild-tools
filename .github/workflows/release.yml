@@ -1,0 +1,49 @@
+# Releases Pog Guild Tools when a version tag (v0.16.3, v0.17.0, ...) is pushed:
+# checks the tag matches PogRaid.toc's version, runs the tests, then the BigWigs
+# packager builds PogGuildTools-<tag>.zip (see .pkgmeta), uploads it to
+# CurseForge (the project id is in PogRaid.toc) and makes the GitHub release
+# with release.json, which WowUp installs from.
+#
+# One-time setup: a CurseForge API token saved as the repository secret
+# CF_API_KEY (Settings > Secrets and variables > Actions).
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      CF_API_KEY: ${{ secrets.CF_API_KEY }}
+      GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check the tag matches the addon's version
+        run: |
+          toc=$(grep -m1 '^## Version:' PogRaid/PogRaid.toc | awk '{print $3}' | tr -d '\r')
+          core=$(grep -m1 '^ns.VERSION = ' PogRaid/Core.lua | cut -d'"' -f2)
+          echo "tag $GITHUB_REF_NAME, PogRaid.toc $toc, Core.lua $core"
+          test "v$toc" = "$GITHUB_REF_NAME" && test "$toc" = "$core"
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Run the tests
+        run: |
+          pip install lupa
+          python tests/run_tests.py
+
+      - name: Package and upload
+        uses: BigWigsMods/packager@v2
+        with:
+          args: -n "PogGuildTools-{project-version}:{project-version}"
