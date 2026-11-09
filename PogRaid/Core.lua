@@ -1,7 +1,7 @@
 -- PogRaid core: saved data, event dispatch, slash commands, API probe.
 local ADDON, ns = ...
 
-ns.VERSION = "0.16.3"
+ns.VERSION = "0.16.4"
 ns.MEDIA = "Interface\\AddOns\\" .. ADDON .. "\\Media\\"
 
 -- Page grid: every tab's page is PAGE_H tall. The Raid tab's pages (Roster,

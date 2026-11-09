@@ -1,4 +1,6 @@
-# Pog Guild Tools 0.16.3
+# Pog Guild Tools 0.16.4
+
+The changes from 0.16.3, which CurseForge couldn't publish:
 
 - **Show offline on Home.** The Online now card has a Show offline button: the rest of the guild is listed under who's online, highest level first, with the level they were last seen at.
 - **One guild, one set of data.** On connected realms the game names a guild's realm only some of the time, which split some guilds' data in two, so the message board, profiles or crafting could look empty. Everything is merged back into one the first time you log in with this version.
