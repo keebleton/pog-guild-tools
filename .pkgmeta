@@ -4,6 +4,13 @@
 # (tests, tools, notes, launchers) is left out.
 package-as: PogGuildTools
 
+# The release notes CurseForge shows: this version's, written for players.
+# (Without it the packager writes its own from the commits into the package
+# folder, which then stays in the zip as a stray "PogGuildTools" folder.)
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+
 move-folders:
   PogGuildTools/PogRaid: PogRaid
 

@@ -36,11 +36,12 @@ Notes for working on the addon. The player-facing description is [README.md](REA
 Releases are automatic: pushing a version tag runs `.github/workflows/release.yml` on GitHub. It checks the tag matches
 the addon's version, runs the tests, and then the [BigWigs packager](https://github.com/BigWigsMods/packager) (settings
 in `.pkgmeta`) builds `PogGuildTools-v<version>.zip` with just the `PogRaid` folder, uploads it to CurseForge (project
-1712125, from the `.toc`) with the commits since the last tag as its changelog, and makes the GitHub release with
+1712125, from the `.toc`) with `CHANGELOG.md` as its release notes, and makes the GitHub release with
 `release.json`, which WowUp installs from.
 
-1. Bump the version in both `PogRaid/Core.lua` (`ns.VERSION`) and `PogRaid/PogRaid.toc` (`## Version`), run the tests,
-   commit and push.
+1. Bump the version in both `PogRaid/Core.lua` (`ns.VERSION`) and `PogRaid/PogRaid.toc` (`## Version`), replace
+   `CHANGELOG.md` with this version's notes (plain English, for players: CurseForge shows it), run the tests, commit and
+   push.
 2. Tag that commit `v<version>` (for example `v0.16.4`) and push the tag. In GitHub Desktop: History, right-click the
    commit, Create Tag, then Push origin.
 3. Watch it on GitHub under Actions (about two minutes). CurseForge still reviews every upload, and its moderators work
