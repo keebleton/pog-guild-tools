@@ -159,6 +159,11 @@ end
 function M:IsMouseOver() return STUB.hover == self end
 function M:SetEnabled(on) self.__disabled = not on end
 function M:SetAlpha(a) self.__alpha = a end
+-- layering: the strata a frame is on, whether a click brings it forward, and how often it was raised
+function M:SetFrameStrata(s) self.__strata = s end
+function M:GetFrameStrata() return self.__strata end
+function M:SetToplevel(on) self.__toplevel = on end
+function M:Raise() self.__raised = (self.__raised or 0) + 1 end
 -- a ScrollingMessageFrame keeps its lines
 function M:AddMessage(msg) self.__messages = self.__messages or {}; table.insert(self.__messages, msg) end
 function M:Clear() self.__messages = {} end

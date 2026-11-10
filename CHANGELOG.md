@@ -1,4 +1,8 @@
-# Pog Guild Tools 0.16.5
+# Pog Guild Tools 0.16.6
+
+- **Fixed: the Chat button on Home seemed to do nothing.** The chat window was opening behind the main window. It now opens in front and stays there.
+
+New in 0.16.5:
 
 - **New: group chat.** A small chat window of its own, like an instant messenger: pick one guildie or several from who's online and start a chat. Lines go privately between the people in it, a pop-up and a sound tell you about a new one, and your chats are kept between sessions. Open it with the Chat button on Home (it counts unread lines), from a guildie's right-click menu, or with /pog chat. Everyone in a chat needs this version or newer. Turn it off in Settings if it's not for you.
 - **New: kudos pop-up.** When a guildie gives you kudos, a pop-up says who, what for and their message. Click it to open your profile. Settings turns it off.

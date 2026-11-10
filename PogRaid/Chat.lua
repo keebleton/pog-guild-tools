@@ -324,7 +324,11 @@ end
 function Chat:Build()
     local f = CreateFrame("Frame", "PogRaidChat", UIParent)
     f:SetSize(W, H)
-    f:SetFrameStrata("HIGH")
+    -- a layer above the main window (HIGH, and it brings itself to the front
+    -- on every click): on the same layer the chat opened behind it, so the
+    -- Chat button on Home seemed to do nothing (Jake, 0.16.5)
+    f:SetFrameStrata("DIALOG")
+    f:SetToplevel(true)
     f:EnableMouse(true)
     UI.Panel(f)
     UI.Window(f)
@@ -561,6 +565,7 @@ function Chat:Open(c, focus)
         self:Badge()
     end
     self.frame:Show()
+    self.frame:Raise()
     self:Refresh()
     if focus and self.current and not (InCombatLockdown and InCombatLockdown()) then self.input:SetFocus() end
 end

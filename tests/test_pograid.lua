@@ -5916,8 +5916,17 @@ do
     local tl = STUB.rect(Home.onlineCard.toggle)
     local cl, ct, cw, ch = STUB.rect(btn)
     check(near(tl - (cl + cw), 6) and near(ct - ch / 2, tt - th / 2) and ch == th, "home: 6px left of Show offline, on its line")
+    local raised = Chat.frame.__raised or 0
     STUB.Script(btn, "OnClick")
     check(Chat.frame:IsShown(), "home: and opens the chat window")
+    -- in front of the main window, which is open (it's where the button is) and comes forward on every click:
+    -- on its layer the chat opened behind it and the button seemed to do nothing (Jake, 0.16.5)
+    local STRATA = { BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4, DIALOG = 5, FULLSCREEN = 6, FULLSCREEN_DIALOG = 7, TOOLTIP = 8 }
+    local main = ns.Editor.frame
+    check(main:IsShown() and main.__toplevel and STRATA[Chat.frame.__strata] > STRATA[main.__strata]
+        and STRATA[Chat.frame.__strata] < STRATA.FULLSCREEN_DIALOG,
+        "chat window: a layer above the main window (and under our menus)")
+    check(Chat.frame.__toplevel == true and Chat.frame.__raised == raised + 1, "chat window: opening it brings it to the front")
     Chat:Open(Chat:Get({ me, B }))
     check(btn.label:GetText() == "Chat" and not btn.selected, "home: nothing unread, just Chat")
     STUB.Script(btn, "OnClick")

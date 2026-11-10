@@ -103,6 +103,9 @@ launchers and plain-English steps. Read this whole file before changing anything
   the window closes, senders are told). `/pog chat test` makes a practice chat (`c.test`) that answers back and never
   whispers anyone; a real line from that person makes it a real chat. Entry points: Home's Chat button (left of Show
   offline, "Chat (n)" when unread), the Online now right-click menu, `/pog chat`, and the pop-up.
+- 0.16.6: the chat window is on the DIALOG strata, toplevel, and `Raise()`d on every `Chat:Open`. On HIGH (the main
+  window's strata, which is toplevel) it opened behind the main window, so Home's Chat button seemed dead. Any new
+  window that can be opened from inside the main window needs the same.
 - 0.16.5 pop-up notes: `ns.GroupToast:Note({ icon, text, sub, onClick })` shows other news in the new-group pop-up, one
   at a time (`Toast.notes`, at most 5 waiting, held back in combat until PLAYER_REGEN_ENABLED; a new group listing takes
   the pop-up over). Chat lines use it, and so do kudos: the `kudos` collection is `perRecord`, and `Profiles:OnKudos`
