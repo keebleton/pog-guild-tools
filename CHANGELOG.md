@@ -1,6 +1,8 @@
-# Pog Guild Tools 0.16.6
+# Pog Guild Tools 0.16.7
 
-- **Fixed: the Chat button on Home seemed to do nothing.** The chat window was opening behind the main window. It now opens in front and stays there.
+- **Chat now works with the whole guild.** Whispers to and from guildmates are kept in your chat with them, so the chat window is your whisper history too. A line to someone without the addon (marked "whisper") goes out as an ordinary whisper, and item links in whispers can be clicked. Group chats of three or more still need everyone on Pog Guild Tools. Untick "Guild whispers" at the top of the chat window to keep whispers out of it.
+- **New chat button.** The chat window's list is now just the people you've messaged. Click New chat to pick who to message: search by name, click one person or several for a group, then Start chat.
+- **Fixed in 0.16.6: the Chat button on Home seemed to do nothing.** The chat window was opening behind the main window.
 
 New in 0.16.5:
 

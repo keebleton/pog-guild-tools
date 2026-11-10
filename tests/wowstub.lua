@@ -447,6 +447,17 @@ C_ChatInfo = {
     AreOutgoingAddonChatMessagesRestricted = function() return true end,
 }
 
+-- Ordinary chat: what we said is kept in STUB.said, and a whisper comes back as CHAT_MSG_WHISPER_INFORM
+-- like in the game, unless it's lost (STUB.whisperLost) or the game is refusing chat (STUB.restricted).
+STUB.said = {}
+function SendChatMessage(text, chatType, language, target)
+    assert(type(text) == "string" and #text <= 255, "chat message over 255 bytes")
+    assert(not text:gsub("||", ""):find("|", 1, true), "Invalid escape code in chat message")
+    if STUB.restricted then error("chat is locked down") end
+    table.insert(STUB.said, { text = text, type = chatType, target = target })
+    if chatType == "WHISPER" and not STUB.whisperLost then STUB.Fire("CHAT_MSG_WHISPER_INFORM", text, target .. "-Realm") end
+end
+
 -- Deliver everything sent so far as CHAT_MSG_ADDON, as if from `sender`.
 -- `order` optionally permutes the messages.
 function STUB.Deliver(sender, order)

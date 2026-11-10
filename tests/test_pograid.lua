@@ -5665,6 +5665,8 @@ do
 
     -- who can be chatted with
     check(Chat:Enabled() and ns.db.settings.chat == true, "chat: on by default")
+    check(ns.db.settings.chatWhispers == true and Chat:Whispers(), "whispers: kept in chats by default")
+    ns.db.settings.chatWhispers = false -- (this block is the addon's own lines; whispers have the next one)
     check(Chat:CanChat(A) and Chat:CanChat(B) and not Chat:CanChat(C) and not Chat:CanChat(D) and not Chat:CanChat(me)
         and not Chat:CanChat("Stranger-Realm"), "chat: with guildies online on 0.16.5 or newer, nobody else")
     local buddies = Chat:Buddies()
@@ -5769,25 +5771,81 @@ do
     STUB.Fire("CHAT_MSG_ADDON", "PogRaid", "CAAAA" .. wire({ me, D }, "echo"), "WHISPER", "Jake-Realm")
     check(logText(c) == "line1 line2 end", "chat: our own echo is ignored")
 
-    -- the list on the left: chats (newest first, unread counted), a heading, who's online
+    -- the list on the left: just our chats (newest first, unread counted), New chat under them (Jake:
+    -- everyone online used to be listed there too, which read as a muddle)
     Chat.current = c
     Chat:Refresh()
     local rows = Chat.left.rows
     check(rows[1].item.chat == c and rows[1].sel:IsShown() and rows[2].item.chat == bc and rows[2].right:GetText() == "1"
-        and not rows[2].sel:IsShown(), "chat: the list has the open chat marked and unread ones counted")
-    check(rows[3].item.head == "Online" and not rows[3]:IsEnabled() and rows[4].item.buddy == A and rows[5].item.buddy == B
-        and not rows[6]:IsShown(), "chat: then who's online with chat")
-    check(not Chat.startBtn:IsEnabled() and Chat.startBtn.label:GetText() == "Start chat", "chat: Start chat waits for a pick")
-    STUB.Script(rows[4], "OnClick", "LeftButton")
-    STUB.Script(rows[5], "OnClick", "LeftButton")
-    check(Chat.picked[A] and Chat.picked[B] and rows[4].sel:IsShown() and Chat.startBtn:IsEnabled()
-        and Chat.startBtn.label:GetText() == "Start chat (2)", "chat: clicking people picks them")
-    STUB.Script(rows[5], "OnClick", "LeftButton")
-    check(not Chat.picked[B] and Chat.startBtn.label:GetText() == "Start chat", "chat: clicking again unpicks")
-    STUB.Script(rows[5], "OnClick", "LeftButton")
-    STUB.Script(Chat.startBtn, "OnClick")
+        and not rows[2].sel:IsShown() and not rows[3]:IsShown(), "chat: the list is our chats and nothing else, the open one marked, unread counted")
+    -- New chat: the right card becomes a picker of who's online
+    local pk = Chat.picker
+    check(not pk:IsShown() and Chat.newBtn.label:GetText() == "New chat" and Chat.log:IsShown() and not Chat.picking, "chat: New chat under the list")
+    STUB.Script(Chat.newBtn, "OnClick")
+    check(Chat.picking and pk:IsShown() and not Chat.log:IsShown() and not Chat.input:IsShown() and Chat.pane.with:GetText() == "New chat"
+        and pk.search.__focus and not rows[1].sel:IsShown() and Chat.newBtn.selected == true,
+        "chat: New chat puts the picker where the open chat was, ready to type a name")
+    check(pk.rows[1].item == A and pk.rows[2].item == B and not pk.rows[3]:IsShown() and pk.rows[1].right:GetText() == ""
+        and not pk.start:IsEnabled() and pk.start.label:GetText() == "Start chat" and pk.hint:GetText() == "Pick one person, or several for a group."
+        and pk.search.ghost:IsShown(), "chat: it lists who's online with chat, and Start chat waits for a pick")
+    STUB.Script(pk.rows[1], "OnClick")
+    STUB.Script(pk.rows[2], "OnClick")
+    check(Chat.picked[A] and Chat.picked[B] and pk.rows[1].sel:IsShown() and pk.start:IsEnabled()
+        and pk.start.label:GetText() == "Start chat (2)" and pk.hint:GetText() == "", "chat: clicking people picks them")
+    STUB.Script(pk.rows[2], "OnClick")
+    check(not Chat.picked[B] and not pk.rows[2].sel:IsShown() and pk.start.label:GetText() == "Start chat", "chat: clicking again unpicks")
+    -- a line for the chat under the picker is unread until we're back in it
+    incoming(A, { D, me }, "under the picker")
+    check(c.unread == 1 and T.frame:IsShown(), "chat: a line for the chat behind the picker counts as unread")
+    T.notes = {}
+    T.frame:Hide()
+    STUB.Script(pk.cancel, "OnClick")
+    check(not Chat.picking and not pk:IsShown() and Chat.log:IsShown() and Chat.input:IsShown() and count(Chat.picked) == 0
+        and Chat.pane.with:GetText():find("Raider03", 1, true) and c.unread == 0 and rows[1].sel:IsShown() and not Chat.newBtn.selected
+        and not pk.search.__focus, "chat: Cancel goes back to the open chat (now read)")
+    check(Chat.log.__messages[#Chat.log.__messages]:find("under the picker", 1, true) and #Chat.log.__messages == #c.log,
+        "chat: with everything that arrived meanwhile, once")
+    -- typing a name narrows the list; Enter with one name left opens that chat
+    STUB.Script(Chat.newBtn, "OnClick")
+    pk.search:SetText("RAIDER04")
+    check(pk.rows[1].item == B and not pk.rows[2]:IsShown() and not pk.search.ghost:IsShown() and not pk.empty:IsShown(), "chat: typing narrows the list")
+    pk.search:SetText("zzz")
+    check(not pk.rows[1]:IsShown() and pk.empty:IsShown() and pk.empty:GetText() == "Nobody online matches that." and pk.hint:GetText() == "",
+        "chat: and says so when nobody matches")
+    STUB.Script(pk.search, "OnEnterPressed")
+    check(Chat.picking and Chat.current == c, "chat: Enter with nobody to pick does nothing")
+    pk.search:SetText("raider0")
+    STUB.Script(pk.search, "OnEnterPressed")
+    check(Chat.picking, "chat: nor with more than one name left")
+    pk.search:SetText("raider04")
+    STUB.Script(pk.start, "OnClick")
+    check(Chat.picking and Chat.current == c, "chat: the Start chat button wants a pick (a lone match is Enter's shortcut)")
+    pk.search:SetText("  raider04 ")
+    STUB.Script(pk.search, "OnEnterPressed")
+    check(not Chat.picking and Chat.current == bc and bc.unread == 0 and not pk.search.__focus and Chat.input.__focus,
+        "chat: Enter with one name left opens the chat with them")
+    bc.unread = 1
+    -- New chat again starts clean; clicking it a second time is Cancel
+    Chat.picked[A] = true -- (a pick left over from somewhere)
+    STUB.Script(Chat.newBtn, "OnClick")
+    check(pk.search:GetText() == "" and pk.rows[1].item == A and pk.rows[2].item == B and count(Chat.picked) == 0, "chat: the picker starts clean each time")
+    STUB.Script(Chat.newBtn, "OnClick")
+    check(not Chat.picking and Chat.log:IsShown(), "chat: clicking New chat again closes the picker")
+    -- clicking a chat on the left takes over from the picker
+    STUB.Script(Chat.newBtn, "OnClick")
+    STUB.Script(pk.rows[1], "OnClick")
+    STUB.Script(rows[1], "OnClick", "LeftButton")
+    check(not Chat.picking and Chat.current == rows[1].item.chat and count(Chat.picked) == 0 and Chat.log:IsShown(), "chat: opening a chat closes the picker")
+    Chat.current = c
+    bc.unread = 1
+    -- several people: a group chat
+    STUB.Script(Chat.newBtn, "OnClick")
+    STUB.Script(pk.rows[1], "OnClick")
+    STUB.Script(pk.rows[2], "OnClick")
+    STUB.Script(pk.start, "OnClick")
     local group = Chat:Get({ me, A, B })
-    check(group and Chat.current == group and count(Chat.picked) == 0 and Chat.pane.with:GetText():find("Raider03", 1, true)
+    check(group and Chat.current == group and count(Chat.picked) == 0 and not Chat.picking and not pk:IsShown() and Chat.log:IsShown()
+        and Chat.pane.with:GetText():find("Raider03", 1, true)
         and Chat.pane.with:GetText():find("Raider04", 1, true), "chat: Start chat opens the chat with the people picked")
     STUB.sent, STUB.allowance = {}, 10
     STUB.Script(Chat.input, "OnEnterPressed")
@@ -5825,8 +5883,21 @@ do
     check(near(il - pl, 8) and near((pl + pw) - (il + iw), 8) and near((it - ih) - (pt - ph), 8) and gt - gh >= it + 6
         and near(gl - pl, 10) and near((pl + pw) - (gl + gw), 10), "chat window: the line box along the bottom, the log above it")
     local rl, rt, rw, rh = STUB.rect(rows[#rows])
-    local bl, bt, bw, bh = STUB.rect(Chat.startBtn)
-    check(rt - rh >= bt + 4 and near((bt - bh) - (lt - lh), 8) and near((bl + bw / 2), ll + lw / 2), "chat window: the list ends above Start chat")
+    local bl, bt, bw, bh = STUB.rect(Chat.newBtn)
+    check(rt - rh >= bt + 4 and near((bt - bh) - (lt - lh), 8) and near((bl + bw / 2), ll + lw / 2), "chat window: the list ends above New chat")
+    -- the picker, in the right card: search under the heading, the names, then the hint, Cancel and Start chat along the bottom
+    local sl, st, sw, sh = STUB.rect(pk.search)
+    local _, p1t = STUB.rect(pk.rows[1])
+    local _, pnt, _, pnh = STUB.rect(pk.rows[#pk.rows])
+    local xl, xt, xw, xh = STUB.rect(pk.start)
+    local cl2, ct2, cw2, ch2 = STUB.rect(pk.cancel)
+    local hl2, ht2, hw2, hh2 = STUB.rect(pk.hint)
+    check(near(sl - pl, 8) and near((pl + pw) - (sl + sw), 8) and near(pt - st, 32) and near((st - sh) - p1t, 6) and near(pt - p1t, L.PICK_TOP)
+        and #pk.rows == L.PICK_ROWS, "picker: the search box under the heading, the names 6px under it")
+    check(near((pl + pw) - (xl + xw), 8) and near((xt - xh) - (pt - ph), 8) and near(xl - (cl2 + cw2), 6) and near(ct2 - ch2 / 2, xt - xh / 2)
+        and ch2 == xh and pnt - pnh >= xt + 6, "picker: Start chat in the corner, Cancel 6px left of it, the names ending above them")
+    check(near(hl2 - pl, 10) and near((ht2 - hh2) - (pt - ph), 8) and hl2 + hw2 <= cl2 - 8 + 0.5 and hw2 == L.PICK_HINT_W and hw2 >= 120,
+        "picker: the hint in the bottom corner, clear of Cancel")
     local found
     for _, n in ipairs(UISpecialFrames) do if n == "PogRaidChat" then found = true end end
     check(found, "chat window: Esc closes it")
@@ -5996,10 +6067,16 @@ do
     wipe(Chat.off)
     V.seen = {}
     Chat:Refresh()
-    local headRow
-    for _, row in ipairs(Chat.left.rows) do if row:IsShown() and row.item.head then headRow = row end end
-    check(headRow and headRow.item.head == "Nobody online yet" and #headRow.item.head <= 20,
-        "chat: with nobody to chat with the list says so, in words that fit")
+    STUB.Script(Chat.newBtn, "OnClick")
+    check(not pk.rows[1]:IsShown() and pk.empty:IsShown() and pk.empty:GetText() == "Nobody online has Pog Guild Tools 0.16.5 or newer."
+        and pk.hint:GetText() == "" and not pk.start:IsEnabled(), "chat: with nobody to chat with the picker says so")
+    STUB.Script(pk.cancel, "OnClick")
+    G.chats = nil
+    Chat.current = nil
+    Chat:Refresh()
+    check(Chat.left.rows[1].item.head == "No chats yet" and not Chat.left.rows[1]:IsEnabled() and not Chat.left.rows[2]:IsShown()
+        and Chat.pane.empty:IsShown() and Chat.pane.empty:GetText() == "Click New chat to message someone." and not Chat.log:IsShown(),
+        "chat: with no chats the list says so, and the card says where to start")
     G.chats = nil
     Chat.current = nil
     Chat.frame:Hide()
@@ -6120,6 +6197,294 @@ do
     Sync.index = nil
     G.kudosSeen, G.chats = nil, nil
     T.notes = {}
+    ns.db.settings.chatWhispers = true
+    V.seen, V.dev, ns.db.versions = savedSeen, {}, savedVersions
+    for _, e in ipairs(savedGuild) do e[1].online = e[2] end
+    for i = #STUB.guild, #savedGuild + 1, -1 do table.remove(STUB.guild, i) end
+    Roster:ScanGuild()
+    ns.Attendance.keyCache = nil
+    ns.Editor:ShowTab("home")
+end
+
+-- 0.16.7: guildmates' whispers in the chat window ------------------------------------------------
+do
+    local Chat, Sync, Roster, T, Home, UI = ns.Chat, ns.Sync, ns.Roster, ns.GroupToast, ns.Home, ns.UI
+    local G = ns.db.guild
+    local me = Sync:Me()
+    -- A has chat, B has it too, C is on an old version, D is offline, E has never had the addon
+    local A, B, C, D, E = "Raider03-Realm", "Raider04-Realm", "Raider05-Realm", "Raider06-Realm", "Noaddon-Realm"
+    local savedGuild = {}
+    for i, m in ipairs(STUB.guild) do savedGuild[i] = { m, m.online } end
+    local function member(name, online)
+        for _, m in ipairs(STUB.guild) do
+            if m.name == name then m.online = online return end
+        end
+        table.insert(STUB.guild, { name = name, rankIndex = 2, level = 60, online = online, class = "MAGE" })
+    end
+    member(A, true) member(B, true) member(C, true) member(D, false) member(E, true)
+    Roster:ScanGuild()
+    local V = ns.Version
+    local savedSeen, savedVersions = V.seen, ns.db.versions
+    V.seen, V.dev, ns.db.versions = { [A] = "0.16.7", [B] = "0.16.5", [C] = "0.16.4" }, {}, {}
+    G.chats = nil
+    wipe(Chat.off) wipe(Chat.picked) wipe(Chat.pending)
+    Chat.current = nil
+    T.notes = {}
+    if T.frame then T.frame:Hide() end
+    if Chat.frame then Chat.frame:Hide() end
+    ns.Editor:ShowTab("home")
+    local function count(t) local n = 0 for _ in pairs(t or {}) do n = n + 1 end return n end
+    local function last(c) return c.log[#c.log] end
+    local function whisperIn(text, from) STUB.Fire("CHAT_MSG_WHISPER", text, from) end
+    local function whisperOut(text, to) STUB.Fire("CHAT_MSG_WHISPER_INFORM", text, to) end
+
+    -- who can be chatted with now: the whole guild that's online
+    check(Chat:HasChat(A) and Chat:HasChat(B) and not Chat:HasChat(C) and not Chat:HasChat(E) and not Chat:HasChat(me),
+        "whispers: the addon's own lines still only reach who has chat")
+    check(Chat:CanChat(A) and Chat:CanChat(C) and Chat:CanChat(E) and not Chat:CanChat(D) and not Chat:CanChat(me)
+        and not Chat:CanChat("Stranger-Realm"), "whispers: but any guildmate who's online can be chatted with")
+    local buddies = Chat:Buddies()
+    local pos, ordered, seenPlain = {}, true, false
+    for i, n in ipairs(buddies) do
+        pos[n] = i
+        if Chat:HasChat(n) then ordered = ordered and not seenPlain else seenPlain = true end
+    end
+    check(pos[A] == 1 and pos[B] == 2 and pos[C] and pos[E] and not pos[D] and not pos[me] and ordered,
+        "whispers: the list has everyone online, those with chat first")
+
+    -- a guildmate's whisper lands in the chat with them: unread, no pop-up or sound of ours (the game has shown it)
+    STUB.sounds, STUB.sent, STUB.said = {}, {}, {}
+    local link = "want this? |cff0070dd|Hitem:2100::::::::60|h[Precisely Calibrated Boomstick]|h|r"
+    whisperIn(link, E)
+    local ec = Chat:Get({ me, E })
+    check(ec and #ec.log == 1 and last(ec).from == E and last(ec).w == true and last(ec).text == link and ec.unread == 1 and count(G.chats) == 1,
+        "whispers: one from a guildmate is kept in the chat with them, unread")
+    check(not (T.frame and T.frame:IsShown()) and #T.notes == 0 and #STUB.sounds == 0 and #STUB.sent == 0,
+        "whispers: no pop-up or sound of ours for it, and nothing sent")
+    Home:Refresh()
+    check(Home.onlineCard.chat.label:GetText() == "Chat (1)", "whispers: Home's Chat button counts it")
+    -- one we sent from the game's own chat box is kept too, and answering means we've read theirs
+    whisperOut("yes please", "Noaddon-Realm")
+    check(#ec.log == 2 and last(ec).from == me and last(ec).w == true and last(ec).text == "yes please" and ec.unread == 0
+        and Home.onlineCard.chat.label:GetText() == "Chat", "whispers: our own whisper to them too, which marks theirs read")
+    whisperIn("short name works", "Noaddon")
+    check(#ec.log == 3 and last(ec).from == E, "whispers: (however the game spells their name)")
+    -- what isn't kept
+    local function ignored(fn)
+        local chats, lines = count(G.chats), #ec.log
+        fn()
+        return count(G.chats) == chats and #ec.log == lines
+    end
+    check(ignored(function() whisperIn("psst", "Stranger-Realm") end) and ignored(function() whisperOut("hi", "Stranger-Realm") end),
+        "whispers: not with people outside the guild")
+    check(ignored(function() whisperIn({ __secret = true }, E) end) and ignored(function() whisperIn("hi", { __secret = true }) end)
+        and ignored(function() whisperIn(nil, E) end) and ignored(function() whisperIn("", E) end),
+        "whispers: not ones the game hides from addons, or empty ones")
+    check(ignored(function() whisperIn("me?", "Jake-Realm") end), "whispers: not our own name")
+    ns.db.settings.chatWhispers = false
+    check(ignored(function() whisperIn("off", E) end) and not Chat:CanChat(E) and Chat:CanChat(A), "whispers: none when Guild whispers is off")
+    ns.db.settings.chatWhispers = true
+    ns.db.settings.chat = false
+    check(ignored(function() whisperIn("chat off", E) end), "whispers: none when group chat is off")
+    ns.db.settings.chat = true
+
+    -- shown as the game sent it (its links work); an addon line is still escaped
+    Chat:Open(ec)
+    local msgs = Chat.log.__messages
+    check(msgs[1]:find("|Hitem:2100", 1, true) and not msgs[1]:find("||Hitem", 1, true) and msgs[1]:find("Noaddon", 1, true),
+        "whispers: shown as the game sent it, item link and all")
+    local got
+    SetItemRef = function(l, t, b) got = l .. "/" .. b end
+    STUB.Script(Chat.log, "OnHyperlinkClick", "item:2100::::::::60", "[Precisely Calibrated Boomstick]", "LeftButton")
+    check(got == "item:2100::::::::60/LeftButton", "whispers: clicking a link opens it like the game's chat does")
+    SetItemRef = nil
+    -- reading the open chat: a new whisper just appears
+    whisperIn("you there", E)
+    check(ec.unread == 0 and Chat.log.__messages[#Chat.log.__messages]:find("you there", 1, true), "whispers: in the open chat it just appears")
+
+    -- the heading says how a line gets there
+    check(Chat.pane.how:GetText() == "Sent as whispers", "whispers: the chat with someone without the addon says lines go as whispers")
+    -- typing to them sends an ordinary whisper; the line is the game's echo of it, once
+    STUB.said, STUB.sent, STUB.timers = {}, {}, {}
+    local lines = #ec.log
+    check(Chat:Send(ec, "be there | soon") == true and #STUB.said == 1 and STUB.said[1].type == "WHISPER" and STUB.said[1].target == "Noaddon"
+        and STUB.said[1].text == "be there || soon" and #STUB.sent == 0, "whispers: a line to them goes as a whisper (a | made safe), not an addon message")
+    check(#ec.log == lines + 1 and last(ec).from == me and last(ec).w and Chat.pending[E] == nil, "whispers: and shows once, when the game says it went")
+    STUB.Advance(Chat.WHISPER_WAIT + 1)
+    check(#ec.log == lines + 1, "whispers: (no complaint afterwards)")
+    -- one the game swallows is noticed
+    STUB.whisperLost = true
+    lines = #ec.log
+    check(Chat:Send(ec, "hello?") == true and #ec.log == lines and Chat.pending[E] ~= nil, "whispers: one that doesn't come back isn't shown as sent")
+    STUB.Advance(Chat.WHISPER_WAIT)
+    check(#ec.log == lines + 1 and last(ec).sys and last(ec).text == "That didn't reach Noaddon. Whisper them from the game's chat box."
+        and Chat.pending[E] == nil, "whispers: and after a moment the chat says it didn't go")
+    STUB.whisperLost = nil
+    -- the game refusing chat, or no way to send: said at once, the text stays in the box
+    STUB.restricted = true
+    STUB.said = {}
+    lines = #ec.log
+    Chat.input:SetText("in a boss fight")
+    STUB.Script(Chat.input, "OnEnterPressed")
+    check(#STUB.said == 0 and #ec.log == lines + 1 and last(ec).sys and last(ec).text:find("Whispers can't be sent from here right now", 1, true)
+        and Chat.input:GetText() == "in a boss fight", "whispers: when the game is refusing chat it says so and keeps what was typed")
+    STUB.restricted = false
+    local realSend = SendChatMessage
+    SendChatMessage = function() error("blocked") end
+    lines = #ec.log
+    check(Chat:Send(ec, "blocked?") == false and #ec.log == lines + 1 and last(ec).text:find("That didn't reach Noaddon", 1, true)
+        and Chat.pending[E] == nil, "whispers: a whisper the game throws out is reported at once")
+    -- the newer call is used where the client has it
+    local viaNew
+    C_ChatInfo.SendChatMessage = function(text, chatType, _, target) viaNew = text .. ">" .. chatType .. ">" .. target end
+    Chat:Send(ec, "new api")
+    check(viaNew == "new api>WHISPER>Noaddon", "whispers: sent with C_ChatInfo.SendChatMessage where there is one")
+    C_ChatInfo.SendChatMessage = nil
+    SendChatMessage = realSend
+    wipe(Chat.pending)
+    STUB.timers = {}
+
+    -- someone with chat still gets the addon's own lines, and nothing is whispered
+    STUB.said, STUB.sent, STUB.allowance = {}, {}, 10
+    Chat:OpenWith({ A })
+    local ac = Chat.current
+    Chat:Send(ac, "addon way")
+    check(#STUB.said == 0 and #STUB.sent == 1 and STUB.sent[1].channel == "WHISPER" and STUB.sent[1].text:sub(1, 1) == "C"
+        and Chat.pane.how:GetText() == "" and last(ac).w == nil, "whispers: someone with chat gets it the addon's way")
+    -- unless they've turned chat off: then a whisper it is
+    STUB.Fire("CHAT_MSG_ADDON", "PogRaid", "CAAAAN", "WHISPER", A)
+    STUB.said, STUB.sent = {}, {}
+    Chat:Send(ac, "whisper then")
+    check(#STUB.said == 1 and STUB.said[1].target == "Raider03" and #STUB.sent == 0 and Chat:CanChat(A) and not Chat:HasChat(A)
+        and last(ac).w, "whispers: someone who turned chat off can still be whispered")
+    wipe(Chat.off)
+    -- offline: nothing goes anywhere
+    STUB.said, STUB.sent = {}, {}
+    local dc = Chat:Get({ me, D }, true)
+    Chat:Send(dc, "you on?")
+    check(#STUB.said == 0 and #STUB.sent == 0 and last(dc).sys and last(dc).text:find("Nobody in this chat is online", 1, true),
+        "whispers: nobody offline is whispered")
+    Chat:Delete(dc)
+    -- an old version of the addon: a whisper too (it has no chat)
+    STUB.said, STUB.sent = {}, {}
+    Chat:OpenWith({ C })
+    Chat:Send(Chat.current, "update your addon")
+    check(#STUB.said == 1 and STUB.said[1].target == "Raider05" and #STUB.sent == 0 and Chat.pane.how:GetText() == "Sent as whispers",
+        "whispers: someone on an old version is whispered")
+    -- the practice chat still sends nothing
+    STUB.said, STUB.sent, STUB.timers = {}, {}, {}
+    SlashCmdList.POGRAID("chat test")
+    local partner = Chat:Others(Chat.current)[1]
+    member(partner, true) -- (online and without chat: a real chat with them would go as whispers)
+    Roster:ScanGuild()
+    V.seen[partner] = nil
+    Chat:Refresh()
+    Chat:Send(Chat.current, "testing")
+    check(Chat.current.test and #STUB.said == 0 and #STUB.sent == 0 and Chat.pane.how:GetText() == "", "whispers: the practice chat whispers nobody")
+    Chat:Delete(Chat.current)
+    STUB.timers = {}
+
+    -- the picker: everyone online, the whisper-only marked; they can't be put in a group
+    Chat:Open(ec)
+    local pk = Chat.picker
+    STUB.Script(Chat.newBtn, "OnClick")
+    local function rowFor(name)
+        for off = 0, 80 do
+            pk.offset = off
+            Chat:RefreshPicker()
+            for _, row in ipairs(pk.rows) do
+                if row:IsShown() and row.item == name then return row end
+            end
+            if pk.offset ~= off then break end
+        end
+    end
+    check(rowFor(A).right:GetText() == "" and rowFor(E).right:GetText() == "whisper" and rowFor(C).right:GetText() == "whisper"
+        and not rowFor(D) and not rowFor(me), "whispers: someone without chat is marked in the picker")
+    check(#Chat:PickList() > Chat.layout.PICK_ROWS and pk.scroll.tex:IsShown(), "whispers: (a guild's worth of names scrolls)")
+    local addonHint = "A group chat needs the addon on everyone."
+    STUB.printed = {}
+    STUB.Script(rowFor(A), "OnClick")
+    local eRow = rowFor(E)
+    check(eRow.dim and not eRow:IsEnabled() and eRow:GetAlpha() < 0.5 and pk.hint:GetText() == addonHint,
+        "whispers: with someone picked, people without chat are greyed out and the picker says why")
+    check(not rowFor(B).dim and rowFor(B):IsEnabled() and rowFor(B):GetAlpha() == 1 and not rowFor(A).dim, "whispers: (people with chat aren't)")
+    STUB.Script(rowFor(E), "OnClick")
+    check(Chat.picked[A] and not Chat.picked[E] and count(Chat.picked) == 1 and #STUB.printed == 0,
+        "whispers: a greyed-out name can't be picked, and nothing is printed to chat about it")
+    STUB.Script(rowFor(B), "OnClick")
+    check(Chat.picked[A] and Chat.picked[B] and pk.start.label:GetText() == "Start chat (2)", "whispers: (people with chat still group up)")
+    STUB.Script(rowFor(A), "OnClick")
+    STUB.Script(rowFor(B), "OnClick")
+    check(count(Chat.picked) == 0 and not rowFor(E).dim and not rowFor(C).dim and pk.hint:GetText() == "Pick one person, or several for a group.",
+        "whispers: with nobody picked, anyone can be")
+    STUB.Script(rowFor(E), "OnClick")
+    check(Chat.picked[E] and rowFor(E).sel:IsShown() and not rowFor(E).dim and rowFor(A).dim and rowFor(C).dim and pk.hint:GetText() == addonHint
+        and pk.start:IsEnabled() and pk.start.label:GetText() == "Start chat", "whispers: someone without chat is picked alone")
+    STUB.Script(rowFor(A), "OnClick")
+    check(not Chat.picked[A] and count(Chat.picked) == 1, "whispers: nobody can be added to them")
+    STUB.Script(pk.start, "OnClick")
+    check(Chat.current == ec and count(Chat.picked) == 0 and not Chat.picking, "whispers: Start chat opens the chat with them")
+    -- the search finds people by any part of their name
+    STUB.Script(Chat.newBtn, "OnClick")
+    pk.search:SetText("noadd")
+    check(pk.rows[1].item == E and not pk.rows[2]:IsShown(), "whispers: the search finds someone without the addon")
+    STUB.Script(pk.search, "OnEnterPressed")
+    check(Chat.current == ec and not Chat.picking, "whispers: and Enter opens the chat with them")
+    -- a chat holds eight: with seven picked nobody else can be
+    local extra = {}
+    for i = 1, 8 do
+        extra[i] = ("Extra%02d-Realm"):format(i)
+        member(extra[i], true)
+        V.seen[extra[i]] = "0.16.7"
+    end
+    Roster:ScanGuild()
+    STUB.Script(Chat.newBtn, "OnClick")
+    for i = 1, 7 do STUB.Script(rowFor(extra[i]), "OnClick") end
+    check(count(Chat.picked) == 7 and rowFor(extra[8]).dim and rowFor(A).dim and not rowFor(extra[1]).dim
+        and pk.hint:GetText() == "A chat holds 8 people at most." and pk.start.label:GetText() == "Start chat (7)", "picker: a chat holds eight, us included")
+    STUB.Script(rowFor(extra[8]), "OnClick")
+    check(count(Chat.picked) == 7, "picker: (the eighth can't be picked)")
+    -- someone picked who logs off drops out
+    member(extra[1], false)
+    Roster:ScanGuild()
+    STUB.Fire("GUILD_ROSTER_UPDATE")
+    check(count(Chat.picked) == 6 and not Chat.picked[extra[1]] and not rowFor(extra[1]) and not rowFor(extra[8]).dim
+        and pk.start.label:GetText() == "Start chat (6)", "picker: someone picked who logs off drops out")
+    pk.offset = 0
+    STUB.Script(pk.cancel, "OnClick")
+    check(Chat.current == ec and not Chat.picking, "picker: (and Cancel)")
+
+    -- someone coming or going redraws the list and the heading, not the log (it would lose its place)
+    local kept = Chat.log.__messages
+    V.seen[E] = "0.16.7"
+    STUB.Fire("GUILD_ROSTER_UPDATE")
+    check(Chat.log.__messages == kept and Chat.pane.how:GetText() == "", "whispers: a roster change updates the heading and leaves the log alone")
+    V.seen[E] = nil
+    STUB.Fire("GUILD_ROSTER_UPDATE")
+    check(Chat.pane.how:GetText() == "Sent as whispers", "whispers: (and back)")
+
+    -- the Guild whispers check in the title bar
+    local chk = Chat.whisperCheck
+    local fl, ft, fw, fh = STUB.rect(Chat.frame)
+    local kl, kt, kw, kh = STUB.rect(chk)
+    check(chk.checked and chk.label:GetText() == "Guild whispers" and near(kt - kh / 2, ft - 15) and kl + kw <= fl + fw - 10 - 21 - 6 + 0.5
+        and kl > fl + 60, "chat window: a Guild whispers check in the title bar, clear of the title and the X")
+    STUB.Script(chk, "OnClick")
+    check(ns.db.settings.chatWhispers == false and not chk.checked and not Chat:CanChat(E) and Chat.pane.how:GetText() == "",
+        "chat window: unticking it turns whispers off")
+    STUB.Script(Chat.newBtn, "OnClick")
+    check(rowFor(A) and not rowFor(E) and not rowFor(C), "chat window: and the picker goes back to who has chat")
+    STUB.Script(chk, "OnClick")
+    check(ns.db.settings.chatWhispers == true and chk.checked and Chat:CanChat(E) and rowFor(E), "chat window: and on again, with everyone back")
+    pk.offset = 0
+    STUB.Script(pk.cancel, "OnClick")
+
+    -- tidy up
+    G.chats = nil
+    Chat.current = nil
+    Chat.frame:Hide()
+    wipe(Chat.off) wipe(Chat.picked) wipe(Chat.pending)
+    STUB.said, STUB.sent, STUB.timers = {}, {}, {}
     V.seen, V.dev, ns.db.versions = savedSeen, {}, savedVersions
     for _, e in ipairs(savedGuild) do e[1].online = e[2] end
     for i = #STUB.guild, #savedGuild + 1, -1 do table.remove(STUB.guild, i) end

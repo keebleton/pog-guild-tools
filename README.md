@@ -21,7 +21,7 @@ Your guild at a glance: the guild's name and message of the day, who's online (S
 
 ## Group chat
 
-A small chat window of its own, like an instant messenger. Pick one guildie or several from who's online and start a chat: lines go privately between the people in it, a pop-up and a sound tell you about a new one, and your chats are still there next time you log in. Open it with the Chat button on Home, from a guildie's right-click menu, or with `/pog chat`. It reaches guildies who are online with Pog Guild Tools 0.16.5 or newer, and Settings turns it off.
+A small chat window of its own, like an instant messenger. Click New chat, pick one guildie or several from who's online (or type a name to find them) and start a chat: lines go privately between the people in it, a pop-up and a sound tell you about a new one, and your chats are still there next time you log in. Open it with the Chat button on Home, from a guildie's right-click menu, or with `/pog chat`. Whispers to and from guildmates are kept in your chat with them too, and a line to a guildie without the addon goes out as an ordinary whisper, so it works with the whole guild. Group chats of three or more need everyone on Pog Guild Tools 0.16.5 or newer. Settings turns chat off; the "Guild whispers" tick in the chat window keeps whispers out of it.
 
 ## Profiles
 

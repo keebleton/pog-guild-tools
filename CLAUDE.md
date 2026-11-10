@@ -103,6 +103,27 @@ launchers and plain-English steps. Read this whole file before changing anything
   the window closes, senders are told). `/pog chat test` makes a practice chat (`c.test`) that answers back and never
   whispers anyone; a real line from that person makes it a real chat. Entry points: Home's Chat button (left of Show
   offline, "Chat (n)" when unread), the Online now right-click menu, `/pog chat`, and the pop-up.
+- 0.16.7 whispers in chat (Jake: "save in game whispers from guildmates"): `CHAT_MSG_WHISPER` / `_INFORM` with a guild
+  member are logged into the 1:1 chat with them as lines with `w = true` (`Chat:OnWhisper`; the INFORM event is the ONLY
+  place our own whispers are logged, so one typed in the window isn't added twice). No pop-up or sound for them (the
+  game has shown it); incoming ones count as unread, our own reply marks the chat read. A `w` line is shown as the game
+  sent it (links work, `OnHyperlinkClick` -> `SetItemRef`); addon lines stay escaped. `Chat:HasChat(name)` = the addon's
+  own lines reach them (version >= MIN_VERSION, not off); `Chat:CanChat(name)` = online and HasChat, or any guild member
+  when `Chat:Whispers()` (`settings.chatWhispers`, the "Guild whispers" check in the chat window's title bar: Settings'
+  General card has no room left). A 1:1 line to someone online without HasChat goes out with
+  `C_ChatInfo.SendChatMessage or SendChatMessage` (every "|" doubled), never in `Comm.IsRestricted()`; if no INFORM
+  comes back within `Chat.WHISPER_WAIT` the chat says it didn't go. Groups of 3+ need HasChat for everyone (the list
+  refuses the pick and says why). `GUILD_ROSTER_UPDATE` calls `Chat:RosterChanged` (list and heading only: redrawing
+  the log lost its scroll position). Not yet proven on the live client: sending a real whisper from addon code.
+- 0.16.7 chat window layout (Jake, from his screenshot: chats and the whole guild in one column "looks a little
+  confusing"): the left list is ONLY our chats (`Chat:Items`, "No chats yet" when empty) with a New chat button under
+  it. New chat (`Chat.picking`) shows the picker in the right card in place of the open chat: a search box (any part
+  of the short name, case-blind; Enter with exactly one name left opens that chat), everyone from `Chat:Buddies()`
+  (those without HasChat tagged "whisper"), a two-line hint bottom left, Cancel and Start chat (n). `Chat:Pickable`:
+  the first pick is anyone; after that a name is greyed out (`row.dim`, alpha 0.35, disabled) when the chat is full
+  ("full") or when it or a pick lacks HasChat ("addon"), and the hint says which. Nothing is printed to the chat box
+  for a refused pick any more (it spammed). While picking, the chat underneath isn't being watched (`Chat:Watching`), so
+  its new lines count as unread until Cancel. Opening any chat (list, pop-up, Home menu) closes the picker.
 - 0.16.6: the chat window is on the DIALOG strata, toplevel, and `Raise()`d on every `Chat:Open`. On HIGH (the main
   window's strata, which is toplevel) it opened behind the main window, so Home's Chat button seemed dead. Any new
   window that can be opened from inside the main window needs the same.
