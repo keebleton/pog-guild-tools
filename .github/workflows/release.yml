@@ -34,6 +34,12 @@ jobs:
           echo "tag $GITHUB_REF_NAME, PogRaid.toc $toc, Core.lua $core"
           test "v$toc" = "$GITHUB_REF_NAME" && test "$toc" = "$core"
 
+      - name: Check the dev-build marker won't be in the release
+        run: |
+          # Core.lua marks dev builds between --@do-not-package@ lines, which the packager deletes
+          grep -q 'ns.DEV = true' PogRaid/Core.lua
+          ! sed '/--@do-not-package@/,/--@end-do-not-package@/d' PogRaid/Core.lua | grep -q 'ns.DEV = true'
+
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"

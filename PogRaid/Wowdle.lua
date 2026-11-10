@@ -285,7 +285,8 @@ local ROWS = { "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM" }
 -- Your stats get their own plain card under the guild's (Jake: they got lost
 -- in the art), with blue bars; today's try stays green.
 Wowdle.STATS_H = 250
-Wowdle.BAR_BLUE = { 0.22, 0.45, 0.78 }
+Wowdle.BAR_ALPHA = 0.6 -- the stats bars: the theme's accent, turned down (today's bar is green)
+local function barColor() return UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3], Wowdle.BAR_ALPHA end
 
 local function square(c)
     local col = COLORS[c]
@@ -297,7 +298,7 @@ function Wowdle:Build(view, top, height)
     self.typed = ""
     local grid = CreateFrame("Button", nil, view)
     self.gridTop = top
-    grid:SetScript("OnClick", function() self.input:SetFocus() end)
+    grid:SetScript("OnClick", function() self:Focus() end)
     self.grid = grid
     self.tiles = {}
     for r = 1, Wowdle.TRIES do
@@ -431,7 +432,7 @@ function Wowdle:Build(view, top, height)
         local bar = card:CreateTexture(nil, "ARTWORK")
         bar:SetPoint("TOPLEFT", 32, -(y - 1))
         bar:SetHeight(14)
-        bar:SetColorTexture(Wowdle.BAR_BLUE[1], Wowdle.BAR_BLUE[2], Wowdle.BAR_BLUE[3], 1)
+        bar:SetColorTexture(barColor())
         local count = UI.Text(card, 10)
         count:SetPoint("LEFT", bar, "RIGHT", 6, 0)
         side.bars[i] = { bar = bar, count = count, max = barMax }
@@ -442,7 +443,11 @@ function Wowdle:Build(view, top, height)
     side.share:SetPoint("BOTTOMRIGHT", -12, 12)
     side.post = UI.Button(card, "Post to guild", 110, 24, function() self:PostScore() end)
     side.post:SetPoint("RIGHT", side.share, "LEFT", -6, 0)
-    view:SetScript("OnShow", function() if self:State() == "playing" then input:SetFocus() end end)
+    -- Opening the page doesn't take the keyboard (movement keys stopped working
+    -- the moment Games opened): clicking the board does, and so does asking for
+    -- it by name with /pog wowdle. The line under the keyboard says which.
+    input:SetScript("OnEditFocusGained", function() self.typing = true; self:Refresh() end)
+    input:SetScript("OnEditFocusLost", function() self.typing = nil; self:Refresh() end)
     -- leaving the page always gives the keyboard back, and so does combat
     -- starting (a box with focus would type letters instead of casting)
     view:SetScript("OnHide", function() input:ClearFocus() end)
@@ -548,6 +553,11 @@ function Wowdle:RefreshGrid()
     end
 end
 
+-- Ready to type (the board was clicked, or /pog wowdle).
+function Wowdle:Focus()
+    if self.input and self.view and self.view:IsShown() and self:State() == "playing" then self.input:SetFocus() end
+end
+
 function Wowdle:Refresh()
     if not self.view then return end
     self:RefreshGrid()
@@ -561,7 +571,8 @@ function Wowdle:Refresh()
         self.status:SetText(("The word was |cffffd200%s|r."):format(self:Word(cur.day)))
     else
         -- the word's length lives here, under the keyboard, clear of the game tabs
-        self.status:SetText(("|cff8a8a92%d letters|r"):format(self:Length(cur.day)))
+        self.status:SetText(("|cff8a8a92%d letters%s|r"):format(self:Length(cur.day),
+            self.typing and "" or ", click the board to type"))
     end
 
     local side = self.side
@@ -597,8 +608,11 @@ function Wowdle:Refresh()
     for i, b in ipairs(side.bars) do
         local n = st.dist[i]
         b.bar:SetWidth(math.max(4, b.max * n / most))
-        local col = todayN == i and COLORS.g or Wowdle.BAR_BLUE
-        b.bar:SetColorTexture(col[1], col[2], col[3], 1)
+        if todayN == i then
+            b.bar:SetColorTexture(COLORS.g[1], COLORS.g[2], COLORS.g[3], 1)
+        else
+            b.bar:SetColorTexture(barColor())
+        end
         b.count:SetText(tostring(n))
     end
     side.share:SetEnabledState(state ~= "playing")

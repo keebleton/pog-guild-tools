@@ -106,7 +106,7 @@ Sync:Register({
             if (rec.exp or 0) < cutoff then store[id] = nil end
         end
     end,
-    expired = function(rec) return rec.exp < ns.Now() end,
+    expired = function(rec, now) return rec.exp < (now or ns.Now()) end,
     onChange = function() Dungeons:Changed() end,
 })
 
@@ -295,7 +295,10 @@ function Dungeons:List()
     local out = {}
     local journal = ns.Journal and ns.Journal:List() or {}
     if #journal > 0 then
-        for _, dg in ipairs(journal) do out[#out + 1] = { name = dg.name, level = dg.level } end
+        for _, dg in ipairs(journal) do
+            -- the journal also has pages that aren't dungeons (the Cozy Sleeping Bag quest chain)
+            if not (dg.data and dg.data.questChainPage) then out[#out + 1] = { name = dg.name, level = dg.level } end
+        end
     else
         for _, k in ipairs(Dungeons.KNOWN) do out[#out + 1] = { name = k[1], level = k[2] } end
     end

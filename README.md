@@ -19,12 +19,16 @@ Your guild at a glance: the guild's name and message of the day, who's online (S
 - **Message board.** Officers post announcements and can pin them; everyone with Pog Guild Tools can comment.
 - **Group finder.** Post what you're doing and who you need. Listings show how full the group is (2/5) and expire after 45 minutes. Guildies ask to join with one click and you get a pop-up to invite them. When someone posts a group, a small pop-up lets you ask to join right away.
 
+## Group chat
+
+A small chat window of its own, like an instant messenger. Pick one guildie or several from who's online and start a chat: lines go privately between the people in it, a pop-up and a sound tell you about a new one, and your chats are still there next time you log in. Open it with the Chat button on Home, from a guildie's right-click menu, or with `/pog chat`. It reaches guildies who are online with Pog Guild Tools 0.16.5 or newer, and Settings turns it off.
+
 ## Profiles
 
 A page for every guildie running Pog Guild Tools, one per account.
 
 - **Make it yours.** A nickname, a status line, About Me, favorites, main role, a portrait from thousands of classic icons, a theme color and a profile song that plays when guildies visit. Set it once and all your characters share it.
-- **Kudos.** Recognize guildies for Clutch heals, Great tank, Carried me, GGWP and more, with a few words saying why.
+- **Kudos.** Recognize guildies for Clutch heals, Great tank, Carried me, GGWP and more, with a few words saying why. They get a pop-up when you do.
 - **Professions.** Their two main professions, with their recipes a click away.
 - **Character.** Their gear laid out like the character pane, with their stats (or their character in 3D when they're nearby), and Inspect to see what they were most recently wearing, even when they're offline. Click an item to add it to your own wishlist.
 - **Most played with.** Fills itself with the guildies you group with most.
@@ -67,7 +71,7 @@ A page for every guildie running Pog Guild Tools, one per account.
 ## Commands
 
 - `/pog` opens and closes the window.
-- `/pog home`, `/pog roster`, `/pog attendance`, `/pog loot`, `/pog plans`, `/pog crafting`, `/pog games`, `/pog settings` open a tab. `/pog wowdle`, `/pog gems` and `/pog duels` open a game.
+- `/pog home`, `/pog roster`, `/pog attendance`, `/pog loot`, `/pog plans`, `/pog crafting`, `/pog games`, `/pog settings` open a tab. `/pog wowdle`, `/pog gems` and `/pog duels` open a game. `/pog chat` opens group chat.
 - `/pog profile` opens your profile; `/pog profile Name` opens someone else's.
 - `/pog late`, `/pog early` and `/pog ontime` tell the raid leaders about tonight.
 - `/pog minimap` shows or hides the minimap button. `/pog reset` puts the windows back in the middle of the screen.

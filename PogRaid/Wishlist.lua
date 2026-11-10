@@ -37,7 +37,11 @@ local function hideTip() if GameTooltip then GameTooltip:Hide() end end
 ------------------------------------------------------------------------
 -- Slots
 ------------------------------------------------------------------------
--- Inventory slot IDs, the character sheet's two columns (side 1 left).
+-- Inventory slot IDs and where each sits on the character sheet: side 1 the
+-- left column, 2 the right, 3 the weapons in a row along the bottom, like the
+-- game's character pane. Seven armour slots a side (Hands on the left), so
+-- the columns end together; the weapons used to run on down the left one and
+-- left Ranged on its own at the bottom.
 Wishlist.SLOTS = {
     { id = 1, name = "Head", inv = "HeadSlot", side = 1 },
     { id = 2, name = "Neck", inv = "NeckSlot", side = 1 },
@@ -45,10 +49,10 @@ Wishlist.SLOTS = {
     { id = 15, name = "Back", inv = "BackSlot", side = 1 },
     { id = 5, name = "Chest", inv = "ChestSlot", side = 1 },
     { id = 9, name = "Wrist", inv = "WristSlot", side = 1 },
-    { id = 16, name = "Main Hand", inv = "MainHandSlot", side = 1 },
-    { id = 17, name = "Off Hand", inv = "SecondaryHandSlot", side = 1 },
-    { id = 18, name = "Ranged", inv = "RangedSlot", side = 1 },
-    { id = 10, name = "Hands", inv = "HandsSlot", side = 2 },
+    { id = 10, name = "Hands", inv = "HandsSlot", side = 1 },
+    { id = 16, name = "Main Hand", inv = "MainHandSlot", side = 3 },
+    { id = 17, name = "Off Hand", inv = "SecondaryHandSlot", side = 3 },
+    { id = 18, name = "Ranged", inv = "RangedSlot", side = 3 },
     { id = 6, name = "Waist", inv = "WaistSlot", side = 2 },
     { id = 7, name = "Legs", inv = "LegsSlot", side = 2 },
     { id = 8, name = "Feet", inv = "FeetSlot", side = 2 },
@@ -428,6 +432,7 @@ local ROW_H = 34
 -- the character sheet: two columns of slots, the model between them
 local SLOT, PITCH, EDGE, TEXT_W = 36, 58, 16, 140
 local SLOT_TOP = math.floor((LIST_H - (8 * PITCH + SLOT)) / 2)
+local WEAPON_ROW = 9 -- the weapons sit on the last of the sheet's nine rows, a row clear of the armour
 local TEXT_X = EDGE + SLOT + 10
 local MODEL_X = EDGE + SLOT + 8
 local MODEL_W = RW - 2 * MODEL_X
@@ -478,12 +483,22 @@ end
 -- One slot of the character sheet: icon (with a quality border), the item's
 -- name and where it drops, mirrored on the right-hand side.
 local function slotButton(parent, slot, i, onClick)
-    local left = slot.side == 1
+    -- the weapons row: Main Hand under the left column, Ranged under the right
+    -- (mirrored like it), Off Hand centred between them
+    local weapon = slot.side == 3
+    local left = slot.side == 1 or (weapon and i < 3)
     local b = CreateFrame("Button", nil, parent)
     b.slot = slot
-    b:SetSize(SLOT + 10 + TEXT_W, SLOT)
-    local y = -(SLOT_TOP + (i - 1) * PITCH)
-    if left then b:SetPoint("TOPLEFT", EDGE, y) else b:SetPoint("TOPRIGHT", -EDGE, y) end
+    local w = SLOT + 10 + TEXT_W
+    b:SetSize(w, SLOT)
+    local y = -(SLOT_TOP + ((weapon and WEAPON_ROW or i) - 1) * PITCH)
+    if weapon and i == 2 then
+        b:SetPoint("TOPLEFT", math.floor((RW - w) / 2), y)
+    elseif left then
+        b:SetPoint("TOPLEFT", EDGE, y)
+    else
+        b:SetPoint("TOPRIGHT", -EDGE, y)
+    end
     b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     b.border = b:CreateTexture(nil, "BACKGROUND")
     b.border:SetSize(SLOT + 2, SLOT + 2)
@@ -635,7 +650,7 @@ function Wishlist.Sheet(parent, onClick, bare)
     local doll = CreateFrame("Frame", nil, parent)
     doll:SetSize(RW, LIST_H)
     doll.slots = {}
-    local n = { 0, 0 }
+    local n = { 0, 0, 0 }
     for _, slot in ipairs(Wishlist.SLOTS) do
         n[slot.side] = n[slot.side] + 1
         doll.slots[#doll.slots + 1] = slotButton(doll, slot, n[slot.side], onClick)

@@ -25,6 +25,7 @@ for line in io.lines(dir .. "/PogRaid.toc") do
     if line:match("%.lua$") then toc[#toc + 1] = line end
 end
 for _, file in ipairs(toc) do assert(loadfile(dir .. "/" .. file))("PogRaid", ns) end
+ns.DEV = nil
 -- real clients have different random numbers; tests trigger summaries by hand
 math.randomseed(player:byte(1) * 7919 + #player + seed * 104729)
 ns.Sync.LOGIN_DELAY = 1e9

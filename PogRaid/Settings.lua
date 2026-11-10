@@ -22,7 +22,7 @@ local RX = PAD + LEFT_W + PAD
 local RW = FRAME_W - RX - PAD
 local TOP = TITLE_H
 local ROW_H = 22
-local GENERAL_H = 254   -- six checks, the theme and its reload button
+local GENERAL_H = 300   -- eight checks, the theme and its reload button (ten officer ranks still fit under it)
 
 local function S() return ns.db.settings end
 
@@ -99,6 +99,8 @@ function Settings:Build(page)
             if not v and ns.Profiles then ns.Profiles:StopSong() end
         end },
         { "New group pop-ups", function() return S().groupToasts end, function(v) S().groupToasts = v end },
+        { "Kudos pop-ups", function() return S().kudosToasts end, function(v) S().kudosToasts = v end },
+        { "Group chat", function() return S().chat end, function(v) ns.Chat:SetEnabled(v) end },
     }
     for i, it in ipairs(items) do
         local c = UI.Check(gen, it[1], it[2], it[3])
@@ -240,7 +242,7 @@ function Settings:Refresh()
     local who = self.who
     local list = ns.Version:List()
     local newest = ns.Version:Newest()
-    who.mine:SetText("You: " .. ns.VERSION)
+    who.mine:SetText("You: " .. ns.VERSION .. (ns.DEV and " (dev)" or ""))
     self.offset = math.max(0, math.min(self.offset or 0, #list - who.visible))
     who.hint:Set(self.offset, who.visible, #list)
     for i, row in ipairs(who.rows) do

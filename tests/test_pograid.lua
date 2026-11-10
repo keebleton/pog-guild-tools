@@ -34,6 +34,7 @@ for _, file in ipairs(toc) do
     local chunk = assert(loadfile(ADDON_DIR .. "/" .. file))
     chunk("PogRaid", ns)
 end
+ns.DEV = nil -- (the tests run a release build; the dev build has its own checks)
 STUB.Fire("ADDON_LOADED", "PogRaid")
 STUB.Fire("PLAYER_LOGIN")
 
@@ -708,7 +709,7 @@ do
     PogRaidDB.version = 1
     PogRaidDB.guild.maxLevelOnly = true
     STUB.Fire("ADDON_LOADED", "PogRaid")
-    check(ns.db.guild.maxLevelOnly == false and ns.db.version == 4, "migration: old default filter turned off")
+    check(ns.db.guild.maxLevelOnly == false and ns.db.version == 5, "migration: old default filter turned off")
     ns.db.guild.maxLevelOnly = true
     STUB.Fire("ADDON_LOADED", "PogRaid")
     check(ns.db.guild.maxLevelOnly == true, "migration: a filter you turn on stays on")
@@ -1323,7 +1324,7 @@ do
     local nightRec = { id = "officer-night", rev = ns.Now(), by = "Raider01-Realm", author = "Raider01-Realm", t = ns.Now() - 7200,
         name = "Team two", start = ns.Now() - 7200, stop = ns.Now(), snaps = 24,
         seen = "Raider11-Realm:24:0:7200/Raider12-Realm:10:2400:7200", bench = "Raider13-Realm:24", over = "Raider14-Realm:0.5",
-        bosses = "Stormcaller Vael:1:3000" }
+        bosses = "Stormcaller Vael:1:1500" }
     check(ns.Sync:Apply(ns.Sync.collections.nights, nightRec), "sharing: an officer's night arrives")
     local on = G.sessions["officer-night"]
     check(on and on.name == "Team two" and on.present["Raider11-Realm"] == 24 and Att:Credit(on, "Raider11-Realm") == 1
@@ -3843,16 +3844,34 @@ do
     local cl, ct, cw, ch = STUB.rect(D.card)
     local L = D.layout
     local okCols = true
-    local n = { 0, 0 }
+    local n = { 0, 0, 0 }
     for _, b in ipairs(doll.slots) do
         local side_ = b.slot.side
         n[side_] = n[side_] + 1
-        local _, t = STUB.rect(b)
-        local il = STUB.rect(b.icon)
-        local want = side_ == 1 and cl + L.EDGE or cl + cw - L.EDGE - L.SLOT
-        if not near(il, want) or not near(ct - t, L.SLOT_TOP + (n[side_] - 1) * L.PITCH) then okCols = false end
+        if side_ ~= 3 then
+            local _, t = STUB.rect(b)
+            local il = STUB.rect(b.icon)
+            local want = side_ == 1 and cl + L.EDGE or cl + cw - L.EDGE - L.SLOT
+            if not near(il, want) or not near(ct - t, L.SLOT_TOP + (n[side_] - 1) * L.PITCH) then okCols = false end
+        end
     end
-    check(okCols and n[1] == 9 and n[2] == 8, "wishlist: 9 slots left, 8 right, 16px from the card's edges")
+    check(okCols and n[1] == 7 and n[2] == 7 and n[3] == 3 and slotB(10).slot.side == 1,
+        "wishlist: 7 armour slots a side (Hands on the left), 16px from the card's edges")
+    -- the weapons: a row along the bottom, like the character pane (0.16.5; Ranged used to hang alone under the left column)
+    local mhI, mhT = STUB.rect(slotB(16).icon)
+    local _, ohT = STUB.rect(slotB(17))
+    local ohL, _, ohW = STUB.rect(slotB(17))
+    local ohI = STUB.rect(slotB(17).icon)
+    local rI, rT = STUB.rect(slotB(18).icon)
+    local rowY = L.SLOT_TOP + 8 * L.PITCH
+    local _, mhBT = STUB.rect(slotB(16))
+    local _, rBT = STUB.rect(slotB(18))
+    check(near(ct - mhBT, rowY) and near(ct - ohT, rowY) and near(ct - rBT, rowY), "wishlist: the three weapons share the bottom row")
+    check(near(mhI, cl + L.EDGE) and near(rI, cl + cw - L.EDGE - L.SLOT) and near(ohL + ohW / 2, cl + cw / 2, 0.5) and near(ohI, ohL),
+        "wishlist: Main Hand under the left column, Ranged under the right, Off Hand centred")
+    check(slotB(16).name.__justifyH == "LEFT" and slotB(17).name.__justifyH == "LEFT" and slotB(18).name.__justifyH == "RIGHT"
+        and mhI + L.SLOT + 10 + 140 <= ohL and ohL + ohW <= rI - 10 - 140 + 0.5,
+        "wishlist: their names don't run into each other (Ranged mirrored like the right column)")
     check(near(L.SLOT_TOP, ch - (L.SLOT_TOP + 8 * L.PITCH + L.SLOT), 1), "wishlist: the columns are centred top to bottom")
     local model = doll.model
     local ml, mt, mw = STUB.rect(model)
@@ -4195,10 +4214,15 @@ do
     local fits, far = drow("The Stockade"), drow("Scarlet Monastery: Library")
     local bfd = drow("Blackfathom Deeps")
     check(bfd and bfd.level:GetText() == "22-32", "lfg: Blackfathom Deeps shows 22-32, not the journal's open-ended 22+")
-    ForeverDungeonJournal_NS = { DB = { ["Blackfathom Deeps"] = { level = "22+" }, ["The Stockade"] = { level = "24-32" } } }
-    local fixed
-    for _, d in ipairs(DG:List()) do if d.name == "Blackfathom Deeps" then fixed = d end end
+    ForeverDungeonJournal_NS = { DB = { ["Blackfathom Deeps"] = { level = "22+" }, ["The Stockade"] = { level = "24-32" },
+        ["Cozy Sleeping Bag"] = { level = "14+", questChainPage = true } } }
+    local fixed, bag
+    for _, d in ipairs(DG:List()) do
+        if d.name == "Blackfathom Deeps" then fixed = d end
+        if d.name == "Cozy Sleeping Bag" then bag = d end
+    end
     ForeverDungeonJournal_NS = nil
+    check(#DG:List() > 0 and not bag, "lfg: the journal's quest-chain pages (Cozy Sleeping Bag) aren't dungeons")
     check(fixed and fixed.level == "22-32" and fixed.min == 22 and fixed.max == 32, "lfg: the journal's 22+ is shown as 22-32 too")
     check(fits.name.__textColor[1] == ns.UI.TEXT[1] and fits.name.__textColor[1] > far.name.__textColor[1] + 0.25
         and far.name.__textColor[1] < 0.6, "lfg: dungeons in our level range stand out")
@@ -5249,7 +5273,7 @@ do
     PogRaidDB.charGuild = { ["Jake-Realm"] = "Pog Squad-Realm10" }
     STUB.Fire("ADDON_LOADED", "PogRaid")
     local merged = PogRaidDB.guilds["Pog Squad"]
-    check(PogRaidDB.version == 4 and merged and PogRaidDB.guilds["Pog Squad-Realm9"] == nil and PogRaidDB.guilds["Pog Squad-Realm10"] == nil
+    check(PogRaidDB.version == 5 and merged and PogRaidDB.guilds["Pog Squad-Realm9"] == nil and PogRaidDB.guilds["Pog Squad-Realm10"] == nil
         and ns.db.guild == merged, "merge: one table for the guild, in use")
     check(merged.players["Raider01-Realm"] and merged.players["Raider02-Realm"] and merged.sessions.n1 and merged.sessions.n2
         and merged.loot.l1 and merged.rosters.r1.name == "Newer" and merged.fullScan,
@@ -5356,6 +5380,743 @@ do
         .. table.concat(outcomes, " / ") .. ")")
     for _, who in ipairs({ "Raider01-Realm", "Raider02-Realm", "Raider03-Realm" }) do Sync:Store("duels")["m-stray:" .. who] = nil end
     D.cache = nil
+end
+
+-- 0.16.5 ------------------------------------------------------------------------------------
+do
+    local Home, Sync, Att, Roster, W, Games = ns.Home, ns.Sync, ns.Attendance, ns.Roster, ns.Wowdle, ns.Games
+    local G = ns.db.guild
+    local me = Sync:Me()
+    local function mine(itemID)
+        local n, rec = 0, nil
+        for _, r in pairs(Sync:Store("drops")) do
+            if r.author == me and not r.deleted and ns.Loot.ItemID(r.item) == itemID then n, rec = n + 1, r end
+        end
+        return n, rec
+    end
+
+    -- drops: the same item again is still one shared record (a dungeon farmed all night)
+    local farm = STUB.Link(31001, "Farmed Blue", "0070dd")
+    STUB.Fire("CHAT_MSG_LOOT", "You receive loot: " .. farm .. ".")
+    local n1, r1 = mine(31001)
+    local t1 = r1 and r1.t
+    STUB.Advance(600)
+    STUB.Fire("CHAT_MSG_LOOT", "You receive loot: " .. farm .. ".")
+    local n2, r2 = mine(31001)
+    check(n1 == 1 and n2 == 1 and r2.t == t1 and r2.id == me .. ":31001", "drops: the same item again is one record, not renewed within the hour")
+    STUB.Advance(Home.DROP_RENEW)
+    STUB.Fire("CHAT_MSG_LOOT", "You receive loot: " .. farm .. ".")
+    local n3, r3 = mine(31001)
+    check(n3 == 1 and r3.t > t1, "drops: an hour on, the record is renewed")
+    local rows = 0
+    for _, e in ipairs(Home:RecentLoot()) do if e.player == me and e.itemID == 31001 then rows = rows + 1 end end
+    check(rows == 1, "drops: Recent loot shows a player's item once, however often they got it")
+    -- an older version still shares one record per drop: shown once each, and a few per player
+    local now = ns.Now()
+    local before09 = 0
+    for _, e in ipairs(Home:RecentLoot()) do if e.player == "Raider09-Realm" then before09 = before09 + 1 end end
+    for i = 1, 6 do
+        Sync:Apply(Sync.collections.drops, { id = "old-" .. i, rev = now, by = "Raider09-Realm", author = "Raider09-Realm", t = now - i,
+            item = STUB.Link(32000 + (i % 2 == 0 and 99 or i), "Run " .. i, "0070dd"), q = 3 })
+    end
+    for i = 1, 12 do
+        Sync:Apply(Sync.collections.drops, { id = "many-" .. i, rev = now, by = "Raider08-Realm", author = "Raider08-Realm", t = now - i,
+            item = STUB.Link(33000 + i, "Other " .. i, "0070dd"), q = 3 })
+    end
+    local per = {}
+    for _, e in ipairs(Home:RecentLoot()) do per[e.player] = (per[e.player] or 0) + 1 end
+    check(per["Raider09-Realm"] == before09 + 4 and per["Raider08-Realm"] == Home.LOOT_PER_PLAYER,
+        "drops: repeats collapse (4 different items in 6 drops), and one player fills at most 8 lines")
+    for id, r in pairs(Sync:Store("drops")) do if id:find("^old%-") or id:find("^many%-") then Sync:Store("drops")[id] = nil end end
+    Sync.index = nil
+
+    -- late: there by the end of the first boss attempt is on time, however long the raid took to form
+    local start = ns.Now() - 3 * 3600
+    local night = { id = "pull-night", rev = ns.Now(), by = "Raider01-Realm", author = "Raider01-Realm", t = start, name = "Forming",
+        start = start, stop = start + 7200, snaps = 24,
+        seen = "Raider11-Realm:24:0:7200/Raider12-Realm:24:0:7200/Raider13-Realm:16:2400:7200/Raider14-Realm:12:3600:7200",
+        bench = "", over = "", bosses = "Slow Trash Boss:1:3000" }
+    check(Sync:Apply(Sync.collections.nights, night), "pull: (a shared night arrives)")
+    local pn = G.sessions["pull-night"]
+    check(Att:Status(pn, "Raider13-Realm") == "present" and Att:Credit(pn, "Raider13-Realm") == 1,
+        "pull: 40 minutes after the raid gathered but before the first boss ended is on time")
+    check(Att:Status(pn, "Raider14-Realm") == "late" and Att:Credit(pn, "Raider14-Realm") == 0.5, "pull: after the first boss is late")
+    pn.bosses = {}
+    check(Att:Status(pn, "Raider13-Realm") == "late", "pull: (with no boss yet, 15 minutes after the raid gathered)")
+    Att:DeleteSession(pn)
+
+    -- surnames: a first name from the game (your target, a raid frame) reaches the roster's full name
+    G.players["Zed Alpha"] = { inGuild = true, class = "MAGE", level = 60, rankIndex = 3 }
+    Att.keyCache = nil
+    Roster.online["Zed Alpha"] = true
+    STUB.sent = {}
+    ns.Duels.outgoing, ns.Duels.agreed = nil, nil
+    check(ns.Duels:Challenge("Zed") ~= false and STUB.sent[#STUB.sent].target == "Zed Alpha" and STUB.sent[#STUB.sent].text:find("^D1"),
+        "surnames: challenging your target whispers their full name")
+    ns.Duels.outgoing = nil
+    local r = Roster:Current()
+    local savedGroups, savedBench = r.groups, r.bench
+    r.groups = { { "Zed Alpha" }, {}, {}, {}, {}, {}, {}, {} }
+    local savedRoster, savedParty, wasLeader = STUB.roster, STUB.party, STUB.isLeader
+    STUB.party, STUB.isLeader = nil, true
+    STUB.roster = { { name = "Jake", rank = 2, class = "HUNTER", sub = 1 }, { name = "Zed", class = "MAGE", sub = 2 } }
+    STUB.printed, STUB.invites = {}, {}
+    Roster:Invite()
+    check(#STUB.invites == 0 and printedContains("already in your group"), "surnames: someone in the raid under their first name isn't invited again")
+    r.groups, r.bench = savedGroups, savedBench
+    STUB.roster, STUB.party, STUB.isLeader = savedRoster, savedParty, wasLeader
+    G.players["Zed Alpha"], Roster.online["Zed Alpha"] = nil, nil
+    Att.keyCache = nil
+    local canvas = ns.Viewer.canvas or (ns.Editor and ns.Editor.canvas)
+    check(ns.SameName("Flyne", "Flyne Lee") and not ns.SameName("Flyne", "Flynn Lee"), "surnames: (a raid plan's dot is ours by first name too)")
+
+    -- a new player is found by name straight away (the quick path never answers from an old list)
+    Roster:Player("Brandnew Member").inGuild = true
+    check(Att:Key("Brandnew") == "Brandnew Member" and Att:Key("Brandnew Member") == "Brandnew Member", "names: someone added a moment ago is found")
+    G.players["Brandnew Member"] = nil
+    Att.keyCache = nil
+
+    -- pugs: met in a raid, remembered for the night, not put in the roster pool
+    local savedInst, savedLead = STUB.instance, STUB.isLeader
+    STUB.roster = { { name = "Jake", rank = 2, class = "HUNTER" }, { name = "Pugwash", class = "ROGUE" } }
+    STUB.instance, STUB.isLeader = { "Skyreach Spire", "raid" }, true
+    Att:Check()
+    local sp = Att:Active()
+    local pool = {}
+    for _, n in ipairs(Roster:PoolNames()) do pool[n] = true end
+    check(sp and sp.present["Pugwash"] == 1 and G.players["Pugwash"] and G.players["Pugwash"].pug and not G.players["Pugwash"].manual
+        and not pool["Pugwash"], "pugs: on the night, with their class, but not in the roster pool")
+    Att:End()
+    Att:DeleteSession(sp)
+    STUB.roster, STUB.instance, STUB.isLeader = savedRoster, savedInst, savedLead
+    -- saves from before: the snapshot's pugs leave the pool, players added by hand stay
+    G.players["Oldpug"] = { manual = true, class = "ROGUE" }
+    Roster:AddManual("Handadded", "PRIEST")
+    STUB.Fire("PLAYER_LOGOUT")
+    PogRaidDB.version = 4
+    STUB.Fire("ADDON_LOADED", "PogRaid")
+    G = ns.db.guild
+    check(PogRaidDB.version == 5 and G.players["Oldpug"].pug and not G.players["Oldpug"].manual and G.players["Handadded"].manual,
+        "pugs: an old save's snapshot pugs leave the pool, players added by hand stay")
+    G.players["Oldpug"], G.players["Handadded"], G.players["Pugwash"] = nil, nil, nil
+    Att.keyCache = nil
+
+    -- Wowdle: opening Games doesn't take the keyboard; clicking the board or /pog wowdle does
+    local cur = W:Current()
+    local savedGuesses = cur.guesses
+    cur.guesses = {}
+    ns.Editor:ShowTab("home")
+    ns.Editor:ShowTab("games")
+    Games:SetMode("wowdle")
+    check(W:State() == "playing" and not W.input.__focus and W.status:GetText():find("click the board to type", 1, true),
+        "wowdle: opening the page leaves the keyboard alone, and says how to type")
+    STUB.Script(W.grid, "OnClick")
+    check(W.input.__focus and not W.status:GetText():find("click the board", 1, true), "wowdle: clicking the board starts typing")
+    W.input:ClearFocus()
+    ns.Editor:ShowTab("home")
+    SlashCmdList.POGRAID("wowdle")
+    check(W.input.__focus, "wowdle: /pog wowdle is ready to type")
+    W.input:ClearFocus()
+    cur.guesses = savedGuesses
+    W:Refresh()
+    ns.Editor:ShowTab("home")
+
+    -- a dev build (run from the project folder) doesn't tell the guild a newer version is out
+    check(ns.DEV == nil and ns.WireVersion() == ns.VERSION, "dev: (the tests run a release build)")
+    ns.DEV = true
+    STUB.sent = {}
+    ns.Version:Announce()
+    check(ns.WireVersion() == ns.VERSION .. "-dev" and STUB.sent[#STUB.sent].text == "V" .. ns.VERSION .. "-dev", "dev: a dev build announces <version>-dev")
+    ns.DEV = nil
+    ns.Version.warned = nil
+    STUB.printed = {}
+    STUB.Fire("CHAT_MSG_ADDON", "PogRaid", "V99.0.0-dev", "GUILD", "Raider02-Realm")
+    ns.Sync:OnPayload("F" .. ("A"):rep(ns.Sync.BUCKETS * 5) .. "0:99.0.0-dev", "Raider02-Realm")
+    check(not printedContains("newer Pog Guild Tools") and not ns.Version.warned and ns.Version.seen["Raider02-Realm"] ~= "99.0.0-dev",
+        "dev: which nobody takes for a newer version")
+    STUB.Fire("CHAT_MSG_ADDON", "PogRaid", "V99.0.0", "GUILD", "Raider02-Realm")
+    check(printedContains("newer Pog Guild Tools"), "dev: (a released one still is)")
+    ns.Version.seen["Raider02-Realm"], ns.db.versions["Raider02-Realm"] = nil, nil
+
+    -- sync: an expired record leaves every addon's fingerprint at the turn of the minute
+    local lfd = Sync.collections.lfd
+    local t0 = ns.Now()
+    Sync:Apply(lfd, { id = "Raider06-Realm", author = "Raider06-Realm", by = "Raider06-Realm", rev = t0, t = t0, exp = t0 + 30,
+        list = "The Deadmines", role = "T" })
+    local idx1 = Sync:Index()
+    local has1 = idx1.tags[Sync.Tag("fRaider06-Realm", t0)] ~= nil
+    check(has1 and Sync:Index() == idx1, "sync: (a listing is in the fingerprint, which is kept for the minute)")
+    STUB.Advance(120)
+    local idx2 = Sync:Index()
+    check(idx2 ~= idx1 and idx2.tags[Sync.Tag("fRaider06-Realm", t0)] == nil and Sync:Store("lfd")["Raider06-Realm"] ~= nil,
+        "sync: expired, it leaves the fingerprint at the turn of the minute, before the next prune")
+    Sync:Store("lfd")["Raider06-Realm"] = nil
+    Sync.index = nil
+
+    -- the loot log keeps a year
+    local L = ns.Loot
+    G.loot["ancient"] = { id = "ancient", t = ns.Now() - 400 * 86400, player = "Jake-Realm", itemID = 1, link = STUB.Link(1, "Old") }
+    G.loot["recent"] = { id = "recent", t = ns.Now() - 30 * 86400, player = "Jake-Realm", itemID = 2, link = STUB.Link(2, "New") }
+    L:Prune()
+    check(G.loot["ancient"] == nil and G.loot["recent"] ~= nil, "loot: entries over a year old are dropped")
+    G.loot["recent"] = nil
+    L:Changed()
+end
+
+-- 0.16.5 design: Activity times, tile names, Wowdle's bars -----------------------------------
+do
+    local Home, Roster, P, W, UI = ns.Home, ns.Roster, ns.Profiles, ns.Wowdle, ns.UI
+    local G = ns.db.guild
+    -- a level-up seen live has its time; an offline member's (it happened earlier) has none
+    Roster:ScanGuild()
+    local on, off
+    for _, m in ipairs(STUB.guild) do
+        if m.online and m.level < 60 and not on then on = m end
+        if not m.online and not off then off = m end
+    end
+    on = on or STUB.guild[3]
+    local onLevel, offLevel = on.level, off.level
+    G.players[on.name].level, G.players[off.name].level = on.level - 1, off.level - 1
+    Roster:ScanGuild()
+    local eOn, eOff
+    for _, e in ipairs(G.feed) do
+        if e.kind == "level" and e.name == on.name and not eOn then eOn = e end
+        if e.kind == "level" and e.name == off.name and not eOff then eOff = e end
+    end
+    check(eOn and not eOn.away and eOff and eOff.away == true, "activity: a live level-up has its time, an offline member's doesn't")
+    ns.Editor:ShowTab("home")
+    Home.feedCard.offset = 0
+    Home:Refresh()
+    local shownOn, shownOff
+    for _, row in ipairs(Home.feedCard.rows) do
+        if row.item == eOn then shownOn = row.right:GetText() end
+        if row.item == eOff then shownOff = row.right:GetText() end
+    end
+    check(shownOn == "now" and shownOff == "", "activity: shown as 'now' and as no time at all")
+    -- the first read after logging in is all catch-up
+    Roster.sessionScan = nil
+    G.players[on.name].level = on.level - 1
+    Roster:ScanGuild()
+    check(G.feed[1].name == on.name and G.feed[1].away == true, "activity: what's found at login happened while we were away")
+
+    -- Most played with: first names fit the tiles; a nickname stays as it is
+    G.players["Zed Alpha"] = { inGuild = true, class = "MAGE", level = 60 }
+    G.players["Wamuel Whacks"] = { inGuild = true, class = "ROGUE", level = 60 }
+    local realTop, realContent = P.Top, P.Content
+    P.Top = function() return { "Zed Alpha", "Wamuel Whacks" } end
+    P.Content = function(self, who) if who == "Wamuel Whacks" then return { nick = "Wam the Great" } end return realContent(self, who) end
+    ns.Editor:ShowTab("profiles")
+    P:RefreshTop()
+    local t1, t2 = P.topCard.tiles[1].name:GetText(), P.topCard.tiles[2].name:GetText()
+    check(t1:find("Zed|r", 1, true) and not t1:find("Alpha", 1, true) and t2:find("Wam the Great", 1, true),
+        "most played: a first name on the tile, a nickname whole")
+    P.Top, P.Content = realTop, realContent
+    G.players["Zed Alpha"], G.players["Wamuel Whacks"] = nil, nil
+    ns.Attendance.keyCache = nil
+    P:RefreshTop()
+
+    -- Wowdle's stats bars wear the theme's accent, not a blue of their own
+    ns.Editor:ShowTab("games")
+    ns.Games:SetMode("wowdle")
+    W:Refresh()
+    local today = ns.db.games.wowdle.history[W:Current().day]
+    local plain
+    for i, b in ipairs(W.side.bars) do if i ~= today then plain = plain or b end end
+    local c = plain.bar.__color
+    check(c[1] == UI.ACCENT[1] and c[2] == UI.ACCENT[2] and c[3] == UI.ACCENT[3] and c[4] == W.BAR_ALPHA and W.BAR_BLUE == nil,
+        "wowdle: the stats bars are the theme's accent")
+    ns.Editor:ShowTab("home")
+end
+
+-- 0.16.5: group chat (Chat.lua) and the kudos pop-up --------------------------------------------
+do
+    local Chat, Sync, Roster, T, P, Home, UI = ns.Chat, ns.Sync, ns.Roster, ns.GroupToast, ns.Profiles, ns.Home, ns.UI
+    local G = ns.db.guild
+    local me = Sync:Me()
+    local A, B, C, D = "Raider03-Realm", "Raider04-Realm", "Raider05-Realm", "Raider06-Realm"
+    -- four guildies: A and B online with chat, C online on an old version, D offline with chat
+    local savedGuild = {}
+    for i, m in ipairs(STUB.guild) do savedGuild[i] = { m, m.online } end
+    local function member(name, online)
+        for _, m in ipairs(STUB.guild) do
+            if m.name == name then m.online = online return end
+        end
+        table.insert(STUB.guild, { name = name, rankIndex = 2, level = 60, online = online, class = "MAGE" })
+    end
+    member(A, true) member(B, true) member(C, true) member(D, false)
+    Roster:ScanGuild()
+    local V = ns.Version
+    local savedSeen, savedVersions = V.seen, ns.db.versions
+    V.seen, V.dev, ns.db.versions = { [A] = "0.16.5", [B] = "0.17.0", [C] = "0.16.4" }, {}, { [D] = { v = "0.16.5", t = ns.Now() } }
+    G.chats = nil
+    wipe(Chat.off) wipe(Chat.picked)
+    Chat.saidOff = nil
+    T.notes = {}
+    if T.frame then T.frame:Hide() end
+    local function wire(others, text)
+        local list = table.concat(others, ",")
+        return "M" .. Sync.Enc(#list, 2) .. list .. text
+    end
+    local function incoming(from, others, text, channel)
+        STUB.Fire("CHAT_MSG_ADDON", "PogRaid", "CAAAA" .. wire(others, text), channel or "WHISPER", from)
+    end
+    local function count(t) local n = 0 for _ in pairs(t or {}) do n = n + 1 end return n end
+    local function logText(c, i) local l = c.log[i or #c.log] return l and l.text end
+
+    -- who can be chatted with
+    check(Chat:Enabled() and ns.db.settings.chat == true, "chat: on by default")
+    check(Chat:CanChat(A) and Chat:CanChat(B) and not Chat:CanChat(C) and not Chat:CanChat(D) and not Chat:CanChat(me)
+        and not Chat:CanChat("Stranger-Realm"), "chat: with guildies online on 0.16.5 or newer, nobody else")
+    local buddies = Chat:Buddies()
+    check(#buddies == 2 and buddies[1] == A and buddies[2] == B, "chat: the buddy list, in name order")
+    V:Note(C, "0.16.5-dev")
+    check(V.dev[C] == "0.16.5" and V.seen[C] == "0.16.4" and Chat:CanChat(C), "chat: a dev build counts as the version it's built on")
+    V.dev = {}
+
+    -- a chat is its people
+    local key = Chat.Key({ B, me, A })
+    check(key == Chat.Key({ me, A, B }) and Chat:Get({ A, B, me }) == nil, "chat: the same people in any order are one chat, none until made")
+    STUB.sent, STUB.sounds, STUB.allowance = {}, {}, 10
+    Chat:OpenWith({ A, D, A })
+    local c = Chat.current
+    check(Chat.frame:IsShown() and c and #c.members == 3 and c == Chat:Get({ D, A, me }) and count(G.chats) == 1
+        and #Chat:Others(c) == 2, "chat: starting one opens the window on it (nobody twice)")
+    check(Chat.input.__focus == true, "chat: opening a chat yourself is ready to type")
+
+    -- sending: a whisper to everyone else who's online, carrying the others' names
+    check(Chat:Send(c, "  hi |cffff0000all|r\n ") == true, "chat: sending a line")
+    local m1 = STUB.sent[1]
+    check(#STUB.sent == 1 and m1.channel == "WHISPER" and m1.target == "Raider03" and m1.text:sub(1, 1) == "C"
+        and m1.text:sub(6) == wire({ A, D }, "hi |cffff0000all|r"), "chat: whispered addon to addon to who's online, tidied")
+    check(#c.log == 1 and c.log[1].from == me and logText(c) == "hi |cffff0000all|r", "chat: our line in the log")
+    local shown = Chat.log.__messages[#Chat.log.__messages]
+    check(shown:find("Jake", 1, true) and shown:find("hi ||cffff0000all||r", 1, true), "chat: shown with its | escaped (no colours or links from a line)")
+    check(Chat:Send(c, "   ") == false and Chat:Send(c, "") == false and #c.log == 1, "chat: nothing to send, nothing sent")
+    local long = ("x"):rep(300)
+    Chat:Send(c, long)
+    check(#logText(c) == Chat.MAX_TEXT, "chat: a line is cut at the limit")
+    local dchat = Chat:Get({ me, D }, true)
+    STUB.sent = {}
+    Chat:Send(dchat, "you there?")
+    check(#STUB.sent == 0 and #dchat.log == 2 and dchat.log[2].sys and logText(dchat):find("Nobody in this chat is online", 1, true),
+        "chat: nobody online to hear it says so, and nothing is whispered")
+    Chat:Delete(dchat)
+    check(Chat:Get({ me, D }) == nil, "chat: a chat can be deleted")
+
+    -- receiving, with the window closed: unread, a sound and a pop-up
+    Chat.frame:Hide()
+    STUB.sounds = {}
+    incoming(A, { me, D }, "on my way")
+    local f = T.frame
+    check(#c.log == 3 and c.log[3].from == A and logText(c) == "on my way" and c.unread == 1 and Chat:Unread() == 1,
+        "chat: a line from someone in the chat lands in it, unread")
+    check(f and f:IsShown() and f.note and f.text:GetText():find("Raider03", 1, true) and f.text:GetText():find("on my way", 1, true)
+        and f.sub:GetText() == "Chat with Raider03, Raider06" and STUB.sounds[1] == SOUNDKIT.TELL_MESSAGE,
+        "chat: a pop-up and a sound for a line we aren't looking at")
+    STUB.Script(f, "OnClick", "LeftButton")
+    check(not f:IsShown() and Chat.frame:IsShown() and Chat.current == c and c.unread == 0, "chat: clicking the pop-up opens that chat, read")
+    -- with the chat open in front of us: just the line
+    STUB.sounds = {}
+    local before = #Chat.log.__messages
+    incoming(A, { D, me }, "almost there")
+    check(c.unread == 0 and not f:IsShown() and #STUB.sounds == 0 and #Chat.log.__messages == before + 1
+        and Chat.log.__messages[before + 1]:find("almost there", 1, true), "chat: a line in the open chat just appears")
+    -- a new set of people is a new chat; one to one says "Click to reply"
+    incoming(B, { me }, "psst ||x")
+    local bc = Chat:Get({ me, B })
+    check(bc and bc ~= c and bc.unread == 1 and f:IsShown() and f.sub:GetText() == "Click to reply"
+        and f.text:GetText():find("psst ||||x", 1, true), "chat: a line from someone else starts their chat, the pop-up escaped too")
+    STUB.Script(f, "OnClick", "RightButton")
+    check(not f:IsShown() and bc.unread == 1 and Chat.current == c, "chat: right-click dismisses the pop-up, the chat stays unread")
+
+    -- a long line arrives in chunks
+    local names = {}
+    for i = 1, 6 do names[i] = ("Somebody Withaverylongsurname%d-Realm"):format(i) end
+    names[7] = me
+    local big = wire(names, ("y"):rep(200))
+    STUB.sent, STUB.allowance = {}, 10
+    ns.Comm.SendChunked("C", big, "WHISPER", "Jake")
+    check(#STUB.sent > 1, "chat: (a full chat with a long line takes more than one message)")
+    STUB.Deliver(B)
+    local members = { B }
+    for _, n in ipairs(names) do members[#members + 1] = n end
+    local bigChat = Chat:Get(members)
+    check(bigChat and #bigChat.members == 8 and logText(bigChat) == ("y"):rep(200), "chat: put back together from its chunks")
+    Chat:Delete(bigChat)
+
+    -- what is turned away
+    local n0 = count(G.chats)
+    local function ignored(from, others, text, channel)
+        local lines = #c.log + #bc.log
+        incoming(from, others, text, channel)
+        return count(G.chats) == n0 and #c.log + #bc.log == lines
+    end
+    check(ignored("Stranger-Realm", { me }, "hi"), "chat: not from someone outside the guild")
+    check(ignored(A, { D }, "hi") and ignored(A, { "Jakey-Realm" }, "hi"), "chat: not a chat we aren't in")
+    check(ignored(A, { me, D }, "hi", "GUILD") and ignored(A, { me, D }, "hi", "RAID"), "chat: only by whisper")
+    check(ignored(A, { me, D, D }, "hi") and ignored(A, { me, A }, "hi"), "chat: nobody in it twice")
+    check(ignored(A, { me, D }, "   ") and ignored(A, { me, D }, ""), "chat: not an empty line")
+    local nine = { me }
+    for i = 1, 8 do nine[#nine + 1] = "X" .. i .. "-Realm" end
+    check(ignored(A, nine, "hi"), "chat: not more people than a chat holds")
+    STUB.Fire("CHAT_MSG_ADDON", "PogRaid", "CAAAAM!!junk", "WHISPER", A)
+    STUB.Fire("CHAT_MSG_ADDON", "PogRaid", "CAAAAMzz" .. me, "WHISPER", A)
+    STUB.Fire("CHAT_MSG_ADDON", "PogRaid", "CAAAAQ", "WHISPER", A)
+    STUB.Fire("CHAT_MSG_ADDON", "PogRaid", "CAAAA", "WHISPER", A)
+    check(count(G.chats) == n0, "chat: junk is ignored")
+    incoming(A, { me, D }, "line1\nline2\tend")
+    check(logText(c) == "line1 line2 end", "chat: control characters become spaces")
+    STUB.Fire("CHAT_MSG_ADDON", "PogRaid", "CAAAA" .. wire({ me, D }, "echo"), "WHISPER", "Jake-Realm")
+    check(logText(c) == "line1 line2 end", "chat: our own echo is ignored")
+
+    -- the list on the left: chats (newest first, unread counted), a heading, who's online
+    Chat.current = c
+    Chat:Refresh()
+    local rows = Chat.left.rows
+    check(rows[1].item.chat == c and rows[1].sel:IsShown() and rows[2].item.chat == bc and rows[2].right:GetText() == "1"
+        and not rows[2].sel:IsShown(), "chat: the list has the open chat marked and unread ones counted")
+    check(rows[3].item.head == "Online" and not rows[3]:IsEnabled() and rows[4].item.buddy == A and rows[5].item.buddy == B
+        and not rows[6]:IsShown(), "chat: then who's online with chat")
+    check(not Chat.startBtn:IsEnabled() and Chat.startBtn.label:GetText() == "Start chat", "chat: Start chat waits for a pick")
+    STUB.Script(rows[4], "OnClick", "LeftButton")
+    STUB.Script(rows[5], "OnClick", "LeftButton")
+    check(Chat.picked[A] and Chat.picked[B] and rows[4].sel:IsShown() and Chat.startBtn:IsEnabled()
+        and Chat.startBtn.label:GetText() == "Start chat (2)", "chat: clicking people picks them")
+    STUB.Script(rows[5], "OnClick", "LeftButton")
+    check(not Chat.picked[B] and Chat.startBtn.label:GetText() == "Start chat", "chat: clicking again unpicks")
+    STUB.Script(rows[5], "OnClick", "LeftButton")
+    STUB.Script(Chat.startBtn, "OnClick")
+    local group = Chat:Get({ me, A, B })
+    check(group and Chat.current == group and count(Chat.picked) == 0 and Chat.pane.with:GetText():find("Raider03", 1, true)
+        and Chat.pane.with:GetText():find("Raider04", 1, true), "chat: Start chat opens the chat with the people picked")
+    STUB.sent, STUB.allowance = {}, 10
+    STUB.Script(Chat.input, "OnEnterPressed")
+    check(#STUB.sent == 0, "chat: Enter on an empty box sends nothing")
+    STUB.now = STUB.now + 1
+    Chat.input:SetText("pull in 5")
+    STUB.Script(Chat.input, "OnEnterPressed")
+    check(#STUB.sent == 2 and STUB.sent[1].target == "Raider03" and STUB.sent[2].target == "Raider04"
+        and STUB.sent[2].text:sub(6) == wire({ A, B }, "pull in 5") and Chat.input:GetText() == "", "chat: Enter sends to everyone and clears the box")
+    Chat:Refresh()
+    check(rows[1].item.chat == group, "chat: the chat with the newest line is on top")
+    -- clicking a chat opens it; right-click offers to delete it
+    STUB.Script(rows[3], "OnClick", "LeftButton")
+    check(Chat.current == rows[3].item.chat and Chat.current.unread == 0, "chat: clicking a chat opens it")
+    local menu
+    local realMenu = UI.ShowMenu
+    UI.ShowMenu = function(_, e) menu = e end
+    Chat:Refresh()
+    STUB.Script(rows[1], "OnClick", "RightButton")
+    check(menu and menu[2].text == "Delete chat", "chat: right-click a chat to delete it")
+    local doomed = rows[1].item.chat
+    menu[2].func()
+    check(G.chats[doomed.key] == nil and Chat.current ~= doomed, "chat: and it's gone")
+    UI.ShowMenu = realMenu
+
+    -- the window: two cards side by side inside it, the input inside the right one
+    local L = Chat.layout
+    local fl, ft, fw, fh = STUB.rect(Chat.frame)
+    local ll, lt, lw, lh = STUB.rect(Chat.left)
+    local pl, pt, pw, ph = STUB.rect(Chat.pane)
+    check(fw == L.W and fh == L.H and near(ll - fl, 10) and near(pl - (ll + lw), 8) and near((fl + fw) - (pl + pw), 10)
+        and near(lt, pt) and near(lh, ph) and near((lt - lh) - (ft - fh), 10), "chat window: two cards, 10px in from the edges, 8px apart")
+    local il, it, iw, ih = STUB.rect(Chat.input)
+    local gl, gt, gw, gh = STUB.rect(Chat.log)
+    check(near(il - pl, 8) and near((pl + pw) - (il + iw), 8) and near((it - ih) - (pt - ph), 8) and gt - gh >= it + 6
+        and near(gl - pl, 10) and near((pl + pw) - (gl + gw), 10), "chat window: the line box along the bottom, the log above it")
+    local rl, rt, rw, rh = STUB.rect(rows[#rows])
+    local bl, bt, bw, bh = STUB.rect(Chat.startBtn)
+    check(rt - rh >= bt + 4 and near((bt - bh) - (lt - lh), 8) and near((bl + bw / 2), ll + lw / 2), "chat window: the list ends above Start chat")
+    local found
+    for _, n in ipairs(UISpecialFrames) do if n == "PogRaidChat" then found = true end end
+    check(found, "chat window: Esc closes it")
+
+    -- a fight takes the keyboard back
+    Chat.input:SetFocus()
+    STUB.Fire("PLAYER_REGEN_DISABLED")
+    check(not Chat.input.__focus, "chat: starting a fight takes the keyboard off the line box")
+    STUB.Fire("PLAYER_REGEN_ENABLED")
+
+    -- history is kept short
+    local hc = Chat:Get({ me, A }, true)
+    for i = 1, Chat.KEEP_LINES + 20 do incoming(A, { me }, "n" .. i) end
+    check(#hc.log == Chat.KEEP_LINES and logText(hc) == "n" .. (Chat.KEEP_LINES + 20) and logText(hc, 1) == "n21", "chat: a chat keeps its newest lines")
+    T.notes = {}
+    T.frame:Hide()
+    Chat.current = nil
+    Chat:Refresh()
+    local savedNow = STUB.now
+    for i = 1, Chat.KEEP_CHATS + 5 do
+        STUB.now = STUB.now + 1
+        Chat:Get({ me, "Old" .. i .. "-Realm" }, true)
+    end
+    check(count(G.chats) == Chat.KEEP_CHATS and Chat:Get({ me, "Old1-Realm" }) == nil
+        and Chat:Get({ me, "Old" .. (Chat.KEEP_CHATS + 5) .. "-Realm" }), "chat: only the most recent chats are kept")
+    STUB.now = savedNow
+    for i = 1, Chat.KEEP_CHATS + 5 do G.chats[Chat.Key({ me, "Old" .. i .. "-Realm" })] = nil end
+
+    -- they have chat turned off: we're told once, and stop whispering them
+    local ac = Chat:Get({ me, A }, true)
+    local lines = #ac.log
+    STUB.Fire("CHAT_MSG_ADDON", "PogRaid", "CAAAAN", "WHISPER", A)
+    check(Chat.off[A] and #ac.log == lines + 1 and ac.log[#ac.log].sys and logText(ac) == "Raider03 has chat turned off."
+        and not Chat:CanChat(A), "chat: someone with chat off says so, once, and leaves the buddy list")
+    STUB.Fire("CHAT_MSG_ADDON", "PogRaid", "CAAAAN", "WHISPER", A)
+    check(#ac.log == lines + 1, "chat: (said once)")
+    STUB.sent = {}
+    Chat:Send(ac, "hello?")
+    check(#STUB.sent == 0 and logText(ac) == "Not sent: Raider03 has chat turned off.", "chat: and isn't whispered again (the line says why)")
+    incoming(A, { me }, "turned it back on")
+    check(not Chat.off[A] and Chat:CanChat(A), "chat: until they write, which means it's back on")
+
+    -- turned off here (Settings): the window goes, lines are turned away with a note back
+    ns.Editor:ShowTab("settings")
+    local checks = ns.Settings.checks
+    check(#checks == 8 and checks[7].label:GetText() == "Kudos pop-ups" and checks[8].label:GetText() == "Group chat"
+        and checks[7].checked and checks[8].checked, "settings: Kudos pop-ups and Group chat, on by default")
+    local _, gtop, _, gh2 = STUB.rect(ns.Settings.general)
+    local _, c8t, _, c8h = STUB.rect(checks[8])
+    local _, tbt, _, tbh = STUB.rect(ns.Settings.themeBtn)
+    local _, ot, _, oh = STUB.rect(ns.Settings.officers)
+    local _, r10t, _, r10h = STUB.rect(ns.Settings.officers.ranks[10])
+    check(gh2 == 300 and tbt <= c8t - c8h and near((tbt - tbh - 26) - (gtop - gh2), 12) and near(gtop - gh2 - ot, 8)
+        and r10t - r10h >= ot - oh, "settings: eight checks, the theme and Reload fit the card, ten officer ranks under it")
+    Chat:Open()
+    STUB.Script(checks[8], "OnClick")
+    check(ns.db.settings.chat == false and not Chat:Enabled() and not Chat.frame:IsShown() and #Chat:Buddies() == 0,
+        "settings: Group chat off closes the window")
+    STUB.sent, STUB.printed, STUB.allowance = {}, {}, 10
+    lines = #ac.log
+    incoming(A, { me }, "anyone home")
+    check(#ac.log == lines and #STUB.sent == 1 and STUB.sent[1].text:sub(6) == "N" and STUB.sent[1].target == "Raider03"
+        and STUB.sent[1].channel == "WHISPER", "chat off: a line is turned away, and its sender told")
+    incoming(A, { me }, "hello??")
+    check(#STUB.sent == 1, "chat off: told once a minute at most")
+    STUB.now = STUB.now + 61
+    incoming(A, { me }, "still there?")
+    check(#STUB.sent == 2, "chat off: (and again after a minute)")
+    check(Chat:Send(ac, "x") == false, "chat off: nothing can be sent")
+    SlashCmdList.POGRAID("chat")
+    check(not Chat.frame:IsShown() and printedContains("group chat is turned off in Settings"), "chat off: /pog chat says where to turn it on")
+    ns.Editor:ShowTab("home")
+    Home:Refresh()
+    check(not Home.onlineCard.chat:IsShown(), "chat off: no Chat button on Home")
+    ns.Editor:ShowTab("settings")
+    STUB.Script(checks[8], "OnClick")
+    check(Chat:Enabled() and ns.db.settings.chat == true, "settings: and on again")
+
+    -- Home: a Chat button by Show offline that counts unread lines, and Chat in a guildie's menu
+    ns.Editor:ShowTab("home")
+    for _, ch in pairs(G.chats) do ch.unread = 0 end
+    Chat.frame:Hide()
+    incoming(B, { me }, "you up?")
+    local btn = Home.onlineCard.chat
+    check(btn:IsShown() and btn.label:GetText() == "Chat (1)" and btn.selected == true, "home: the Chat button counts unread lines")
+    local _, tt, _, th = STUB.rect(Home.onlineCard.toggle)
+    local tl = STUB.rect(Home.onlineCard.toggle)
+    local cl, ct, cw, ch = STUB.rect(btn)
+    check(near(tl - (cl + cw), 6) and near(ct - ch / 2, tt - th / 2) and ch == th, "home: 6px left of Show offline, on its line")
+    STUB.Script(btn, "OnClick")
+    check(Chat.frame:IsShown(), "home: and opens the chat window")
+    Chat:Open(Chat:Get({ me, B }))
+    check(btn.label:GetText() == "Chat" and not btn.selected, "home: nothing unread, just Chat")
+    STUB.Script(btn, "OnClick")
+    check(not Chat.frame:IsShown(), "home: clicking again closes it")
+    local function menuFor(name)
+        menu = nil
+        UI.ShowMenu = function(_, e) menu = e end
+        for off = 0, #Home:MemberList() do
+            Home.onlineCard.offset = off
+            Home:Refresh()
+            for _, row in ipairs(Home.onlineCard.rows) do
+                if row.item == name and row:IsShown() and not menu then STUB.Script(row, "OnClick", "RightButton") end
+            end
+            if menu then break end
+        end
+        Home.onlineCard.offset = 0
+        UI.ShowMenu = realMenu
+        local texts = {}
+        for i, e in ipairs(menu or {}) do texts[i] = e.text end
+        return table.concat(texts, "|")
+    end
+    local withChat, without = menuFor(A), menuFor(C)
+    check(withChat:find("|Chat|", 1, true) and withChat:find("Whisper|Chat|Invite to group", 1, true) and not without:find("Chat", 1, true),
+        "home: Chat in the menu of a guildie who has it, under Whisper")
+    menuFor(A)
+    for _, e in ipairs(menu) do if e.text == "Chat" then e.func() end end
+    check(Chat.frame:IsShown() and Chat.current == Chat:Get({ me, A }), "home: which opens the chat with them")
+
+    -- /pog chat, and the practice chat
+    SlashCmdList.POGRAID("chat")
+    check(not Chat.frame:IsShown(), "chat: /pog chat closes the window")
+    SlashCmdList.POGRAID("chat")
+    check(Chat.frame:IsShown(), "chat: and opens it")
+    G.chats = nil
+    Chat.current = nil
+    STUB.sent, STUB.timers = {}, {}
+    SlashCmdList.POGRAID("chat test")
+    local tc = Chat.current
+    check(tc and tc.test and #tc.members == 2 and tc.log[1].sys and tc.log[2].from == Chat:Others(tc)[1]
+        and logText(tc) == Chat.TEST_LINES[1], "practice chat: /pog chat test opens one that says hello")
+    member(Chat:Others(tc)[1], true) -- (online, so a real chat would whisper them)
+    Roster:ScanGuild()
+    STUB.sent, STUB.timers, STUB.allowance = {}, {}, 10
+    Chat:Send(tc, "testing")
+    Chat.frame:Hide()
+    STUB.sounds = {}
+    T.frame:Hide()
+    STUB.Advance(Chat.TEST_DELAY)
+    check(#STUB.sent == 0 and #tc.log == 4 and logText(tc) == Chat.TEST_LINES[2] and tc.unread == 1 and T.frame:IsShown()
+        and STUB.sounds[1] == SOUNDKIT.TELL_MESSAGE, "practice chat: it answers after a moment (pop-up and all), and nothing is sent to anyone")
+    T.frame:Hide()
+    local other = Chat:Others(tc)[1]
+    V.seen[other] = "0.16.5"
+    incoming(other, { me }, "a real line")
+    check(tc.test == nil and logText(tc) == "a real line", "practice chat: a real line from them makes it a real chat")
+    STUB.sent, STUB.allowance = {}, 10
+    member(other, true)
+    Roster:ScanGuild()
+    Chat:Send(tc, "real reply")
+    check(#STUB.sent == 1, "practice chat: (which is whispered)")
+    SlashCmdList.POGRAID("chat test")
+    check(Chat.current ~= tc and Chat.current.test, "practice chat: a new one is with someone we have no chat with")
+    local again, notes = Chat.current, 0
+    SlashCmdList.POGRAID("chat test")
+    for _, l in ipairs(again.log) do if l.sys then notes = notes + 1 end end
+    check(Chat.current == again and notes == 1 and logText(again) == Chat.TEST_LINES[2], "practice chat: asking again carries the same one on, its note said once")
+    wipe(Chat.off)
+    V.seen = {}
+    Chat:Refresh()
+    local headRow
+    for _, row in ipairs(Chat.left.rows) do if row:IsShown() and row.item.head then headRow = row end end
+    check(headRow and headRow.item.head == "Nobody online yet" and #headRow.item.head <= 20,
+        "chat: with nobody to chat with the list says so, in words that fit")
+    G.chats = nil
+    Chat.current = nil
+    Chat.frame:Hide()
+
+    -- the pop-up takes notes one at a time, and waits out a fight
+    T.notes = {}
+    T.frame:Hide()
+    local clicked
+    T:Note({ icon = 1, text = "first", sub = "one", onClick = function() clicked = "first" end })
+    T:Note({ icon = 2, text = "second", sub = "two" })
+    f = T.frame
+    check(f:IsShown() and f.text:GetText() == "first" and f.sub:GetText() == "one" and f.icon:GetTexture() == 1 and #T.notes == 1
+        and f:GetAlpha() == 0, "notes: one at a time, fading in")
+    T:Step(0.5)
+    T:Step(T.SHOW + 5)
+    check(f:IsShown() and f.text:GetText() == "second" and #T.notes == 0 and clicked == nil, "notes: the next one follows when the first fades")
+    STUB.Script(f, "OnClick", "LeftButton")
+    check(not f:IsShown(), "notes: a note with nothing to open just closes")
+    T:Note({ text = "third", onClick = function() clicked = "third" end })
+    STUB.Script(f, "OnClick", "LeftButton")
+    check(clicked == "third" and not f:IsShown(), "notes: clicking one runs what it's for")
+    STUB.combat = true
+    T:Note({ text = "in a fight" })
+    check(not f:IsShown() and #T.notes == 1, "notes: nothing pops up in a fight")
+    STUB.combat = false
+    STUB.Fire("PLAYER_REGEN_ENABLED")
+    check(f:IsShown() and f.text:GetText() == "in a fight", "notes: it shows when the fight ends")
+    for i = 1, T.MAX_NOTES + 3 do T:Note({ text = "n" .. i }) end
+    check(#T.notes == T.MAX_NOTES and T.notes[1].text == "n4", "notes: only the newest few wait")
+    T.notes = {}
+    -- a new group takes the pop-up over; the note's click no longer applies
+    f:Hide()
+    T:Note({ text = "note", onClick = function() clicked = "note" end })
+    check(f:IsShown() and f.note ~= nil, "notes: (a note is up)")
+    local now = ns.Now()
+    Sync:Apply(Sync.collections.lfg, { id = "lfg-chat-test", rev = now, by = B, author = B, t = now, what = "Stratholme", need = "tank", exp = now + 2700, size = 1, max = 5 })
+    check(f:IsShown() and f.note == nil and f.id == "lfg-chat-test" and f.text:GetText():find("Stratholme", 1, true), "notes: a new group shows over a note")
+    STUB.Script(f, "OnClick", "RightButton")
+    ns.Social.requested["lfg-chat-test"] = nil
+    Sync:Store("lfg")["lfg-chat-test"] = nil
+    Sync.index = nil
+
+    -- kudos for us: a pop-up, once per kudos
+    local week = P.Week()
+    local guild = Sync:GuildName()
+    local rev = now
+    local function kudos(from, to, kind, n, wk, msg, quiet)
+        rev = rev + 1
+        return Sync:Apply(Sync.collections.kudos, { id = from .. ":" .. kind .. ":" .. to, rev = rev, by = from, author = from, t = now,
+            to = to, kind = kind, n = n, wk = wk or week, msg = msg or "Thanks for the run" }, quiet)
+    end
+    G.kudosSeen = nil
+    T.notes = {}
+    f:Hide()
+    STUB.sounds = {}
+    check(ns.db.settings.kudosToasts == true, "kudos pop-up: on by default")
+    check(kudos(C, me, 2, 1, week, "Never ||died once") and f:IsShown() and f.note
+        and f.text:GetText():find("Raider05", 1, true) and f.text:GetText():find("gave you kudos: Great tank", 1, true)
+        and f.sub:GetText() == '"Never ||||died once"' and f.icon:GetTexture() == P.KUDOS[2][1] and STUB.sounds[1] == SOUNDKIT.IG_QUEST_LIST_COMPLETE
+        and G.kudosSeen[C .. ":2:" .. me] == 1, "kudos pop-up: a guildie's kudos for us pops up with its message")
+    ns.Editor:ShowTab("home")
+    STUB.Script(f, "OnClick", "LeftButton")
+    check(not f:IsShown() and ns.Editor.currentTab == "profiles" and P.viewing == P:Main(me), "kudos pop-up: clicking it opens our profile")
+    ns.Editor:ShowTab("home")
+    kudos(C, me, 2, 1)
+    check(not f:IsShown(), "kudos pop-up: the same kudos coming round again doesn't")
+    kudos(C, me, 2, 2)
+    check(f:IsShown() and G.kudosSeen[C .. ":2:" .. me] == 2, "kudos pop-up: another one from them does")
+    f:Hide()
+    kudos(C, me, 2, 1, week - 1)
+    check(not f:IsShown() and G.kudosSeen[C .. ":2:" .. me] == 1, "kudos pop-up: one taken back is quiet")
+    kudos(C, me, 2, 2)
+    check(f:IsShown(), "kudos pop-up: and given again shows again")
+    f:Hide()
+    kudos(A, me, 1, 3, week - 2)
+    check(not f:IsShown() and G.kudosSeen[A .. ":1:" .. me] == 3, "kudos pop-up: not for kudos from weeks ago (a new install catching up)")
+    kudos(A, B, 3, 1)
+    check(not f:IsShown() and G.kudosSeen[A .. ":3:" .. B] == nil, "kudos pop-up: not for someone else's kudos")
+    kudos(A, me, 8, 1)
+    check(not f:IsShown(), "kudos pop-up: not for a retired kind")
+    -- one that arrives in a page of records (the catch-up after logging in) counts too
+    kudos(B, me, 5, 1, week, "Helped me with my key", true)
+    check(f:IsShown() and f.text:GetText():find("Helpful", 1, true), "kudos pop-up: also when it arrives with a batch of records")
+    f:Hide()
+    -- for our alt; never from our own characters
+    local a = P:Mine()
+    a.chars[guild] = a.chars[guild] or {}
+    local hadAlt = a.chars[guild]["Jakealt-Realm"]
+    a.chars[guild]["Jakealt-Realm"] = now
+    kudos(A, "Jakealt-Realm", 4, 1)
+    check(f:IsShown() and f.text:GetText():find("Carried me", 1, true), "kudos pop-up: for our alt as well")
+    f:Hide()
+    kudos("Jakealt-Realm", me, 4, 1)
+    check(not f:IsShown(), "kudos pop-up: not from our own alt")
+    a.chars[guild]["Jakealt-Realm"] = hadAlt
+    -- turned off in Settings: quiet, and not saved up for later
+    ns.Editor:ShowTab("settings")
+    STUB.Script(checks[7], "OnClick")
+    check(ns.db.settings.kudosToasts == false, "settings: Kudos pop-ups off")
+    kudos(B, me, 9, 1)
+    check(not f:IsShown() and #T.notes == 0 and G.kudosSeen[B .. ":9:" .. me] == 1, "kudos pop-up: off means none")
+    STUB.Script(checks[7], "OnClick")
+    kudos(B, me, 9, 1)
+    check(ns.db.settings.kudosToasts == true and not f:IsShown(), "kudos pop-up: and the ones missed don't pop up when it's back on")
+    -- in a fight it waits
+    STUB.combat = true
+    kudos(B, me, 7, 1)
+    check(not f:IsShown() and #T.notes == 1, "kudos pop-up: waits out a fight")
+    STUB.combat = false
+    STUB.Fire("PLAYER_REGEN_ENABLED")
+    check(f:IsShown() and f.text:GetText():find("Great leader", 1, true), "kudos pop-up: then shows")
+    f:Hide()
+
+    -- tidy up
+    local store = Sync:Store("kudos")
+    for id in pairs(G.kudosSeen) do store[id] = nil end
+    store[A .. ":3:" .. B], store[A .. ":8:" .. me], store["Jakealt-Realm:4:" .. me] = nil, nil, nil
+    Sync.index = nil
+    G.kudosSeen, G.chats = nil, nil
+    T.notes = {}
+    V.seen, V.dev, ns.db.versions = savedSeen, {}, savedVersions
+    for _, e in ipairs(savedGuild) do e[1].online = e[2] end
+    for i = #STUB.guild, #savedGuild + 1, -1 do table.remove(STUB.guild, i) end
+    Roster:ScanGuild()
+    ns.Attendance.keyCache = nil
+    ns.Editor:ShowTab("home")
 end
 
 return results

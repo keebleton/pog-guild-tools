@@ -159,6 +159,9 @@ end
 function M:IsMouseOver() return STUB.hover == self end
 function M:SetEnabled(on) self.__disabled = not on end
 function M:SetAlpha(a) self.__alpha = a end
+-- a ScrollingMessageFrame keeps its lines
+function M:AddMessage(msg) self.__messages = self.__messages or {}; table.insert(self.__messages, msg) end
+function M:Clear() self.__messages = {} end
 function M:SetDesaturated(on) self.__desaturated = on and true or false end
 function M:GetAlpha() return self.__alpha or 1 end
 function M:IsEnabled() return not self.__disabled end
@@ -342,7 +345,8 @@ CLASS_ICON_TCOORDS = { WARRIOR = { 0, 0.25, 0, 0.25 }, MAGE = { 0.25, 0.49609375
 function PlayMusic(file) STUB.music = file return true end
 function StopMusic() STUB.music = nil end
 SOUNDKIT = { RAID_WARNING = 8959, IG_CHARACTER_INFO_OPEN = 839, IG_CHARACTER_INFO_CLOSE = 840, IG_CHARACTER_INFO_TAB = 841,
-    IG_MAINMENU_OPTION_CHECKBOX_ON = 856, IG_MAINMENU_OPTION_CHECKBOX_OFF = 857 }
+    IG_MAINMENU_OPTION_CHECKBOX_ON = 856, IG_MAINMENU_OPTION_CHECKBOX_OFF = 857, TELL_MESSAGE = 3081,
+    IG_QUEST_LIST_COMPLETE = 878 }
 STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
 UISpecialFrames = {}
 SlashCmdList = {}

@@ -51,6 +51,7 @@ for line in io.lines(dir .. "/PogRaid.toc") do
     if line:match("%.lua$") then toc[#toc + 1] = line end
 end
 for _, file in ipairs(toc) do assert(loadfile(dir .. "/" .. file))("PogRaid", ns) end
+ns.DEV = nil
 math.randomseed(#player * 7919 + player:byte(1) * 31 + player:byte(#player))
 STUB.Fire("ADDON_LOADED", "PogRaid")
 ns.Roster:ScanGuild()

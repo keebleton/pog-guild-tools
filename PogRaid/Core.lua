@@ -1,7 +1,18 @@
 -- PogRaid core: saved data, event dispatch, slash commands, API probe.
 local ADDON, ns = ...
 
-ns.VERSION = "0.16.4"
+ns.VERSION = "0.16.5"
+
+-- Running from the project folder, not a packaged release (the packager and
+-- tools/package.py delete this block). A dev build tells other addons it is
+-- "<version>-dev", which none of them reads as a version, so trying out an
+-- unreleased version doesn't tell the guild a newer one is out.
+--@do-not-package@
+ns.DEV = true
+--@end-do-not-package@
+function ns.WireVersion()
+    return ns.DEV and (ns.VERSION .. "-dev") or ns.VERSION
+end
 ns.MEDIA = "Interface\\AddOns\\" .. ADDON .. "\\Media\\"
 
 -- Page grid: every tab's page is PAGE_H tall. The Raid tab's pages (Roster,
@@ -157,7 +168,7 @@ end
 ------------------------------------------------------------------------
 -- Saved data
 ------------------------------------------------------------------------
-local DB_VERSION = 4
+local DB_VERSION = 5
 
 local function NewBoard(name)
     return { name = name or "New plan", map = nil, zoom = 1, cx = 0.5, cy = 0.5, items = {} }
@@ -393,6 +404,18 @@ ns.On("ADDON_LOADED", function(name)
     if (db.version or 1) < 3 and db.guild then db.legacyGuild = fillGuild(db.guild) end
     db.guild = nil
     if (db.version or 1) < 4 then mergeSplitGuilds(db) end
+    -- v5: pugs the attendance snapshot met in a raid were stored like players
+    -- added by hand, which put them in the roster pool for good. Those added by
+    -- hand carry who added them (rev); the rest are pugs now.
+    if (db.version or 1) < 5 then
+        local tables = { db.legacyGuild }
+        for _, g in pairs(db.guilds) do tables[#tables + 1] = g end
+        for _, g in pairs(tables) do
+            for _, p in pairs(g.players or {}) do
+                if p.manual and not p.rev and not p.demo then p.manual, p.pug = nil, true end
+            end
+        end
+    end
     db.settings = db.settings or {}
     local st = db.settings
     st.minimap = st.minimap or { angle = 220 }
@@ -401,6 +424,8 @@ ns.On("ADDON_LOADED", function(name)
     if st.duelChallenges == nil then st.duelChallenges = true end
     if st.profileSongs == nil then st.profileSongs = true end
     if st.groupToasts == nil then st.groupToasts = true end
+    if st.chat == nil then st.chat = true end
+    if st.kudosToasts == nil then st.kudosToasts = true end
     if st.theme == nil then st.theme = st.classic == false and "plain" or ns.UI.DEFAULT_THEME end
     st.classic = nil
     ns.UI.SetTheme(st.theme)
@@ -508,9 +533,14 @@ SlashCmdList.POGRAID = function(msg)
         if not ns.db.settings.minimap.hide then ns.Print("minimap button shown") end
     elseif cmd == "settings" then
         ns.Editor:Toggle("settings")
+    elseif cmd == "chat" then
+        -- "/pog chat test": a practice chat that answers back (nothing is sent to anyone)
+        if (msg or ""):lower():match("test") then ns.Chat:Test() else ns.Chat:Toggle() end
     elseif cmd == "duels" or cmd == "wowdle" or cmd == "gems" then
         ns.Editor:Toggle("games")
         if ns.Games.page then ns.Games:SetMode(cmd) end
+        -- asked for by name: ready to type (opening the tab alone doesn't take the keyboard)
+        if cmd == "wowdle" and ns.Games.page and ns.Games.page:IsShown() then ns.Wowdle:Focus() end
     elseif cmd == "late" then
         local _, early = ns.Attendance:MyNotice()
         ns.Attendance:SetNotice(true, early)
@@ -549,8 +579,9 @@ SlashCmdList.POGRAID = function(msg)
         wipe(ns.db.frames)
         ns.Editor:ResetPosition()
         ns.Viewer:ResetPosition()
+        if ns.Chat.frame then ns.UI.RestorePosition(ns.Chat.frame, "chat", 40) end
         ns.Print("window positions reset")
     else
-        ns.Print("/pog opens the window. Also: home, roster, attendance, loot, crafting, games, gems, wowdle, duels, plans, settings, minimap, probe, art, bug, sync, check, test, reset")
+        ns.Print("/pog opens the window. Also: home, roster, attendance, loot, crafting, games, gems, wowdle, duels, plans, chat, settings, minimap, probe, art, bug, sync, check, test, reset")
     end
 end

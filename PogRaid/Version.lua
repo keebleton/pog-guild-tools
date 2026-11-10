@@ -39,7 +39,13 @@ local function store()
     return ns.db.versions
 end
 
+Version.dev = {}            -- this session: key -> the version a dev build is built on
+
 function Version:Note(sender, version)
+    -- a dev build ("0.16.5-dev") is nobody's newer version and isn't listed,
+    -- but what it can do (group chat) goes by the version it's built on
+    local base = sender and tostring(version or ""):match("^(%d+%.%d+%.%d+)%-dev$")
+    if base then self.dev[ns.Attendance:Key(sender)] = base end
     if not sender or not parse(version) then return end
     local key = ns.Attendance:Key(sender)
     if key == ns.Sync:Me() then return end
@@ -81,7 +87,7 @@ function Version:List()
 end
 
 function Version:Announce()
-    if IsInGuild() then ns.Comm.Send("V" .. ns.VERSION, "GUILD") end
+    if IsInGuild() then ns.Comm.Send("V" .. ns.WireVersion(), "GUILD") end
 end
 
 function Version:OnMessage(kind, text, channel, sender)
@@ -92,7 +98,7 @@ function Version:OnMessage(kind, text, channel, sender)
         local last = self.replied[key]
         if (not last or GetTime() - last >= Version.REPLY_EVERY) and math.random() * ns.Sync:Peers() < Version.REPLIERS then
             self.replied[key] = GetTime()
-            ns.Comm.Send("W" .. ns.VERSION, "WHISPER", Ambiguate(sender, "none"))
+            ns.Comm.Send("W" .. ns.WireVersion(), "WHISPER", Ambiguate(sender, "none"))
         end
     elseif kind == "W" and channel == "WHISPER" then
         self:Note(sender, v)

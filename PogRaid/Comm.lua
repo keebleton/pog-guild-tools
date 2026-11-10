@@ -401,6 +401,11 @@ ns.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
         -- version check: one tiny message at login, one whispered reply
         if fromSelf or not ns.Version then return end
         ns.Version:OnMessage(kind, text, channel, sender)
+    elseif kind == "C" then
+        -- group chat (Chat.lua): lines whispered addon to addon, in chunks
+        if fromSelf or channel ~= "WHISPER" or not ns.Chat then return end
+        local payload = receiveChunk(text, sender)
+        if payload then ns.Chat:OnMessage(sender, payload) end
     elseif kind == "D" then
         -- ranked duel challenges, addon to addon over whisper
         if fromSelf or channel ~= "WHISPER" or not ns.Duels then return end
@@ -414,7 +419,7 @@ ns.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
             ns.Social:OnJoinReply(sender, text:sub(2, 2) == "1", text:sub(3))
         end
     elseif kind == "Q" then
-        if not fromSelf then Send("R" .. ns.VERSION, "WHISPER", sender) end
+        if not fromSelf then Send("R" .. ns.WireVersion(), "WHISPER", sender) end
     elseif kind == "R" then
         if check then check.replies[shortName(sender)] = text:sub(2) end
     elseif kind == "Z" then
@@ -425,7 +430,7 @@ ns.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
             local last = Comm.pongedAt[sender]
             if not last or GetTime() - last > 10 then
                 Comm.pongedAt[sender] = GetTime()
-                Send("Z!" .. ns.VERSION, "WHISPER", Ambiguate(sender, "none"))
+                Send("Z!" .. ns.WireVersion(), "WHISPER", Ambiguate(sender, "none"))
             end
         elseif text:sub(2, 2) == "!" and Comm.guildPingAt then
             ns.Print(("sync ping: %s answered (Pog Guild Tools %s) in %.1fs"):format(shortName(sender), text:sub(3),

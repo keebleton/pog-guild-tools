@@ -426,4 +426,13 @@ ns.On("PLAYER_EQUIPMENT_CHANGED", function()
         P:RefreshCharacter()
     end
 end)
-ns.On("ITEM_DATA_LOAD_RESULT", function() Gear:RefreshWindow() end)
+-- items load in bursts: refresh once they settle, and only while the window is open
+local loadPending
+ns.On("ITEM_DATA_LOAD_RESULT", function()
+    if loadPending or not (Gear.window and Gear.window:IsShown()) then return end
+    loadPending = true
+    C_Timer.After(0.3, function()
+        loadPending = nil
+        Gear:RefreshWindow()
+    end)
+end)

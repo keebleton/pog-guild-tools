@@ -184,7 +184,11 @@ Sync:Register({
             and rec.wk ~= nil and whole(rec.wk, 0, 1e6) and rec.id == rec.author .. ":" .. rec.kind .. ":" .. rec.to
             and type(rec.msg) == "string" and rec.msg ~= "" and #rec.msg <= Profiles.MAX_KUDOS_MSG
     end,
-    onChange = changed,
+    perRecord = true, -- each one may be a kudos for us (the pop-up)
+    onChange = function(rec)
+        Profiles:OnKudos(rec)
+        Profiles:Changed()
+    end,
 })
 
 -- A character's shared record, or nil.
@@ -604,6 +608,34 @@ function Profiles:GiveKudos(name, kind, msg)
         n = math.min(Profiles.KUDOS_MAX, (cur and not cur.deleted and cur.n or 0) + 1), wk = week, msg = msg })
     self:Changed()
     return true
+end
+
+-- A kudos record arrived or changed: if it's a new one for us, a pop-up says
+-- so (the same pop-up as a new group; Settings turns it off). Each kudos
+-- shows once: guild.kudosSeen remembers the count we've been told about, so
+-- nothing repeats when the record comes round again, and one taken back and
+-- given again does show. Kudos from before this week are old news.
+function Profiles:OnKudos(rec)
+    if not rec or type(rec.to) ~= "string" or not self:IsMine(rec.to) or self:IsMine(rec.author) then return end
+    local g = G()
+    g.kudosSeen = g.kudosSeen or {}
+    local seen = g.kudosSeen[rec.id] or 0
+    local n = rec.deleted and 0 or rec.n or 0
+    if n <= seen then
+        g.kudosSeen[rec.id] = n > 0 and n or nil
+        return
+    end
+    g.kudosSeen[rec.id] = n
+    local kind = Profiles.KUDOS[rec.kind]
+    if not kind or kind.retired or rec.wk ~= Profiles.Week() or ns.db.settings.kudosToasts == false then return end
+    if not (ns.GroupToast and ns.GroupToast.Note) then return end
+    ns.Sound("IG_QUEST_LIST_COMPLETE")
+    ns.GroupToast:Note({
+        icon = kind[1],
+        text = ("%s gave you kudos: %s"):format(colorName(rec.author), kind[2]),
+        sub = '"' .. tostring(rec.msg or ""):gsub("|", "||") .. '"',
+        onClick = function() self:Open(me()) end,
+    })
 end
 
 ------------------------------------------------------------------------
@@ -1778,7 +1810,10 @@ function Profiles:RefreshTop()
         if who then
             t.pic:Set(who)
             local cr, cg, cb = classColor(who)
-            t.name:SetText(("|cff%02x%02x%02x%s|r"):format(cr * 255, cg * 255, cb * 255, self:Name(who)))
+            -- a nickname as it is, else the first name: a full name never fit the tile ("Twiddler...")
+            local label = self:Name(who)
+            if not self:Content(who).nick then label = label:match("^(%S+)") or label end
+            t.name:SetText(("|cff%02x%02x%02x%s|r"):format(cr * 255, cg * 255, cb * 255, label))
         end
         t:SetShown(who ~= nil)
     end

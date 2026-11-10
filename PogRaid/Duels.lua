@@ -174,7 +174,7 @@ function Duels:Challenge(name)
     end
     local id, t = ns.NewId(), ns.Now()
     self.outgoing = { id = id, opp = key(name), t = t }
-    whisper(("D1%d:%s"):format(t, id), name)
+    whisper(("D1%d:%s"):format(t, id), self.outgoing.opp) -- (the roster's name: a first name alone can't be whispered)
     ns.Print(("ranked duel challenge sent to %s"):format(short(name)))
     local o = self.outgoing
     C_Timer.After(Duels.ANSWER_WAIT, function()

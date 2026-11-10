@@ -7,7 +7,8 @@
 -- than GRACE before it broke up, unless they said so ahead of time ("I'll be
 -- late" / "I'll leave early": shared `notice` records, full credit). The raid
 -- "gathered" when half its players had arrived and "broke up" when half had
--- left, so it doesn't matter when the recorder zoned in or stayed behind.
+-- left, so it doesn't matter when the recorder zoned in or stayed behind;
+-- and anyone there by the end of the first boss attempt is on time.
 -- Bench players on that night's roster count as there. Officers can override
 -- any credit.
 --
@@ -132,12 +133,25 @@ end
 -- called "Flyne <surname>", or the one of them who is online.
 function Att:Key(name)
     local want = Ambiguate(name, "none")
-    if not self.keyCache or self.keyCacheSize ~= ns.Count(G().players) then
+    local players = G().players
+    -- a guild member we already know is the answer, without counting anyone
+    -- (this runs for every sync record, chat line and loot message; whoever
+    -- adds or removes a player clears keyCache)
+    local hit = self.keyCache and self.keyCache[want]
+    if hit and players[hit] and players[hit].inGuild then return hit end
+    -- otherwise see whether the players have changed since the cache was built
+    local n = ns.Count(players)
+    if not self.keyCache or self.keyCacheSize ~= n then
         self.keyCache = {}
-        for full in pairs(G().players) do self.keyCache[Ambiguate(full, "none")] = full end
-        self.keyCacheSize = ns.Count(G().players)
+        for full, p in pairs(players) do
+            -- of two records with one name (a pug met before the roster loaded), the guild member's
+            local short = Ambiguate(full, "none")
+            local cur = self.keyCache[short]
+            if not cur or (p.inGuild and not players[cur].inGuild) then self.keyCache[short] = full end
+        end
+        self.keyCacheSize = n
     end
-    local hit = self.keyCache[want]
+    hit = self.keyCache[want]
     if hit then return hit end
     if not want:find(" ", 1, true) then
         local n, only, nOn, onlyOn = 0, nil, 0, nil
@@ -207,8 +221,11 @@ function Att:Snapshot(s)
             end
             local p = G().players[k]
             if not p then
-                p = { manual = true, class = class }
+                -- someone from outside the guild: remembered (for their class
+                -- colour on this night), but not a raider for the roster pool
+                p = { pug = true, class = class }
                 G().players[k] = p
+                self.keyCache = nil
             elseif not p.class then
                 p.class = class
             end
@@ -309,7 +326,13 @@ function Att:LateEarly(s, name)
     local first, last = s.firstAt and s.firstAt[name], s.lastAt and s.lastAt[name]
     if not first then return false, false end
     local from, to = self:Times(s)
-    local late = first - from > Att.GRACE
+    -- there by the end of the first boss attempt is on time, however long the
+    -- raid took to form (the recorder may sit inside while invites go out)
+    local firstBoss
+    for _, b in ipairs(s.bosses or {}) do
+        if b.t and (not firstBoss or b.t < firstBoss) then firstBoss = b.t end
+    end
+    local late = first - from > Att.GRACE and not (firstBoss and first <= firstBoss)
     local early = self:Over(s) and to - last > Att.GRACE
     return late, early
 end
@@ -525,7 +548,7 @@ Sync:Register({
             if rec.t < cutoff then store[id] = nil end
         end
     end,
-    expired = function(rec) return rec.t < ns.Now() - Att.KEEP end,
+    expired = function(rec, now) return rec.t < (now or ns.Now()) - Att.KEEP end,
     onChange = function(rec) Att:FromRecord(rec) end,
 })
 
@@ -543,7 +566,7 @@ Sync:Register({
             if rec.day < cutoff then store[id] = nil end
         end
     end,
-    expired = function(rec) return rec.day < ns.RaidDay() - 14 end,
+    expired = function(rec, now) return rec.day < ns.RaidDay(now) - 14 end,
     onChange = function(rec) Att:OnNotice(rec) end,
 })
 end

@@ -1,7 +1,12 @@
-# Pog Guild Tools 0.16.4
+# Pog Guild Tools 0.16.5
 
-The changes from 0.16.3, which CurseForge couldn't publish:
-
-- **Show offline on Home.** The Online now card has a Show offline button: the rest of the guild is listed under who's online, highest level first, with the level they were last seen at.
-- **One guild, one set of data.** On connected realms the game names a guild's realm only some of the time, which split some guilds' data in two, so the message board, profiles or crafting could look empty. Everything is merged back into one the first time you log in with this version.
-- **No more roster under "no guild".** Right after login the game can briefly say you're not in a guild; Pog now waits until it knows.
+- **New: group chat.** A small chat window of its own, like an instant messenger: pick one guildie or several from who's online and start a chat. Lines go privately between the people in it, a pop-up and a sound tell you about a new one, and your chats are kept between sessions. Open it with the Chat button on Home (it counts unread lines), from a guildie's right-click menu, or with /pog chat. Everyone in a chat needs this version or newer. Turn it off in Settings if it's not for you.
+- **New: kudos pop-up.** When a guildie gives you kudos, a pop-up says who, what for and their message. Click it to open your profile. Settings turns it off.
+- **Recent loot is readable again.** Farming a dungeon no longer fills the card: each player's item shows once, and one player takes at most 8 lines. Your own repeat drops are shared once, not every time.
+- **Fairer attendance.** Anyone in the raid by the end of the first boss attempt is on time, however long the raid took to form.
+- **Wowdle no longer takes your keyboard** when you open Games. Click the board to type, or use /pog wowdle.
+- **Ranked duels:** "Challenge your target" now reaches them (it was whispering the first name only).
+- **Roster:** Invite roster and Arrange groups recognise raid members by first name or full name. Pugs you raid with no longer join the raider pool; players you add by hand still do.
+- **Smoother:** less background chatter between addons when group listings expire, faster name lookups, and the Inspect window no longer redraws on every item that loads.
+- **Looks:** the Wishlist has two even columns of armour with the weapons in a row along the bottom, like the character pane. Activity no longer says "now" for level-ups that happened while you were away. "Most played with" shows first names that fit. Wowdle's stats bars match the theme.
+- **LFG:** the Cozy Sleeping Bag quest chain is no longer listed as a dungeon.

@@ -409,17 +409,22 @@ end
 -- next prune, and nobody takes it, so it isn't offered or counted. Players
 -- who have pruned would otherwise never match those who haven't yet. (A
 -- deletion can go too: the record it deleted is just as expired.)
-local function stale(def, rec)
+local function stale(def, rec, now)
     if not def.expired then return false end
-    local ok, gone = pcall(def.expired, rec)
+    local ok, gone = pcall(def.expired, rec, now)
     return ok and gone == true
 end
 
 -- Cached until something changes: { sums, members, tags, count }.
 function Sync:Index()
     local guild = self:GuildName()
-    if self.index and self.index.guild == guild then return self.index end
-    local idx = { guild = guild, sums = {}, members = {}, tags = {}, count = 0 }
+    -- Expiry is judged at the turn of the minute (server time), so every addon
+    -- drops an expired record from its fingerprint at the same moment. Judged
+    -- whenever each one happened to rebuild, they disagreed about it, and
+    -- traded listings and records nobody would take, until their next prune.
+    local minute = math.floor(ns.Now() / 60)
+    if self.index and self.index.guild == guild and self.index.minute == minute then return self.index end
+    local idx = { guild = guild, minute = minute, sums = {}, members = {}, tags = {}, count = 0 }
     for b = 0, Sync.BUCKETS - 1 do
         idx.sums[b], idx.members[b] = 0, {}
     end
@@ -427,7 +432,7 @@ function Sync:Index()
         local store = guild and self:Store(name)
         if store then
             for id, rec in pairs(store) do
-                if not stale(def, rec) then
+                if not stale(def, rec, minute * 60) then
                     local key = def.code .. id
                     local tag = tagOf(key, rec.rev)
                     local b = bucketOf(key)
@@ -492,7 +497,7 @@ function Sync:SendSummary()
     self:Pruned()
     local sums, n = self:Hash()
     self.summaryAt = GetTime()
-    send(("F%s%d:%s"):format(sums, n, ns.VERSION), true)
+    send(("F%s%d:%s"):format(sums, n, ns.WireVersion()), true)
     -- forget old bookkeeping
     local now = GetTime()
     for tag, at in pairs(self.asked) do

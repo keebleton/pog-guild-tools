@@ -78,18 +78,19 @@ local function hideTip() if GameTooltip then GameTooltip:Hide() end end
 ------------------------------------------------------------------------
 -- Data: activity feed, guild chat, recent loot
 ------------------------------------------------------------------------
-function Home:AddFeed(kind, name, value)
+-- `away`: it happened while we weren't looking (found at login), so it has no time to show.
+function Home:AddFeed(kind, name, value, away)
     local feed = G().feed
-    table.insert(feed, 1, { t = ns.Now(), kind = kind, name = name, value = value })
+    table.insert(feed, 1, { t = ns.Now(), kind = kind, name = name, value = value, away = away or nil })
     for i = #feed, Home.FEED_MAX + 1, -1 do feed[i] = nil end
     self:Changed()
 end
 
 -- Called by the roster scan with what changed since the last scan.
-function Home:OnGuildScan(levels, joined, left)
-    for _, x in ipairs(levels) do self:AddFeed("level", x.name, x.level) end
-    for _, n in ipairs(joined) do self:AddFeed("join", n) end
-    for _, n in ipairs(left) do self:AddFeed("leave", n) end
+function Home:OnGuildScan(levels, joined, left, catchUp)
+    for _, x in ipairs(levels) do self:AddFeed("level", x.name, x.level, x.away) end
+    for _, n in ipairs(joined) do self:AddFeed("join", n, nil, catchUp) end
+    for _, n in ipairs(left) do self:AddFeed("leave", n, nil, catchUp) end
 end
 
 -- "%s has earned the achievement %s!" in guild chat: keep the achievement link.
@@ -131,14 +132,23 @@ function Home:OnLoot(player, link)
     for i = #list, Home.LOOT_MAX + 1, -1 do list[i] = nil end
     -- our own drops go to the whole guild (the game only shows each of us
     -- the loot of people in our group)
+    -- One record per item: getting it again (a dungeon farmed all night) renews
+    -- that record, at most once an hour, instead of adding another. One player's
+    -- farming was most of what the guild's addons had to pass around.
     if key == ns.Sync:Me() and ns.Sync:GuildName() then
-        ns.Sync:Write("drops", { id = ns.NewId(), author = key, t = now, item = link, q = quality })
+        local id = key .. ":" .. itemID
+        local cur = (ns.Sync:Store("drops") or {})[id]
+        if not cur or cur.deleted or now - cur.t >= Home.DROP_RENEW then
+            ns.Sync:Write("drops", { id = id, author = key, t = now, item = link, q = quality })
+        end
     end
     self:Changed()
 end
 
 -- Guildies' own blue-and-better drops, shared for a day.
 Home.DROPS_KEEP = 86400
+Home.DROP_RENEW = 3600     -- the same item again renews its record this often at most
+Home.LOOT_PER_PLAYER = 8   -- Recent loot shows this many of one player's drops
 
 ns.Sync:Register({
     name = "drops", code = "l", order = 5,
@@ -154,35 +164,41 @@ ns.Sync:Register({
             if rec.t < cutoff then store[id] = nil end
         end
     end,
-    expired = function(rec) return rec.t < ns.Now() - Home.DROPS_KEEP end,
+    expired = function(rec, now) return rec.t < (now or ns.Now()) - Home.DROPS_KEEP end,
     onChange = function() Home:Changed() end,
 })
 
 -- Recent loot: what we saw (us and our group) plus guildies' shared drops,
 -- newest first, each drop once.
+-- What we saw ourselves plus what guildies shared. Each player's item shows
+-- once (the latest time they got it), and one player at most LOOT_PER_PLAYER
+-- times, so someone farming a dungeon doesn't push everyone else off the card.
 function Home:RecentLoot()
-    local out, seen = {}, {}
+    local latest = {}
+    local function add(e)
+        local k = e.player .. ":" .. e.itemID
+        if not latest[k] or e.t > latest[k].t then latest[k] = e end
+    end
     for _, e in ipairs(G().seenLoot) do
         -- drops saved before pugs were skipped stay hidden too
-        if e.demo or ns.Loot.FromGuild(e.player) then
-            out[#out + 1] = e
-            local k = e.player .. ":" .. e.itemID
-            seen[k] = seen[k] or {}
-            table.insert(seen[k], e.t)
-        end
+        if e.demo or ns.Loot.FromGuild(e.player) then add(e) end
     end
     for _, rec in pairs(ns.Sync:Store("drops") or {}) do
         local itemID = not rec.deleted and ns.Loot.ItemID(rec.item)
-        if itemID then
-            local dup = false
-            for _, t in ipairs(seen[rec.author .. ":" .. itemID] or {}) do
-                if math.abs(t - rec.t) <= ns.Loot.DEDUPE_SECONDS then dup = true end
-            end
-            if not dup then out[#out + 1] = { t = rec.t, player = rec.author, itemID = itemID, link = rec.item } end
-        end
+        if itemID then add({ t = rec.t, player = rec.author, itemID = itemID, link = rec.item }) end
     end
-    table.sort(out, function(a, b) return a.t > b.t end)
-    for i = #out, Home.LOOT_MAX + 1, -1 do out[i] = nil end
+    local all = {}
+    for _, e in pairs(latest) do all[#all + 1] = e end
+    table.sort(all, function(a, b)
+        if a.t ~= b.t then return a.t > b.t end
+        if a.player ~= b.player then return a.player < b.player end
+        return a.itemID < b.itemID
+    end)
+    local out, shown = {}, {}
+    for _, e in ipairs(all) do
+        shown[e.player] = (shown[e.player] or 0) + 1
+        if shown[e.player] <= Home.LOOT_PER_PLAYER and #out < Home.LOOT_MAX then out[#out + 1] = e end
+    end
     return out
 end
 
@@ -893,6 +909,9 @@ function Home:Build(page)
         self.onlineCard.offset = 0
         self:Refresh()
     end)
+    -- group chat (Chat.lua): its own little window; the label counts unread lines
+    self.onlineCard.chat = UI.Button(self.onlineCard, "Chat", 56, 18, function() ns.Chat:Toggle() end)
+    self.onlineCard.chat:SetPoint("RIGHT", self.onlineCard.toggle, "LEFT", -6, 0)
     rowList(self.onlineCard, LINE_H, false, function(row)
         if row.item then ns.Roster:ShowTooltip(row.item, row) end
     end, function(row)
@@ -910,6 +929,9 @@ function Home:Build(page)
                 { text = "Invite to group", func = function() Home.Invite(name) end },
                 { text = "Challenge to a ranked duel", func = function() ns.Duels:Challenge(name) end },
             }
+            if ns.Chat:CanChat(name) then
+                table.insert(menu, 3, { text = "Chat", func = function() ns.Chat:OpenWith({ name }) end })
+            end
             if ns.Profiles:HasAddon(name) then
                 table.insert(menu, 2, { text = "View profile", func = function() ns.Profiles:Open(name) end })
             end
@@ -971,7 +993,7 @@ function Home:Refresh()
     fillRows(self.feedCard, G().feed, function(row, e)
         row.pic:SetTexture(Home.Portrait(e.name))
         row.text:SetText(self:FeedText(e))
-        row.right:SetText(Home.Ago(e.t))
+        row.right:SetText(e.away and "" or Home.Ago(e.t))
     end, "Nothing yet.")
     fillRows(self.chatCard, G().chat, function(row, m)
         row.text:SetText(colorName(m.name) .. ": " .. m.text)
@@ -992,6 +1014,10 @@ function Home:Refresh()
     local offline = self:ShowingOffline()
     self.onlineCard.toggle:SetLabel(offline and "Hide offline" or "Show offline")
     self.onlineCard.toggle:SetShown(inGuild)
+    local unread = ns.Chat:Unread()
+    self.onlineCard.chat:SetLabel(unread > 0 and ("Chat (%d)"):format(math.min(unread, 99)) or "Chat")
+    self.onlineCard.chat:SetSelected(unread > 0)
+    self.onlineCard.chat:SetShown(inGuild and ns.Chat:Enabled())
     fillRows(self.onlineCard, self:MemberList(), function(row, name)
         local p = G().players[name]
         row.pic:SetTexture(Home.Portrait(name))

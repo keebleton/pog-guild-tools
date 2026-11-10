@@ -52,7 +52,10 @@ function Demo:Raiders()
     local i = 1
     while #out < 20 and FAKE[i] do
         local name = FAKE[i][1]
-        if not players[name] then players[name] = { manual = true, class = FAKE[i][2], demo = true } end
+        if not players[name] then
+            players[name] = { manual = true, class = FAKE[i][2], demo = true }
+            ns.Attendance.keyCache = nil
+        end
         out[#out + 1] = name
         i = i + 1
     end
@@ -134,7 +137,10 @@ function Demo:Clear()
         if g.seenLoot[i].demo then table.remove(g.seenLoot, i) end
     end
     for name, p in pairs(g.players) do
-        if p.demo then g.players[name] = nil end
+        if p.demo then
+            g.players[name] = nil
+            ns.Attendance.keyCache = nil
+        end
     end
     self:Refresh()
     ns.Print(n > 0 and "demo data removed." or "no demo data to remove.")

@@ -80,6 +80,7 @@ function Roster:Player(name)
     if not p then
         p = {}
         G().players[name] = p
+        if ns.Attendance then ns.Attendance.keyCache = nil end
     end
     return p
 end
@@ -114,6 +115,11 @@ function Roster:ScanGuild()
     local players = G().players
     local complete = not GetGuildRosterShowOffline or GetGuildRosterShowOffline()
     local firstScan = not G().scanned
+    -- The first read after logging in finds what changed while we were away,
+    -- and an offline member's level-up wasn't just now either: Home shows
+    -- those without a time.
+    self.sessionScan = self.sessionScan or {}
+    local catchUp = not self.sessionScan[guildKey]
     local levels, joined, left = {}, {}, {}
     local seen = {}
     local myGuid = UnitGUID and UnitGUID("player")
@@ -134,7 +140,7 @@ function Roster:ScanGuild()
                 if not p or not p.inGuild then
                     joined[#joined + 1] = name
                 elseif p.level and level and level > p.level then
-                    levels[#levels + 1] = { name = name, level = level }
+                    levels[#levels + 1] = { name = name, level = level, away = catchUp or not online }
                 end
             end
             p = self:Player(name)
@@ -155,10 +161,11 @@ function Roster:ScanGuild()
         end
     end
     G().scanned = true
+    self.sessionScan[guildKey] = true
     -- which roster entry is us (our full name: see ns.PlayerName)
     local me = byGuid or (#byFirst == 1 and byFirst[1]) or nil
     if me then ns.SetSelfName(me) end
-    if ns.Home then ns.Home:OnGuildScan(levels, joined, left) end
+    if ns.Home then ns.Home:OnGuildScan(levels, joined, left, catchUp) end
 end
 
 function Roster:RequestGuild()
@@ -449,17 +456,22 @@ end
 ------------------------------------------------------------------------
 -- Invites and group arranging
 ------------------------------------------------------------------------
+-- The roster's name for someone in our group. Forever's roster names carry a
+-- surname ("Flyne Lee") and a group name may not, so both sides go through
+-- Attendance:Key, which maps either one to the roster's name.
+local function who(name) return name and ns.Attendance:Key(name) end
+
 local function groupKeys()
-    local set = { [key(ns.PlayerName())] = true }
+    local set = { [who(ns.PlayerName())] = true }
     if IsInRaid() then
         for i = 1, GetNumGroupMembers() do
             local n = GetRaidRosterInfo(i)
-            if n then set[key(n)] = true end
+            if n then set[who(n)] = true end
         end
     else
         for i = 1, GetNumSubgroupMembers() do
             local n = GetUnitName("party" .. i, true)
-            if n then set[key(n)] = true end
+            if n then set[who(n)] = true end
         end
     end
     return set
@@ -497,7 +509,7 @@ function Roster:Invite()
     for g = 1, self:Groups() do
         for s = 1, 5 do
             local n = r.groups[g][s]
-            if n and not have[key(n)] and r.marks[n] ~= "out" then todo[#todo + 1] = n end
+            if n and not have[who(n)] and r.marks[n] ~= "out" then todo[#todo + 1] = n end
         end
     end
     if #todo == 0 then
@@ -576,14 +588,14 @@ function Roster:ArrangeStep()
     for g = 1, self:Groups() do
         for s = 1, 5 do
             local n = r.groups[g][s]
-            if n then want[key(n)] = g end
+            if n then want[who(n)] = g end
         end
     end
     local members, counts = {}, {}
     for i = 1, GetNumGroupMembers() do
         local n, _, sub = GetRaidRosterInfo(i)
         if n then
-            members[#members + 1] = { index = i, key = key(n), group = sub }
+            members[#members + 1] = { index = i, key = who(n), group = sub }
             counts[sub] = (counts[sub] or 0) + 1
         end
     end
@@ -1007,6 +1019,7 @@ function Roster:PlayerEntries(name)
         e[#e + 1] = { text = "Remove from pool", color = { 0.95, 0.4, 0.4 }, func = function()
             self:Remove(name)
             G().players[name] = nil
+            if ns.Attendance then ns.Attendance.keyCache = nil end
             self:Changed()
         end }
     end

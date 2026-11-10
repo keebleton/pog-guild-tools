@@ -58,7 +58,7 @@ Sync:Register({
             if not rec.pinned and rec.t < cutoff then store[id] = nil end
         end
     end,
-    expired = function(rec) return not rec.pinned and rec.t < ns.Now() - Social.POST_KEEP end,
+    expired = function(rec, now) return not rec.pinned and rec.t < (now or ns.Now()) - Social.POST_KEEP end,
     onChange = changed,
 })
 
@@ -100,7 +100,7 @@ Sync:Register({
             if rec.exp < cutoff then store[id] = nil end
         end
     end,
-    expired = function(rec) return rec.exp < ns.Now() end,
+    expired = function(rec, now) return rec.exp < (now or ns.Now()) end,
     perRecord = true,
     onChange = function(rec)
         changed()

@@ -77,6 +77,45 @@ launchers and plain-English steps. Read this whole file before changing anything
   PLAYER_GUILD_UPDATE or 20 s after login); `Roster:ScanGuild` records nothing until the game names the guild. DB v4
   (`mergeSplitGuilds`) merges "Name-Realm" tables and stores into "Name" and empties guild rosters filed under
   "(no guild)". Checked against a copy of Jake's real saved data.
+- Dev builds (0.16.5): `Core.lua` sets `ns.DEV = true` between `--@do-not-package@` lines, which the packager (and
+  `tools/package.py`) delete, so only a copy run from the repo has it. A dev build sends `ns.WireVersion()`
+  ("<version>-dev") wherever a version goes on the wire (V/W/R/Z!, the F fingerprint); no addon parses that as a version,
+  so Jake testing an unreleased version no longer tells the guild "a newer version is out". The tests clear `ns.DEV`.
+- 0.16.5, from Jake's live data and his calls: `drops` are one record per player and item (id "<author>:<itemID>",
+  renewed at most hourly; one guildie farming Stockade was 176 of 231 shared drops) and Recent loot shows each
+  player's item once, 8 lines a player at most. Late = more than 15 min after the raid gathered AND after the first
+  boss attempt ended (`s.bosses`). Pugs met in a raid are `players[name].pug` (not `manual`), so only guild members and
+  players added by hand are in the roster pool (DB v5 converts old ones: `manual` without `rev`). Group names are
+  matched to roster names through `Attendance:Key` (Roster `who()`), and its name cache is cleared by whoever adds or
+  removes a player. Wowdle doesn't focus on open: clicking the board or `/pog wowdle` does (`Wowdle:Focus`). Sync's
+  index judges expiry at the turn of the minute (`expired(rec, now)`), so every addon drops an expired record from its
+  fingerprint together.
+- 0.16.5 group chat (`Chat.lua`, `ns.Chat`; Jake: "like aim/msn"): a window of its own (`PogRaidChat`, position key
+  "chat"), not an Editor tab. A chat IS its set of people: key = the sorted full names joined by ","; kept per guild in
+  `guild.chats[key] = { key, members, log = { { t, from, text, sys } }, last, unread, test }` (200 lines a chat, 30 chats,
+  local only: chat is NOT a Sync collection, so old versions' fingerprints are untouched). Wire: Comm kind "C", chunked,
+  WHISPER only, one whisper per other member who is online: `M<n:2><the others' names, comma separated><text>`, or `N`
+  ("chat is off here", sent back at most once a minute per sender). A line is taken only from an in-guild sender, with
+  our name in the list, at most 8 people, nobody twice; text has control characters removed, is cut at 200, and every
+  "|" is escaped when shown (no colours, textures or links from a line, in the log or the pop-up). Buddies = online
+  guildies whose known version is >= `Chat.MIN_VERSION`; a dev build is known by `Version.dev[name]` (its base version,
+  this session only, never listed or warned about). `settings.chat == false` turns it all off (the Home button hides,
+  the window closes, senders are told). `/pog chat test` makes a practice chat (`c.test`) that answers back and never
+  whispers anyone; a real line from that person makes it a real chat. Entry points: Home's Chat button (left of Show
+  offline, "Chat (n)" when unread), the Online now right-click menu, `/pog chat`, and the pop-up.
+- 0.16.5 pop-up notes: `ns.GroupToast:Note({ icon, text, sub, onClick })` shows other news in the new-group pop-up, one
+  at a time (`Toast.notes`, at most 5 waiting, held back in combat until PLAYER_REGEN_ENABLED; a new group listing takes
+  the pop-up over). Chat lines use it, and so do kudos: the `kudos` collection is `perRecord`, and `Profiles:OnKudos`
+  pops up for a record to one of our characters from someone else's, in the current week, of a kind that isn't retired,
+  whose count is above `guild.kudosSeen[id]` (so each kudos shows once; a take-back lowers it). `settings.kudosToasts`.
+  Settings' General card is 300 tall now (eight checks); ten officer ranks still fit in the card under it.
+- 0.16.5 design, from Jake's screenshots (Nov 2026): the Wishlist sheet is 7 armour slots a side (Hands on the left) with
+  the weapons in a row on the sheet's ninth row (`side = 3`: Main Hand under the left column, Off Hand centred, Ranged
+  mirrored under the right); Activity lines found at login or for an offline member carry `away` and show no time;
+  Most played with tiles show the first name (a nickname whole); Wowdle's stats bars are `UI.ACCENT` at `BAR_ALPHA`;
+  LFG skips the journal's `questChainPage` entries (Cozy Sleeping Bag). Jake's own wording, leave it: "no groups atm",
+  "nobody looking atm". Still open (his call): nine red buttons on Raid Plans, "> " marks in menus, log-style chat lines,
+  one cool grey for dim text on the warm themes.
 - Addons can't call ReloadUI ("Interface action failed because of an AddOn"; Jake hit it, Oct 2026; the stub errors
   too): `UI.ReloadButton` is a SecureActionButtonTemplate running the /reload macro on the player's click.
 - Addons cannot set the guild MOTD. Blizzard's guild professions API exists in the client but may not be fed.

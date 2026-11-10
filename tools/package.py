@@ -21,7 +21,13 @@ with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         for name in sorted(files):
             if name.endswith((".lua", ".toc", ".tga", ".blp", ".ogg")):
                 full = os.path.join(folder, name)
-                z.write(full, os.path.join("PogRaid", os.path.relpath(full, ADDON)))
+                arc = os.path.join("PogRaid", os.path.relpath(full, ADDON))
+                if name.endswith(".lua"):
+                    # like the BigWigs packager: lines between these markers stay out of a release
+                    data = re.sub(rb"(?ms)^[ \t]*--@do-not-package@.*?--@end-do-not-package@[^\n]*\n", b"", open(full, "rb").read())
+                    z.writestr(arc, data)
+                else:
+                    z.write(full, arc)
 print("built", out)
 with zipfile.ZipFile(out) as z:
     for n in z.namelist():

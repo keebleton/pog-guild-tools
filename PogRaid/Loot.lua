@@ -609,6 +609,19 @@ end
 ------------------------------------------------------------------------
 -- Events, tab
 ------------------------------------------------------------------------
+-- The log keeps a year, like the shared nights.
+function Loot:Prune()
+    local cutoff = ns.Now() - ns.Attendance.KEEP
+    local log = G().loot
+    for id, e in pairs(log) do
+        if (e.t or 0) < cutoff then log[id] = nil end
+    end
+    self.counts = nil
+end
+ns.On("PLAYER_LOGIN", function()
+    C_Timer.After(30, function() if ns.db then Loot:Prune() end end)
+end)
+
 ns.On("CHAT_MSG_LOOT", function(msg) Loot:OnChat(msg) end)
 
 -- Personal loot on modern clients: (encounterID, itemID, itemLink, quantity, playerName, className)

@@ -143,8 +143,14 @@ function Toast:Step(elapsed)
     elseif f.age < f.stay + Toast.FADE_OUT then
         f:SetAlpha(1 - (f.age - f.stay) / Toast.FADE_OUT)
     else
-        f:Hide()
+        self:Dismiss()
     end
+end
+
+-- Gone; the next waiting note (if any) takes its place.
+function Toast:Dismiss()
+    self.frame:Hide()
+    self:NextNote()
 end
 
 -- A listing arrived (or changed): toast it if it's a guildie's new one.
@@ -160,7 +166,7 @@ end
 function Toast:Show(rec)
     if not self.frame then self:Build() end
     local f = self.frame
-    f.id = rec.id
+    f.id, f.note = rec.id, nil
     f.icon:SetTexture(ns.Profiles and ns.Profiles:Portrait(rec.author) or 134400)
     f.text:SetText(("%s is forming a group for %s"):format(colorName(rec.author), rec.what))
     local parts = {}
@@ -172,6 +178,36 @@ function Toast:Show(rec)
     f:SetAlpha(0)
     f:Show()
 end
+
+-- Other news in the same pop-up (a chat line, kudos): { icon, text, sub,
+-- onClick }. One at a time; the rest wait their turn, and all of them wait
+-- out a fight.
+Toast.notes = {}
+Toast.MAX_NOTES = 5
+
+function Toast:Note(note)
+    self.notes[#self.notes + 1] = note
+    while #self.notes > Toast.MAX_NOTES do table.remove(self.notes, 1) end
+    self:NextNote()
+end
+
+function Toast:NextNote()
+    if not self.notes[1] or (self.frame and self.frame:IsShown()) then return end
+    if InCombatLockdown and InCombatLockdown() then return end
+    if not self.frame then self:Build() end
+    local f = self.frame
+    local note = table.remove(self.notes, 1)
+    f.id, f.note = nil, note
+    f.icon:SetTexture(note.icon or 134400)
+    f.text:SetText(note.text or "")
+    f.sub:SetText(note.sub or "")
+    self:Fit()
+    f.age, f.stay, f.hover = 0, Toast.SHOW, false
+    f:SetAlpha(0)
+    f:Show()
+end
+
+ns.On("PLAYER_REGEN_ENABLED", function() Toast:NextNote() end)
 
 -- As wide as the text needs (between MIN_W and MAX_W); a longer first line
 -- wraps onto a second and the toast grows taller.
@@ -199,7 +235,13 @@ end
 function Toast:Click(button)
     local f = self.frame
     if button == "RightButton" then
-        f:Hide()
+        self:Dismiss()
+        return
+    end
+    if f.note then
+        local note = f.note
+        self:Dismiss()
+        if note.onClick then note.onClick() end
         return
     end
     local g = f.id and (ns.Sync:Store("lfg") or {})[f.id]

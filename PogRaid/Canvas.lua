@@ -292,7 +292,7 @@ function Canvas:DrawItem(it, index)
         if t == "dot" then
             r, g, b = classColor(it.class)
             size, label = 13, it.name
-            mine = self.highlightName and it.name == self.highlightName
+            mine = self.highlightName and ns.SameName(it.name, self.highlightName)
         else
             local grp = ns.GROUPS[it.g]
             r, g, b = grp.color[1], grp.color[2], grp.color[3]
