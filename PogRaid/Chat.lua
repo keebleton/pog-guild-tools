@@ -10,6 +10,7 @@
 -- Wire (inside chunked "C" payloads):
 --   M<n:2><names, comma separated, n bytes><text>   a line; names = everyone but the sender
 --   N                                                "I have chat turned off"
+--   R<n:2><names><at>~<icon>~<name>                  a group chat's name and picture (0.16.8), set at <at>
 -- Text is shown with its "|" escaped, so a line can't carry colours, textures
 -- or links (no way to dress a message up as something else).
 --
@@ -34,6 +35,9 @@ Chat.off = {}               -- name -> GetTime() they told us chat is off (this 
 Chat.picked = {}            -- people ticked in the New chat picker
 Chat.pending = {}           -- name -> id of a whisper of ours not yet seen going out
 Chat.WHISPER_WAIT = 4       -- seconds to see it go before saying it didn't
+Chat.MAX_NAME = 24          -- a group chat's own name
+Chat.GROUP_ICON = "Interface\\Icons\\INV_Misc_GroupLooking" -- a group chat's picture until someone picks one
+Chat.told = {}              -- chat key .. "\n" .. name -> the name-and-picture stamp they have (this session)
 
 local function G() return ns.db.guild end
 local function me() return ns.Sync:Me() end
@@ -126,10 +130,25 @@ function Chat:Others(c)
 end
 
 -- "Flyne, Mira" (class coloured unless `plain`).
-function Chat:Title(c, plain)
+function Chat:Members(c, plain)
     local names = {}
     for i, n in ipairs(self:Others(c)) do names[i] = plain and first(n) or colored(n) end
     return table.concat(names, ", ")
+end
+
+-- What a chat is called: its own name if the group gave it one, else its people.
+function Chat:Title(c, plain)
+    if c.name then return esc(c.name) end
+    return self:Members(c, plain)
+end
+
+function Chat:IsGroup(c) return #c.members > 2 end
+
+-- A chat's picture: the other person's portrait, or the group's.
+function Chat:Picture(c)
+    if self:IsGroup(c) then return c.icon or Chat.GROUP_ICON end
+    local other = self:Others(c)[1]
+    return other and ns.Profiles and ns.Profiles:Portrait(other) or 134400
 end
 
 function Chat:Unread()
@@ -327,10 +346,11 @@ function Chat:OnMessage(sender, payload)
     if not p or not p.inGuild or from == me() then return end
     local op = payload:sub(1, 1)
     if op == "N" then return self:OnOff(from) end
-    if op ~= "M" then return end
+    if op ~= "M" and op ~= "R" then return end
     local n = ns.Sync.Dec(payload, 2, 2)
     if not n or n < 1 or #payload < 3 + n then return end
-    local text = clean(payload:sub(4 + n))
+    local rest = payload:sub(4 + n)
+    local text = op == "M" and clean(rest)
     if text == "" then return end
     local members, seen, mine = { from }, { [from] = true }, false
     for name in payload:sub(4, 3 + n):gmatch("[^,]+") do
@@ -340,16 +360,119 @@ function Chat:OnMessage(sender, payload)
         if name == me() then mine = true end
     end
     if not mine or #members > Chat.MAX_MEMBERS then return end
-    if not self:Enabled() then return self:SayOff(from) end
+    if not self:Enabled() then
+        if op == "M" then self:SayOff(from) end
+        return
+    end
     self.off[from] = nil
+    if op == "R" then return self:OnMeta(from, members, rest) end
     local c = self:Get(members, true)
     c.test, c.testAt = nil, nil -- (a real line: no longer the practice chat)
     self:Received(c, add(c, from, text))
+    -- someone who hasn't heard this chat's name and picture from us is told (they may have been offline for it)
+    if c.metaAt and self.told[c.key .. "\n" .. from] ~= c.metaAt then self:TellMeta(c, from) end
+end
+
+------------------------------------------------------------------------
+-- A group chat's own name and picture (Jake: "like imessage"), shared with
+-- the group. The newest change wins (`metaAt`); whoever has an older one is
+-- told the newer when they next write.
+------------------------------------------------------------------------
+local function cleanName(name)
+    name = ns.Codec.CleanText(tostring(name or ""):gsub("%c", " "), Chat.MAX_NAME)
+    if name ~= "" then return name end
+end
+
+-- To everyone in the chat who's online with chat, or just to `only`.
+function Chat:TellMeta(c, only)
+    local others = self:Others(c)
+    local list = table.concat(others, ",")
+    local payload = "R" .. ns.Sync.Enc(#list, 2) .. list .. c.metaAt .. "~" .. (type(c.icon) == "number" and c.icon or "") .. "~" .. (c.name or "")
+    for _, to in ipairs(others) do
+        if (not only or to == only) and ns.Roster.online[to] and self:HasChat(to) then
+            whisper(payload, to)
+            self.told[c.key .. "\n" .. to] = c.metaAt
+        end
+    end
+end
+
+-- We name the chat or give it a picture (nil removes either).
+function Chat:SetMeta(c, name, icon)
+    if not self:Enabled() or not c or not self:IsGroup(c) or c.test then return false end
+    name = cleanName(name)
+    if name == c.name and icon == c.icon then return false end
+    local renamed = name ~= c.name
+    c.name, c.icon, c.metaAt = name, icon, math.max(ns.Now(), (c.metaAt or 0) + 1)
+    self:Changed(c, add(c, nil, renamed and name and ('You named the chat "%s".'):format(name)
+        or renamed and "You removed the chat's name." or "You changed the chat's picture.", true))
+    self:TellMeta(c)
+    self:Refresh()
+    return true
+end
+
+function Chat:OnMeta(from, members, rest)
+    if #members < 3 then return end
+    local at, icon, name = rest:match("^(%d+)~(%d*)~(.*)$")
+    at = tonumber(at)
+    if not at or #icon > 8 or at > ns.Now() + ns.Sync.FUTURE then return end
+    local c = self:Get(members, true)
+    local ours = c.metaAt or 0
+    if at <= ours then
+        -- they have what we have, or something older: then they're told ours
+        if at == ours then
+            self.told[c.key .. "\n" .. from] = ours
+        elseif self.told[c.key .. "\n" .. from] ~= ours then
+            self:TellMeta(c, from)
+        end
+        return
+    end
+    name, icon = cleanName(name), tonumber(icon)
+    local renamed = name ~= c.name
+    local pictured = icon ~= c.icon
+    c.name, c.icon, c.metaAt = name, icon, at
+    self.told[c.key .. "\n" .. from] = at
+    if renamed or pictured then
+        self:Changed(c, add(c, nil, renamed and name and ('%s named the chat "%s".'):format(first(from), name)
+            or renamed and ("%s removed the chat's name."):format(first(from))
+            or ("%s changed the chat's picture."):format(first(from)), true))
+    end
+    self:Refresh()
+end
+
+-- Name it: a small box under the chat's heading.
+function Chat:AskName(c)
+    UI.Prompt(self.pane, 8, -(Chat.layout.HEAD_H + 4), "Chat name (empty to remove it)", c.name or "", function(text)
+        if self:Store()[c.key] == c then self:SetMeta(c, text, c.icon) end
+    end)
+end
+
+-- Give it a picture: the same icons as a profile's portrait.
+function Chat:AskPicture(c)
+    local choices = ns.Profiles:IconChoices()
+    local selected
+    for i, file in ipairs(choices) do
+        if file == c.icon then selected = i break end
+    end
+    UI.Picker(self.pane.pic, choices, 12, 32, function(i)
+        if self:Store()[c.key] == c then self:SetMeta(c, c.name, choices[i]) end
+    end, 8, selected)
+end
+
+-- A chat's menu: a group can be named and pictured; any chat can be deleted.
+function Chat:Menu(anchor, c)
+    local menu = { { text = self:Members(c, true), header = true } }
+    if self:IsGroup(c) and not c.test then
+        menu[#menu + 1] = { text = c.name and "Rename this chat" or "Name this chat", func = function() self:AskName(c) end }
+        menu[#menu + 1] = { text = "Choose a picture", func = function() self:AskPicture(c) end }
+    end
+    menu[#menu + 1] = { text = "Delete chat", color = { 0.95, 0.4, 0.4 }, func = function() self:Delete(c) end }
+    UI.ShowMenu(anchor, menu)
 end
 
 -- Someone's line was added to `c`: unread, with a sound and a pop-up, unless
 -- that chat is open in front of us.
 function Chat:Received(c, line)
+    if ns.db.settings.chatEcho == true then self:Echo(c, line) end
     if not self:Watching(c) then
         c.unread = (c.unread or 0) + 1
         self:Notify(c, line)
@@ -358,26 +481,54 @@ function Chat:Received(c, line)
     self:Changed(c, line)
 end
 
+-- The line in the game's own chat box too, in whisper pink (Jake: a switch
+-- for it; off unless turned on). Not for whispers: the game prints those.
+function Chat:Echo(c, line)
+    local label = c.name or (self:IsGroup(c) and self:Members(c, true)) or "Pog chat"
+    if #label > 30 then label = label:sub(1, 27) .. "..." end
+    local info = ChatTypeInfo and ChatTypeInfo.WHISPER
+    DEFAULT_CHAT_FRAME:AddMessage(("[%s] %s: %s"):format(esc(label), first(line.from), esc(line.text)),
+        info and info.r or 1, info and info.g or 0.5, info and info.b or 1)
+end
+
 -- Is `c` open in front of us? (Not while the New chat picker is over it.)
 function Chat:Watching(c)
     return self.frame ~= nil and self.frame:IsShown() and self.current == c and not self.picking
 end
 
--- Home's Chat button counts unread lines.
+-- Home's Chats card shows what's unread.
 function Chat:Badge()
-    if ns.Home then ns.Home:Changed() end
+    if ns.Home then ns.Home:ChatsChanged() end
+end
+
+-- A chat's last line, for Home's Chats card: "You: on my way" (in a group, who said it).
+function Chat:Preview(c)
+    for i = #c.log, 1, -1 do
+        local line = c.log[i]
+        if not line.sys then
+            local who = line.from == me() and "You: " or self:IsGroup(c) and (first(line.from) .. ": ") or ""
+            return who .. (line.w and line.text or esc(line.text))
+        end
+    end
+end
+
+-- From Home: the window, on its New chat picker.
+function Chat:StartNew()
+    self:Open()
+    if self.frame and self.frame:IsShown() and not self.picking then self:NewChat() end
 end
 
 -- A line arrived in a chat we aren't looking at: a sound and a pop-up.
 function Chat:Notify(c, line)
-    ns.Sound("TELL_MESSAGE")
-    if not (ns.GroupToast and ns.GroupToast.Note) then return end
+    -- (each has its own switch in the chat window's title bar; Settings' Pop-up sounds mutes everything)
+    if ns.db.settings.chatSound ~= false then ns.Sound("TELL_MESSAGE") end
+    if ns.db.settings.chatToasts == false or not (ns.GroupToast and ns.GroupToast.Note) then return end
     local text = line.text
     if #text > 80 then text = text:sub(1, 77) .. "..." end
     ns.GroupToast:Note({
         icon = ns.Profiles and ns.Profiles:Portrait(line.from) or 134400,
         text = colored(line.from) .. ": " .. esc(text),
-        sub = #c.members > 2 and ("Chat with " .. self:Title(c, true)) or "Click to reply",
+        sub = c.name and esc(c.name) or self:IsGroup(c) and ("Chat with " .. self:Members(c, true)) or "Click to reply",
         onClick = function() self:Open(c, true) end,
     })
 end
@@ -387,7 +538,9 @@ end
 ------------------------------------------------------------------------
 local W, H, TITLE_H, PAD, GAP = 540, 340, 30, 10, 8
 local LIST_W, ROW_H, HEAD_H, INPUT_H, BTN_H = 170, 20, 26, 24, 22
-local WHISPER_W = 118 -- the Guild whispers check in the title bar: its box, 8px, the words
+local CHECK_GAP = 16 -- between the checks in the title bar (each is as wide as its box and words)
+local PIC = 16 -- a chat's picture, in its row and in the heading
+local HEAD_NOTE_W = 100 -- kept clear at the heading's right for "Sent as whispers" or Edit
 -- the New chat picker, in the right card: a search box, who's online, Cancel and Start chat
 local SEARCH_H, PICK_START_W, PICK_CANCEL_W = 22, 104, 64
 local PICK_TOP = HEAD_H + 6 + SEARCH_H + 6
@@ -396,7 +549,7 @@ local PANE_W = W - PANE_X - PAD
 local BODY_H = H - TITLE_H - PAD
 local PICK_ROWS = math.floor((BODY_H - PICK_TOP - 8 - BTN_H - 8) / ROW_H)
 local PICK_HINT_W = PANE_W - 10 - 8 - PICK_START_W - 6 - PICK_CANCEL_W - 8
-Chat.layout = { W = W, H = H, LIST_W = LIST_W, PANE_X = PANE_X, PANE_W = PANE_W, ROW_H = ROW_H, PICK_TOP = PICK_TOP,
+Chat.layout = { W = W, H = H, LIST_W = LIST_W, PANE_X = PANE_X, PANE_W = PANE_W, ROW_H = ROW_H, HEAD_H = HEAD_H, PICK_TOP = PICK_TOP,
     PICK_ROWS = PICK_ROWS, PICK_HINT_W = PICK_HINT_W }
 
 function Chat:Format(line)
@@ -436,21 +589,37 @@ function Chat:Build()
     self.title:SetText("Chat")
     local close = UI.CloseButton(bar, 28, TITLE_H, function() f:Hide() end)
     close:SetPoint("RIGHT", -PAD + 7, 0)
-    -- guildmates' whispers kept here too (and lines sent as whispers), or not
-    self.whisperCheck = UI.Check(bar, "Guild whispers", function() return ns.db.settings.chatWhispers ~= false end, function(v)
-        ns.db.settings.chatWhispers = v and true or false
-        self:Refresh()
-    end)
-    self.whisperCheck:SetWidth(WHISPER_W)
+    -- The window's own switches, in a row before the X: a sound and a pop-up
+    -- for a new line (Jake: mute, and no pop-ups), and guildmates' whispers
+    -- kept here too. Each check is as wide as its box and words, so the gaps
+    -- between them are even.
+    local function switch(label, key, tip, after)
+        local c = UI.Check(bar, label, function() return ns.db.settings[key] ~= false end, function(v)
+            ns.db.settings[key] = v and true or false
+            if after then after() end
+        end)
+        c:SetWidth(14 + 8 + math.ceil(c.label:GetStringWidth()))
+        c:HookScript("OnEnter", function(b)
+            if not GameTooltip then return end
+            GameTooltip:SetOwner(b, "ANCHOR_BOTTOM")
+            GameTooltip:AddLine(label, 1, 1, 1)
+            GameTooltip:AddLine(tip, nil, nil, nil, true)
+            GameTooltip:Show()
+        end)
+        c:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+        return c
+    end
+    self.whisperCheck = switch("Guild whispers", "chatWhispers",
+        "Whispers to and from guildmates are kept in your chat with them, and you can whisper anyone in the guild from here.",
+        function() self:Refresh() end)
     self.whisperCheck:SetPoint("RIGHT", close, "LEFT", -6, 0)
-    self.whisperCheck:SetScript("OnEnter", function(b)
-        if not GameTooltip then return end
-        GameTooltip:SetOwner(b, "ANCHOR_BOTTOM")
-        GameTooltip:AddLine("Guild whispers", 1, 1, 1)
-        GameTooltip:AddLine("Whispers to and from guildmates are kept in your chat with them, and you can whisper anyone in the guild from here.", nil, nil, nil, true)
-        GameTooltip:Show()
-    end)
-    self.whisperCheck:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    self.toastCheck = switch("Pop-ups", "chatToasts", "A pop-up when a chat line arrives and you aren't looking at that chat.")
+    self.toastCheck:SetPoint("RIGHT", self.whisperCheck, "LEFT", -CHECK_GAP, 0)
+    self.soundCheck = switch("Sound", "chatSound",
+        "A sound when a chat line arrives and you aren't looking at that chat. (Pop-up sounds in Settings mutes all of Pog Guild Tools.)")
+    self.soundCheck:SetPoint("RIGHT", self.toastCheck, "LEFT", -CHECK_GAP, 0)
+    self.echoCheck = switch("In game chat", "chatEcho", "New chat lines are also written to your game chat box, like a whisper.")
+    self.echoCheck:SetPoint("RIGHT", self.soundCheck, "LEFT", -CHECK_GAP, 0)
 
     -- left: our chats, and New chat under them (Jake: the people you've
     -- messaged, not the whole guild; who's online is in the picker)
@@ -477,8 +646,12 @@ function Chat:Build()
         row.right = UI.Text(row, 10)
         row.right:SetPoint("RIGHT", -8, 0)
         row.right:SetJustifyH("RIGHT")
+        row.pic = row:CreateTexture(nil, "ARTWORK")
+        row.pic:SetSize(PIC, PIC)
+        row.pic:SetPoint("LEFT", 6, 0)
+        row.pic:SetTexCoord(0.07, 0.93, 0.07, 0.93)
         row.text = UI.Text(row, 11)
-        row.text:SetPoint("LEFT", 8, 0)
+        row.text:SetPoint("LEFT", 6 + PIC + 6, 0)
         row.text:SetPoint("RIGHT", row.right, "LEFT", -6, 0)
         row.text:SetJustifyH("LEFT")
         row.text:SetWordWrap(false)
@@ -504,9 +677,18 @@ function Chat:Build()
     pane.how:SetPoint("RIGHT", pane, "TOPRIGHT", -10, -UI.HeadMid(HEAD_H))
     pane.how:SetJustifyH("RIGHT")
     pane.how:SetTextColor(0.5, 0.5, 0.55)
+    -- a group's name and picture are changed here (or by right-clicking it in the list)
+    pane.edit = UI.Button(pane, "Edit", 40, 18, function(b)
+        if self.current then self:Menu(b, self.current) end
+    end)
+    pane.edit:SetPoint("RIGHT", pane, "TOPRIGHT", -UI.HeadInset(), -UI.HeadMid(HEAD_H))
+    pane.edit:Hide()
+    pane.pic = pane:CreateTexture(nil, "ARTWORK")
+    pane.pic:SetSize(PIC, PIC)
+    pane.pic:SetPoint("LEFT", pane, "TOPLEFT", 10, -UI.HeadMid(HEAD_H))
+    pane.pic:SetTexCoord(0.07, 0.93, 0.07, 0.93)
     pane.with = UI.Text(pane, 12)
     pane.with:SetPoint("LEFT", pane, "TOPLEFT", 10, -UI.HeadMid(HEAD_H))
-    pane.with:SetPoint("RIGHT", pane.how, "LEFT", -8, 0)
     pane.with:SetJustifyH("LEFT")
     pane.with:SetWordWrap(false)
     local line = pane:CreateTexture(nil, "ARTWORK")
@@ -648,8 +830,10 @@ function Chat:RefreshList()
         if it then
             row.right:SetText("")
             row.sel:Hide()
+            row.pic:SetShown(it.chat ~= nil)
             if it.chat then
                 local c = it.chat
+                row.pic:SetTexture(self:Picture(c))
                 row.text:SetText(self:Title(c))
                 row.sel:SetShown(c == self.current and not self.picking)
                 if (c.unread or 0) > 0 then
@@ -673,10 +857,7 @@ function Chat:RowClick(row, button)
     if not it then return end
     if it.chat then
         if button == "RightButton" then
-            UI.ShowMenu(row, {
-                { text = self:Title(it.chat, true), header = true },
-                { text = "Delete chat", color = { 0.95, 0.4, 0.4 }, func = function() self:Delete(it.chat) end },
-            })
+            self:Menu(row, it.chat)
         else
             self:Open(it.chat, true)
         end
@@ -805,6 +986,15 @@ end
 -- Who the open chat is with, and how a line reaches them if not the addon's way.
 function Chat:RefreshHead()
     local pane, c = self.pane, self.current
+    -- the picture (of an open chat) before the title; the title starts at the card's edge without one
+    local pictured = c ~= nil and not self.picking
+    pane.pic:SetShown(pictured)
+    if pictured then pane.pic:SetTexture(self:Picture(c)) end
+    pane.with:ClearAllPoints()
+    pane.with:SetPoint("LEFT", pane, "TOPLEFT", pictured and 10 + PIC + 6 or 10, -UI.HeadMid(HEAD_H))
+    pane.with:SetWidth(PANE_W - (pictured and 10 + PIC + 6 or 10) - 10 - HEAD_NOTE_W)
+    local group = pictured and self:IsGroup(c) and not c.test
+    pane.edit:SetShown(group)
     if self.picking then
         pane.with:SetText("New chat")
         pane.how:SetText("")
@@ -844,6 +1034,9 @@ end
 function Chat:Refresh()
     if not self.frame or not self.frame:IsShown() then return end
     self.whisperCheck:Update()
+    self.toastCheck:Update()
+    self.soundCheck:Update()
+    self.echoCheck:Update()
     self:RefreshList()
     self:RefreshPane()
 end
@@ -859,6 +1052,7 @@ end
 
 -- A line was added to `c`.
 function Chat:Changed(c, line)
+    self:Badge()
     if not self.frame or not self.frame:IsShown() then return end
     if c == self.current and line then
         self:Say(line)

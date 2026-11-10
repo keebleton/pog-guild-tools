@@ -3,7 +3,7 @@
 -- Layout (902 x 642 page), three columns from the top:
 --   [logo Guild name]  [Message board          ]  [Group finder       ]
 --   [  message, 66  ]  [                       ]  [                   ]
---   [Activity       ]  [                       ]  [                   ]
+--   [Activity       ]  [Chats (0.16.8)         ]  [                   ]
 --   [Online now     ]  [Guild chat             ]  [Recent loot        ]
 local _, ns = ...
 local UI = ns.UI
@@ -28,6 +28,12 @@ local RIGHT_X = MID_X + MID_W + GAP
 local RIGHT_W = FRAME_W - PAD - RIGHT_X
 local HEAD_H = 26
 local LINE_H = 20
+-- Chats (Chat.lua) has the bottom third of what was all Message board (Jake):
+-- three of our chats, the newest first, with what's unread. The board keeps
+-- the rest; the two together end where the cards beside them do.
+local CHATS_ROWS = 3
+local CHATS_H = HEAD_H + 8 + CHATS_ROWS * LINE_H
+local BOARD_H = HALF_H - GAP - CHATS_H
 -- the guild card, like the game's guild window: the guild name and the
 -- message of the day under it (up to two lines, starting "MOTD:" so
 -- it reads as one, Jake), centred both ways (Jake). No
@@ -46,6 +52,7 @@ Home.LOOT_MIN_QUALITY = 3   -- Recent loot shows blue (Rare) and up
 Home.FLASH_TIME = 1.2       -- a new chat line's glow
 
 Home.layout = { HEADER_H = HEADER_H, FEED_H = FEED_H, BODY_Y = BODY_Y, BODY_H = BODY_H, HALF_H = HALF_H, LEFT_X = LEFT_X,
+    BOARD_H = BOARD_H, CHATS_H = CHATS_H, CHATS_ROWS = CHATS_ROWS, GAP = GAP,
     LEFT_W = LEFT_W, MID_X = MID_X, MID_W = MID_W, RIGHT_X = RIGHT_X, RIGHT_W = RIGHT_W }
 
 local function G() return ns.db.guild end
@@ -464,7 +471,7 @@ local POST_H = 58
 local COMMENT_H = 46
 
 function Home:BuildBoard(page)
-    local c = card(page, "Message board", MID_X, BODY_Y, MID_W, HALF_H)
+    local c = card(page, "Message board", MID_X, BODY_Y, MID_W, BOARD_H)
     self.boardCard = c
     if c.parchment then c.parchment:Hide() end -- the art instead (they'd share a layer)
     self.boardArt = ns.Art and ns.Art.CardArt(c) -- our spec's remastered talent art, faint
@@ -479,7 +486,7 @@ function Home:BuildBoard(page)
     -- list of posts
     c.posts = {}
     c.offset = 0
-    c.visible = math.floor((HALF_H - HEAD_H - 8) / POST_H)
+    c.visible = math.floor((BOARD_H - HEAD_H - 8) / POST_H)
     for i = 1, c.visible do
         local b = CreateFrame("Button", nil, c)
         b:SetHeight(POST_H)
@@ -633,12 +640,59 @@ function Home:OpenPost()
     self.openPost = nil
 end
 
+-- Chats: our chats (Chat.lua) under the message board. A row is a chat: its
+-- picture, who or what it is, its last line, and how many lines are unread
+-- (else when it last spoke). Click one to open it; New chat picks people.
+-- With none yet, a button to start one (like LFM's).
+function Home:BuildChats(page)
+    local c = card(page, "Chats", MID_X, BODY_Y + BOARD_H + GAP, MID_W, CHATS_H)
+    self.chatsCard = c
+    c.new = headButton(c, "New chat", 70, function() ns.Chat:StartNew() end)
+    rowList(c, LINE_H, false, nil, function(row)
+        if row.item then ns.Chat:Open(row.item, true) end
+    end, true)
+    -- (the empty line and its button share the three rows' height evenly)
+    c.empty:ClearAllPoints()
+    c.empty:SetPoint("TOP", 0, -(HEAD_H + 12))
+    c.cta = UI.Button(c, "Start a chat", 120, 24, function() ns.Chat:StartNew() end)
+    c.cta:SetPoint("TOP", c.empty, "BOTTOM", 0, -8)
+    c.cta:Hide()
+end
+
+function Home:RefreshChats()
+    local c = self.chatsCard
+    if not c then return end
+    local Chat = ns.Chat
+    local on = IsInGuild() and Chat:Enabled()
+    local chats = on and Chat:List() or {}
+    fillRows(c, chats, function(row, chat)
+        local unread = chat.unread or 0
+        row.pic:SetTexture(Chat:Picture(chat))
+        local preview = Chat:Preview(chat)
+        row.text:SetText(Chat:Title(chat) .. (preview and ("  |cff8a8a92" .. preview .. "|r") or ""))
+        if unread > 0 then
+            row.right:SetText(tostring(math.min(unread, 99)))
+            row.right:SetTextColor(UI.ACCENT[1], UI.ACCENT[2], UI.ACCENT[3])
+        else
+            row.right:SetText(Home.Ago(chat.last))
+            row.right:SetTextColor(0.5, 0.5, 0.55)
+        end
+    end, not IsInGuild() and "" or on and "no chats atm" or "chat is turned off in Settings")
+    c.new:SetShown(on and chats[1] ~= nil)
+    c.cta:SetShown(on and chats[1] == nil)
+end
+
+-- A chat line came, went or was read (Chat.lua): just this card.
+function Home:ChatsChanged()
+    if self.page and self.page:IsShown() then self:RefreshChats() end
+end
+
 function Home:RefreshBoard()
     local c = self.boardCard
     local canPost = ns.Social:CanPost()
     local post = self:OpenPost()
-    -- a post opens over guild chat, taking the whole column; the art fits again
-    local h = post and BODY_H or HALF_H
+    -- a post opens over Chats and guild chat, taking the whole column; the art fits again
+    local h = post and BODY_H or BOARD_H
     if c:GetHeight() ~= h then
         c:SetHeight(h)
         if self.boardArt then
@@ -647,6 +701,7 @@ function Home:RefreshBoard()
         end
     end
     self.chatCard:SetShown(post == nil)
+    self.chatsCard:SetShown(post == nil)
     c.title:SetShown(post == nil)
     c.back:SetShown(post ~= nil)
     c.newPost:SetShown(post == nil and canPost)
@@ -909,9 +964,6 @@ function Home:Build(page)
         self.onlineCard.offset = 0
         self:Refresh()
     end)
-    -- group chat (Chat.lua): its own little window; the label counts unread lines
-    self.onlineCard.chat = UI.Button(self.onlineCard, "Chat", 56, 18, function() ns.Chat:Toggle() end)
-    self.onlineCard.chat:SetPoint("RIGHT", self.onlineCard.toggle, "LEFT", -6, 0)
     rowList(self.onlineCard, LINE_H, false, function(row)
         if row.item then ns.Roster:ShowTooltip(row.item, row) end
     end, function(row)
@@ -940,6 +992,7 @@ function Home:Build(page)
     end, true)
 
     self:BuildBoard(page)
+    self:BuildChats(page)
     -- guild chat under the message board, newest at the bottom; the wheel goes back
     self.chatCard = card(page, "Guild chat", MID_X, BODY_Y + HALF_H + GAP, MID_W, HALF_H)
     rowList(self.chatCard, LINE_H, false, function(row)
@@ -1014,10 +1067,7 @@ function Home:Refresh()
     local offline = self:ShowingOffline()
     self.onlineCard.toggle:SetLabel(offline and "Hide offline" or "Show offline")
     self.onlineCard.toggle:SetShown(inGuild)
-    local unread = ns.Chat:Unread()
-    self.onlineCard.chat:SetLabel(unread > 0 and ("Chat (%d)"):format(math.min(unread, 99)) or "Chat")
-    self.onlineCard.chat:SetSelected(unread > 0)
-    self.onlineCard.chat:SetShown(inGuild and ns.Chat:Enabled())
+    self:RefreshChats()
     fillRows(self.onlineCard, self:MemberList(), function(row, name)
         local p = G().players[name]
         row.pic:SetTexture(Home.Portrait(name))

@@ -1689,7 +1689,8 @@ do
     end
     STUB.Script(bc.posts[1], "OnClick")
     check(Home.openPost ~= nil and bc.thread:IsShown() and bc.back:IsShown() and not bc.newPost:IsShown(), "board: clicking a post opens the thread")
-    check(bc:GetHeight() == Home.layout.BODY_H and not Home.chatCard:IsShown() and covers[#covers] == Home.layout.BODY_H and bc.thread.visible >= 3,
+    check(bc:GetHeight() == Home.layout.BODY_H and not Home.chatCard:IsShown() and not Home.chatsCard:IsShown()
+        and covers[#covers] == Home.layout.BODY_H and bc.thread.visible >= 3,
         "board: an open post takes the whole column, over guild chat, the art refitted")
     check(bc.thread.body:GetText():find("Flasks and food", 1, true), "board: thread shows the full message")
     STUB.Script(bc.thread.add, "OnClick")
@@ -1707,7 +1708,8 @@ do
     check(#Social:Comments(Social:Posts()[1].id) == 0 and bc.thread.count:GetText() == "No comments yet", "board: comment deleted")
     STUB.Script(bc.back, "OnClick")
     check(Home.openPost == nil and bc.posts[1].pin:GetText() == "Pinned", "board: back to the list, pinned marked")
-    check(bc:GetHeight() == Home.layout.HALF_H and Home.chatCard:IsShown() and covers[#covers] == Home.layout.HALF_H, "board: back, guild chat returns, the art fits again")
+    check(bc:GetHeight() == Home.layout.BOARD_H and Home.chatCard:IsShown() and Home.chatsCard:IsShown()
+        and covers[#covers] == Home.layout.BOARD_H, "board: back, Chats and guild chat return, the art fits again")
     ns.Art.Cover = realCover
     STUB.Script(bc.posts[1], "OnClick")
     STUB.Script(bc.delete, "OnClick")
@@ -1964,18 +1966,25 @@ do
     local gl, gt, gw, gh = STUB.rect(Home.groupCard)
     local ll, lt, lw, lh = STUB.rect(Home.lootCard)
     local chl, cht, chw, chh = STUB.rect(Home.chatCard)
+    local xl, xt, xw, xh = STUB.rect(Home.chatsCard)
     -- 0.16: Online now under the guild card; Activity, Guild chat and Recent loot share the bottom half;
-    -- LFM and LFG split the right column's top half
+    -- LFM and LFG split the right column's top half. 0.16.8: Chats has the bottom third of the message board's half.
     check(near(hl - pl, 12) and near(hw, fw) and near(pt - ht, 30) and near(hh, Home.layout.HEADER_H), "layout: the guild card tops the left column")
-    check(near(ot, ht - hh - 8) and near(ot - oh, bt - bh) and near(bt, ht) and near(gt, ht),
+    check(near(ot, ht - hh - 8) and near(ot - oh, xt - xh) and near(bt, ht) and near(gt, ht),
         "layout: Online now under it, the other columns start at the top")
+    check(near(xt, bt - bh - 8) and near(xl, bl) and near(xw, bw) and near(xh, Home.layout.CHATS_H) and near(bh, Home.layout.BOARD_H)
+        and near(bh + 8 + xh, Home.layout.HALF_H) and xh < bh / 2 + 1 and xh > bh / 3, "layout: Chats under the message board, about a third of that half")
+    local _, r1t = STUB.rect(Home.chatsCard.rows[1])
+    local _, r3t, _, r3h = STUB.rect(Home.chatsCard.rows[#Home.chatsCard.rows])
+    check(#Home.chatsCard.rows == 3 and near(xt - r1t, 30) and near((r3t - r3h) - (xt - xh), 4), "layout: three chat rows fill the card")
+    check(Home.boardCard.visible == 2, "layout: the board shows two posts above it (it scrolls)")
     check(near(fl - pl, 12) and near(bl, fl + fw + 8) and near(gl, bl + bw + 8) and near(gl + gw, pl + 890), "layout: three columns, even gaps")
     local bottom = ns.PAGE_H - 12
     check(near(pt - (ft - fh), bottom) and near(pt - (cht - chh), bottom) and near(pt - (lt - lh), bottom), "layout: every column ends at the margin")
     local lfg = Home.groupCard.lfg
     local _, lgt, _, lgh = STUB.rect(lfg)
-    check(near(ft, ot - oh - 8) and near(cht, bt - bh - 8) and near(ft, cht) and near(ft, lt) and near(fh, chh) and near(fh, lh)
-        and near(hh + 8 + oh, bh) and near(lgt, gt - gh - 8) and near(gh, lgh) and near(gh + 8 + lgh, bh) and near(lt, lgt - lgh - 8),
+    check(near(ft, ot - oh - 8) and near(cht, xt - xh - 8) and near(ft, cht) and near(ft, lt) and near(fh, chh) and near(fh, lh)
+        and near(hh + 8 + oh, bh + 8 + xh) and near(lgt, gt - gh - 8) and near(gh, lgh) and near(gh + 8 + lgh, bh + 8 + xh) and near(lt, lgt - lgh - 8),
         "layout: the halves line up across: Activity, Guild chat and Recent loot start together; LFM over LFG")
     check(near(chl, bl) and near(chw, bw) and Home.feedCard:IsShown() and Home.chatCard:IsShown()
         and Home.feedCard.title:GetText() == "Activity", "layout: Activity and guild chat each have their own card")
@@ -5865,9 +5874,12 @@ do
     UI.ShowMenu = function(_, e) menu = e end
     Chat:Refresh()
     STUB.Script(rows[1], "OnClick", "RightButton")
-    check(menu and menu[2].text == "Delete chat", "chat: right-click a chat to delete it")
+    local function entry(text)
+        for _, e in ipairs(menu or {}) do if e.text == text then return e end end
+    end
+    check(menu and menu[1].header and menu[#menu].text == "Delete chat", "chat: right-click a chat to delete it")
     local doomed = rows[1].item.chat
-    menu[2].func()
+    entry("Delete chat").func()
     check(G.chats[doomed.key] == nil and Chat.current ~= doomed, "chat: and it's gone")
     UI.ShowMenu = realMenu
 
@@ -5971,25 +5983,34 @@ do
     check(not Chat.frame:IsShown() and printedContains("group chat is turned off in Settings"), "chat off: /pog chat says where to turn it on")
     ns.Editor:ShowTab("home")
     Home:Refresh()
-    check(not Home.onlineCard.chat:IsShown(), "chat off: no Chat button on Home")
+    local cc = Home.chatsCard
+    check(Home.onlineCard.chat == nil and cc.empty:IsShown() and cc.empty:GetText() == "chat is turned off in Settings" and not cc.cta:IsShown()
+        and not cc.new:IsShown() and not cc.rows[1]:IsShown(), "chat off: Home's Chats card says so, with nothing to click")
     ns.Editor:ShowTab("settings")
     STUB.Script(checks[8], "OnClick")
     check(Chat:Enabled() and ns.db.settings.chat == true, "settings: and on again")
 
-    -- Home: a Chat button by Show offline that counts unread lines, and Chat in a guildie's menu
+    -- Home: a Chats card under the message board (0.16.8, Jake): our newest chats, what's unread, a way to start one;
+    -- and Chat in a guildie's menu
     ns.Editor:ShowTab("home")
     for _, ch in pairs(G.chats) do ch.unread = 0 end
     Chat.frame:Hide()
+    STUB.now = STUB.now + 180
     incoming(B, { me }, "you up?")
-    local btn = Home.onlineCard.chat
-    check(btn:IsShown() and btn.label:GetText() == "Chat (1)" and btn.selected == true, "home: the Chat button counts unread lines")
-    local _, tt, _, th = STUB.rect(Home.onlineCard.toggle)
-    local tl = STUB.rect(Home.onlineCard.toggle)
-    local cl, ct, cw, ch = STUB.rect(btn)
-    check(near(tl - (cl + cw), 6) and near(ct - ch / 2, tt - th / 2) and ch == th, "home: 6px left of Show offline, on its line")
+    T.notes = {}
+    T.frame:Hide()
+    local bchat = Chat:Get({ me, B })
+    check(cc:IsShown() and cc.title:GetText() == "Chats" and cc.rows[1].item == bchat and cc.rows[1].right:GetText() == "1"
+        and cc.rows[1].right.__textColor[1] == UI.ACCENT[1] and cc.rows[1].text:GetText():find("Raider04", 1, true)
+        and cc.rows[1].text:GetText():find("you up?", 1, true) and cc.rows[1].pic:GetTexture() == Chat:Picture(bchat)
+        and Chat:Picture(bchat) == ns.Profiles:Portrait(B), "home: the Chats card has the newest chat on top: who, their last line, what's unread")
+    check(cc.rows[2]:IsShown() and cc.rows[2].item ~= bchat and cc.rows[2].right:GetText():match("^%d+[mh]$") and cc.rows[2].right.__textColor[1] == 0.5
+        and cc.new:IsShown() and cc.new.label:GetText() == "New chat" and not cc.cta:IsShown() and not cc.empty:IsShown(),
+        "home: a read chat shows when it last spoke; New chat in the heading")
     local raised = Chat.frame.__raised or 0
-    STUB.Script(btn, "OnClick")
-    check(Chat.frame:IsShown(), "home: and opens the chat window")
+    STUB.Script(cc.rows[1], "OnClick", "LeftButton")
+    check(Chat.frame:IsShown() and Chat.current == bchat and bchat.unread == 0 and cc.rows[1].right:GetText() == "now"
+        and Chat.input.__focus, "home: clicking a chat opens it, read")
     -- in front of the main window, which is open (it's where the button is) and comes forward on every click:
     -- on its layer the chat opened behind it and the button seemed to do nothing (Jake, 0.16.5)
     local STRATA = { BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4, DIALOG = 5, FULLSCREEN = 6, FULLSCREEN_DIALOG = 7, TOOLTIP = 8 }
@@ -5998,10 +6019,16 @@ do
         and STRATA[Chat.frame.__strata] < STRATA.FULLSCREEN_DIALOG,
         "chat window: a layer above the main window (and under our menus)")
     check(Chat.frame.__toplevel == true and Chat.frame.__raised == raised + 1, "chat window: opening it brings it to the front")
-    Chat:Open(Chat:Get({ me, B }))
-    check(btn.label:GetText() == "Chat" and not btn.selected, "home: nothing unread, just Chat")
-    STUB.Script(btn, "OnClick")
-    check(not Chat.frame:IsShown(), "home: clicking again closes it")
+    STUB.sent, STUB.allowance = {}, 10
+    Chat:Send(bchat, "on || my way")
+    check(cc.rows[1].text:GetText():find("You: on |||| my way", 1, true), "home: our own last line says You (and stays escaped)")
+    Chat.frame:Hide()
+    STUB.Script(cc.new, "OnClick")
+    check(Chat.frame:IsShown() and Chat.picking and Chat.picker:IsShown() and Chat.picker.search.__focus, "home: New chat opens the window on its picker")
+    STUB.Script(cc.new, "OnClick")
+    check(Chat.picking, "home: (again leaves the picker up)")
+    STUB.Script(Chat.picker.cancel, "OnClick")
+    Chat.frame:Hide()
     local function menuFor(name)
         menu = nil
         UI.ShowMenu = function(_, e) menu = e end
@@ -6074,6 +6101,19 @@ do
     G.chats = nil
     Chat.current = nil
     Chat:Refresh()
+    ns.Editor:ShowTab("home")
+    Home:RefreshChats()
+    local cl, ct, cw, ch = STUB.rect(cc)
+    local el, et, ew, eh = STUB.rect(cc.empty)
+    local tl, tt, tw, th = STUB.rect(cc.cta)
+    check(cc.empty:IsShown() and cc.empty:GetText() == "no chats atm" and cc.cta:IsShown() and cc.cta.label:GetText() == "Start a chat"
+        and not cc.new:IsShown() and not cc.rows[1]:IsShown(), "home: with no chats the card offers to start one")
+    check(near(ct - et, 38) and near(tl + tw / 2, cl + cw / 2) and tt < et and (tt - th) - (ct - ch) >= 8 and th == 24,
+        "home: the line and its button sit inside the card")
+    Chat.frame:Hide()
+    STUB.Script(cc.cta, "OnClick")
+    check(Chat.frame:IsShown() and Chat.picking, "home: Start a chat opens the picker")
+    STUB.Script(Chat.picker.cancel, "OnClick")
     check(Chat.left.rows[1].item.head == "No chats yet" and not Chat.left.rows[1]:IsEnabled() and not Chat.left.rows[2]:IsShown()
         and Chat.pane.empty:IsShown() and Chat.pane.empty:GetText() == "Click New chat to message someone." and not Chat.log:IsShown(),
         "chat: with no chats the list says so, and the card says where to start")
@@ -6262,11 +6302,13 @@ do
     check(not (T.frame and T.frame:IsShown()) and #T.notes == 0 and #STUB.sounds == 0 and #STUB.sent == 0,
         "whispers: no pop-up or sound of ours for it, and nothing sent")
     Home:Refresh()
-    check(Home.onlineCard.chat.label:GetText() == "Chat (1)", "whispers: Home's Chat button counts it")
+    check(Home.chatsCard.rows[1].item == ec and Home.chatsCard.rows[1].right:GetText() == "1"
+        and Home.chatsCard.rows[1].text:GetText():find("|Hitem:2100", 1, true), "whispers: Home's Chats card counts it (the link as the game sent it)")
     -- one we sent from the game's own chat box is kept too, and answering means we've read theirs
     whisperOut("yes please", "Noaddon-Realm")
     check(#ec.log == 2 and last(ec).from == me and last(ec).w == true and last(ec).text == "yes please" and ec.unread == 0
-        and Home.onlineCard.chat.label:GetText() == "Chat", "whispers: our own whisper to them too, which marks theirs read")
+        and Home.chatsCard.rows[1].right:GetText() == "now" and Home.chatsCard.rows[1].text:GetText():find("You: yes please", 1, true),
+        "whispers: our own whisper to them too, which marks theirs read")
     whisperIn("short name works", "Noaddon")
     check(#ec.log == 3 and last(ec).from == E, "whispers: (however the game spells their name)")
     -- what isn't kept
@@ -6478,6 +6520,236 @@ do
     check(ns.db.settings.chatWhispers == true and chk.checked and Chat:CanChat(E) and rowFor(E), "chat window: and on again, with everyone back")
     pk.offset = 0
     STUB.Script(pk.cancel, "OnClick")
+
+    -- Sound and Pop-ups (0.16.8, Jake: "mute sounds ... a disable popups button"): the window's own switches for a new line
+    local snd, pop = Chat.soundCheck, Chat.toastCheck
+    local sl, st, sw, sh = STUB.rect(snd)
+    local ol, ot, ow, oh = STUB.rect(pop)
+    kl, kt, kw, kh = STUB.rect(chk)
+    check(snd.checked and pop.checked and snd.label:GetText() == "Sound" and pop.label:GetText() == "Pop-ups"
+        and ns.db.settings.chatSound == true and ns.db.settings.chatToasts == true, "chat window: Sound and Pop-ups switches, on by default")
+    check(near(ol - (sl + sw), 16) and near(kl - (ol + ow), 16) and near(st, ot) and near(ot, kt) and sh == kh and sl > fl + 60
+        and sw == 22 + snd.label:GetStringWidth() and ow == 22 + pop.label:GetStringWidth() and kw == 22 + chk.label:GetStringWidth()
+        and near(kl + kw, fl + fw - 37), "chat window: the three switches in a row before the X, each as wide as its words, 16px apart")
+    STUB.Script(snd, "OnEnter")
+    check(GameTooltip.shown and GameTooltip.lines[1] == "Sound", "chat window: each switch says what it does when hovered")
+    STUB.Script(snd, "OnLeave")
+    check(not GameTooltip.shown, "chat window: (and the tooltip goes)")
+    Chat.frame:Hide()
+    T.notes = {}
+    T.frame:Hide()
+    local function lineFrom(text)
+        STUB.sounds = {}
+        STUB.Fire("CHAT_MSG_ADDON", "PogRaid", "CAAAAM" .. Sync.Enc(#me, 2) .. me .. text, "WHISPER", A)
+    end
+    local wa = Chat:Get({ me, A }, true)
+    lineFrom("both on")
+    check(T.frame:IsShown() and STUB.sounds[1] == SOUNDKIT.TELL_MESSAGE and wa.log[#wa.log].text == "both on", "chat window: (a new line pops up and sounds)")
+    T.frame:Hide()
+    STUB.Script(snd, "OnClick")
+    lineFrom("muted")
+    check(ns.db.settings.chatSound == false and not snd.checked and T.frame:IsShown() and T.frame.text:GetText():find("muted", 1, true)
+        and #STUB.sounds == 0, "chat window: Sound off: the pop-up without the sound")
+    T.frame:Hide()
+    STUB.Script(snd, "OnClick")
+    STUB.Script(pop, "OnClick")
+    local unread = wa.unread
+    lineFrom("no pop-up")
+    check(ns.db.settings.chatToasts == false and not pop.checked and snd.checked and not T.frame:IsShown() and #T.notes == 0
+        and STUB.sounds[1] == SOUNDKIT.TELL_MESSAGE and wa.unread == unread + 1, "chat window: Pop-ups off: the sound and the unread count, no pop-up")
+    STUB.Script(snd, "OnClick")
+    lineFrom("silent")
+    check(not T.frame:IsShown() and #T.notes == 0 and #STUB.sounds == 0 and wa.unread == unread + 2 and wa.log[#wa.log].text == "silent",
+        "chat window: both off: the line just waits, unread")
+    -- other pop-ups are their own business
+    T:Note({ text = "something else" })
+    check(T.frame:IsShown() and T.frame.text:GetText() == "something else", "chat window: (other pop-ups aren't touched)")
+    T.frame:Hide()
+    STUB.Script(snd, "OnClick")
+    STUB.Script(pop, "OnClick")
+    check(ns.db.settings.chatSound == true and ns.db.settings.chatToasts == true and snd.checked and pop.checked, "chat window: and both on again")
+
+    -- In game chat (0.16.8, Jake): off unless ticked; a new line is then also written to the game's chat box
+    do
+        local echo = Chat.echoCheck
+        local el, et, ew = STUB.rect(echo)
+        local sl2 = STUB.rect(snd)
+        check(ns.db.settings.chatEcho == false and not echo.checked and echo.label:GetText() == "In game chat"
+            and near(sl2 - (el + ew), 16) and near(et, st) and el > fl + 60, "chat window: an In game chat switch, off, 16px before Sound")
+        STUB.printed = {}
+        lineFrom("quiet")
+        check(#STUB.printed == 0, "in game chat: nothing is written there by default")
+        STUB.Script(echo, "OnClick")
+        lineFrom("loud | one")
+        check(ns.db.settings.chatEcho == true and echo.checked and #STUB.printed == 1 and STUB.printed[1] == "[Pog chat] Raider03: loud || one",
+            "in game chat: ticked, a new line is written to the chat box too (escaped)")
+        whisperIn("a real whisper", E)
+        Chat:Send(wa, "my own line")
+        check(#STUB.printed == 1, "in game chat: not whispers (the game prints those), nor our own lines")
+        Chat:Open(wa)
+        lineFrom("while open")
+        check(#STUB.printed == 2, "in game chat: also while that chat is open")
+        Chat.frame:Hide()
+        T.notes = {}
+        T.frame:Hide()
+    end
+
+    -- a group chat's own name and picture, shared with the group (0.16.8, Jake: "like imessage")
+    do
+        local function wireTo(op, from, others, rest)
+            local list = table.concat(others, ",")
+            STUB.Fire("CHAT_MSG_ADDON", "PogRaid", "CAAAA" .. op .. Sync.Enc(#list, 2) .. list .. rest, "WHISPER", from)
+        end
+        local function meta(from, others, at, icon, name) wireTo("R", from, others, at .. "~" .. icon .. "~" .. name) end
+        local function sys(c) local l = c.log[#c.log] return l.sys and l.text end
+        wipe(Chat.told)
+        STUB.printed = {}
+        STUB.now = STUB.now + 2 -- (so this chat is the newest, whatever else was said this second)
+        wireTo("M", A, { me, B }, "hi all")
+        local gc = Chat:Get({ me, A, B })
+        check(gc and Chat:IsGroup(gc) and not Chat:IsGroup(wa) and Chat:Picture(gc) == Chat.GROUP_ICON and Chat:Picture(wa) == ns.Profiles:Portrait(A)
+            and Chat:Title(gc, true) == "Raider03, Raider04" and gc.name == nil, "group: a chat of three or more is a group, with a picture of its own")
+        check(STUB.printed[1] == "[Raider03, Raider04] Raider03: hi all", "in game chat: a group's line says which group")
+        T.notes = {}
+        T.frame:Hide()
+        -- its heading: the picture, who's in it, and Edit; a one-to-one chat has the person's portrait and no Edit
+        Chat:Open(gc)
+        local pane = Chat.pane
+        local pl, pt, pw = STUB.rect(pane)
+        local il, it, iw, ih = STUB.rect(pane.pic)
+        local wl = STUB.rect(pane.with)
+        local dl, dt, dw, dh = STUB.rect(pane.edit)
+        check(pane.pic:IsShown() and pane.pic:GetTexture() == Chat.GROUP_ICON and pane.edit:IsShown() and pane.edit.label:GetText() == "Edit"
+            and near(il - pl, 10) and iw == 16 and ih == 16 and near(wl - (il + iw), 6) and near(it - ih / 2, dt - dh / 2)
+            and (pl + pw) - (dl + dw) <= 12 and wl + pane.with:GetWidth() <= dl, "group: its heading has the picture, the people and Edit")
+        local row = Chat.left.rows[1]
+        local rl = STUB.rect(row)
+        local ril, _, riw = STUB.rect(row.pic)
+        local rtl = STUB.rect(row.text)
+        check(row.item.chat == gc and row.pic:IsShown() and row.pic:GetTexture() == Chat.GROUP_ICON and near(ril - rl, 6) and riw == 16
+            and near(rtl - (ril + riw), 6), "group: its row in the list has the picture before the name")
+        Chat:Open(wa)
+        check(pane.pic:GetTexture() == ns.Profiles:Portrait(A) and not pane.edit:IsShown(), "group: a one-to-one chat shows the person, and has no Edit")
+        local menu
+        local realMenu, realPrompt, realPicker = UI.ShowMenu, UI.Prompt, UI.Picker
+        UI.ShowMenu = function(_, e) menu = e end
+        local function entry(text)
+            for _, e in ipairs(menu or {}) do if e.text == text then return e end end
+        end
+        Chat:Menu(row, wa)
+        check(#menu == 2 and menu[1].header and menu[2].text == "Delete chat", "group: a one-to-one chat's menu is just Delete")
+        check(Chat:SetMeta(wa, "nope", 1) == false and wa.name == nil and wa.icon == nil, "group: a one-to-one chat can't be named")
+        Chat:Open(gc)
+        STUB.Script(pane.edit, "OnClick")
+        check(menu[1].text == "Raider03, Raider04" and entry("Name this chat") and entry("Choose a picture") and menu[#menu].text == "Delete chat",
+            "group: Edit offers a name and a picture")
+        -- naming it
+        local asked
+        UI.Prompt = function(_, _, _, label, initial, onAccept) asked = { label = label, initial = initial, accept = onAccept } end
+        entry("Name this chat").func()
+        STUB.sent, STUB.allowance = {}, 10
+        STUB.printed = {}
+        asked.accept("  Raid | planning crew for tonight ")
+        local list = A .. "," .. B
+        check(asked.initial == "" and gc.name == "Raid / planning crew for" and #gc.name == Chat.MAX_NAME and gc.metaAt ~= nil
+            and sys(gc) == 'You named the chat "Raid / planning crew for".', "group: naming it (tidied and cut to length)")
+        check(#STUB.sent == 2 and STUB.sent[1].target == "Raider03" and STUB.sent[2].target == "Raider04" and STUB.sent[1].channel == "WHISPER"
+            and STUB.sent[1].text:sub(6) == "R" .. Sync.Enc(#list, 2) .. list .. gc.metaAt .. "~~Raid / planning crew for",
+            "group: the name is whispered to everyone in the chat")
+        check(Chat:Title(gc) == gc.name and pane.with:GetText() == gc.name and Chat.left.rows[1].text:GetText() == gc.name
+            and Chat:Members(gc, true) == "Raider03, Raider04", "group: it goes by its name in the heading and the list")
+        ns.Editor:ShowTab("home")
+        Home:RefreshChats()
+        check(Home.chatsCard.rows[1].item == gc and Home.chatsCard.rows[1].text:GetText():find("Raid / planning crew for", 1, true)
+            and Home.chatsCard.rows[1].text:GetText():find("Raider03: hi all", 1, true) and Home.chatsCard.rows[1].pic:GetTexture() == Chat.GROUP_ICON,
+            "group: and on Home's Chats card, with who said the last line")
+        local stamp = gc.metaAt
+        STUB.sent = {}
+        asked.accept("Raid / planning crew for")
+        check(#STUB.sent == 0 and gc.metaAt == stamp, "group: the same name again changes nothing")
+        STUB.Script(pane.edit, "OnClick")
+        check(entry("Rename this chat") ~= nil and entry("Name this chat") == nil, "group: (then it's Rename)")
+        entry("Rename this chat").func()
+        check(asked.initial == "Raid / planning crew for", "group: renaming starts from its name")
+        -- a picture, from the same icons as a profile's portrait
+        local offered
+        UI.Picker = function(anchor, items, cols, size, onPick, rows, selected) offered = { anchor = anchor, items = items, onPick = onPick, selected = selected } end
+        entry("Choose a picture").func()
+        STUB.sent = {}
+        offered.onPick(3)
+        local icon = offered.items[3]
+        check(offered.anchor == pane.pic and #offered.items >= 9 and type(icon) == "number" and gc.icon == icon and gc.metaAt > stamp
+            and Chat:Picture(gc) == icon and pane.pic:GetTexture() == icon and Chat.left.rows[1].pic:GetTexture() == icon
+            and sys(gc) == "You changed the chat's picture.", "group: choosing a picture")
+        check(#STUB.sent == 2 and STUB.sent[2].text:sub(6) == "R" .. Sync.Enc(#list, 2) .. list .. gc.metaAt .. "~" .. icon .. "~Raid / planning crew for",
+            "group: the picture is shared too")
+        entry("Choose a picture").func()
+        check(offered.selected == 3, "group: the picker opens on the picture it has")
+        -- someone else's change: the newest wins
+        STUB.sent = {}
+        local at = gc.metaAt + 5
+        meta(A, { me, B }, at, "135846", "Frost | squad")
+        check(gc.name == "Frost / squad" and gc.icon == 135846 and gc.metaAt == at and sys(gc) == 'Raider03 named the chat "Frost / squad".'
+            and #STUB.sent == 0 and pane.with:GetText() == "Frost / squad", "group: someone else's newer name and picture are taken")
+        meta(B, { me, A }, at - 3, "", "Old name")
+        check(gc.name == "Frost / squad" and gc.metaAt == at and #STUB.sent == 1 and STUB.sent[1].target == "Raider04"
+            and STUB.sent[1].text:sub(6) == "R" .. Sync.Enc(#list, 2) .. list .. at .. "~135846~Frost / squad",
+            "group: an older one is turned down, and its sender told the newer")
+        meta(B, { me, A }, at - 3, "", "Old name")
+        check(#STUB.sent == 1, "group: (told once)")
+        meta(A, { me, B }, at, "1", "Same stamp")
+        check(gc.name == "Frost / squad" and #STUB.sent == 1, "group: one with the stamp we have changes nothing")
+        local lines = #gc.log
+        meta(A, { me, B }, at + 1, "135846", "")
+        check(gc.name == nil and gc.icon == 135846 and sys(gc) == "Raider03 removed the chat's name." and Chat:Title(gc, true) == "Raider03, Raider04",
+            "group: a name can be removed")
+        meta(A, { me, B }, at + 2, "135812", "")
+        check(gc.icon == 135812 and sys(gc) == "Raider03 changed the chat's picture.", "group: a picture alone can change")
+        -- what's turned away
+        lines = #gc.log
+        local chats = count(G.chats)
+        meta(A, { me, B }, ns.Now() + 99999, "1", "From the future")
+        meta(A, { me, B }, at + 3, "123456789", "Icon too long")
+        wireTo("R", A, { me, B }, "junk")
+        wireTo("R", A, { me, B }, "")
+        meta(A, { B, D }, at + 3, "1", "Not our chat")
+        meta("Stranger-Realm", { me, B }, at + 3, "1", "Not a guildie")
+        meta(A, { me }, at + 3, "1", "Just us two")
+        check(#gc.log == lines and gc.name == nil and gc.icon == 135812 and wa.name == nil and count(G.chats) == chats,
+            "group: junk, a far-off date, a chat we aren't in, an outsider's or a one-to-one's are ignored")
+        ns.db.settings.chat = false
+        STUB.sent = {}
+        meta(A, { me, B }, at + 4, "1", "While off")
+        check(gc.name == nil and #STUB.sent == 0, "group: nothing is taken (or answered) with chat off")
+        ns.db.settings.chat = true
+        -- someone who writes without having heard it is told, once
+        Chat:SetMeta(gc, "Crew", gc.icon)
+        wipe(Chat.told)
+        STUB.sent = {}
+        wireTo("M", B, { me, A }, "what did I miss")
+        check(#STUB.sent == 1 and STUB.sent[1].target == "Raider04" and STUB.sent[1].text:sub(6):find("~135812~Crew", 1, true), "group: someone who writes without having heard the name is told it")
+        wireTo("M", B, { me, A }, "thanks")
+        check(#STUB.sent == 1, "group: once")
+        -- its pop-up and its line in the game's chat box say the name
+        Chat.frame:Hide()
+        T.notes = {}
+        T.frame:Hide()
+        STUB.printed = {}
+        wireTo("M", A, { me, B }, "pull")
+        check(T.frame:IsShown() and T.frame.sub:GetText() == "Crew" and STUB.printed[1] == "[Crew] Raider03: pull", "group: its pop-up and its game chat line go by the name")
+        T.notes = {}
+        T.frame:Hide()
+        -- only people with chat are sent it
+        STUB.sent = {}
+        V.seen[B] = "0.16.4"
+        Chat:SetMeta(gc, "Crew two", gc.icon)
+        check(#STUB.sent == 1 and STUB.sent[1].target == "Raider03", "group: only people the addon reaches are sent it")
+        V.seen[B] = "0.16.5"
+        UI.ShowMenu, UI.Prompt, UI.Picker = realMenu, realPrompt, realPicker
+        STUB.Script(Chat.echoCheck, "OnClick")
+        check(ns.db.settings.chatEcho == false, "in game chat: (and off again)")
+        wipe(Chat.told)
+    end
 
     -- tidy up
     G.chats = nil

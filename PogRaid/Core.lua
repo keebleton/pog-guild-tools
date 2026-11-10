@@ -1,7 +1,7 @@
 -- PogRaid core: saved data, event dispatch, slash commands, API probe.
 local ADDON, ns = ...
 
-ns.VERSION = "0.16.7"
+ns.VERSION = "0.16.8"
 
 -- Running from the project folder, not a packaged release (the packager and
 -- tools/package.py delete this block). A dev build tells other addons it is
@@ -426,6 +426,9 @@ ns.On("ADDON_LOADED", function(name)
     if st.groupToasts == nil then st.groupToasts = true end
     if st.chat == nil then st.chat = true end
     if st.chatWhispers == nil then st.chatWhispers = true end
+    if st.chatSound == nil then st.chatSound = true end
+    if st.chatToasts == nil then st.chatToasts = true end
+    if st.chatEcho == nil then st.chatEcho = false end
     if st.kudosToasts == nil then st.kudosToasts = true end
     if st.theme == nil then st.theme = st.classic == false and "plain" or ns.UI.DEFAULT_THEME end
     st.classic = nil

@@ -1,4 +1,11 @@
-# Pog Guild Tools 0.16.7
+# Pog Guild Tools 0.16.8
+
+- **Chats on Home.** A new Chats card under the Message board shows your latest chats, their last line and how many lines are unread. Click one to open it, or New chat to start one. It replaces the small Chat button next to Show offline.
+- **Name your group chats.** A group chat can have its own name and picture, shared with everyone in it. Open the chat and click Edit, or right-click it in the list.
+- **Chat switches.** New ticks at the top of the chat window: Sound mutes the new-line sound, Pop-ups stops the pop-up, and In game chat also writes new lines to your game chat box (off unless you tick it).
+- **Pictures in the chat list.** Each chat shows the other person's portrait, or the group's picture.
+
+New in 0.16.7:
 
 - **Chat now works with the whole guild.** Whispers to and from guildmates are kept in your chat with them, so the chat window is your whisper history too. A line to someone without the addon (marked "whisper") goes out as an ordinary whisper, and item links in whispers can be clicked. Group chats of three or more still need everyone on Pog Guild Tools. Untick "Guild whispers" at the top of the chat window to keep whispers out of it.
 - **New chat button.** The chat window's list is now just the people you've messaged. Click New chat to pick who to message: search by name, click one person or several for a group, then Start chat.

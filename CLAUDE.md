@@ -115,6 +115,30 @@ launchers and plain-English steps. Read this whole file before changing anything
   comes back within `Chat.WHISPER_WAIT` the chat says it didn't go. Groups of 3+ need HasChat for everyone (the list
   refuses the pick and says why). `GUILD_ROSTER_UPDATE` calls `Chat:RosterChanged` (list and heading only: redrawing
   the log lost its scroll position). Not yet proven on the live client: sending a real whisper from addon code.
+- 0.16.8: the chat window's title bar has four checks before the X: In game chat (`settings.chatEcho`, the only one
+  off by default), Sound (`settings.chatSound`), Pop-ups (`settings.chatToasts`) and Guild whispers, each as wide as
+  its box and words (`14 + 8 + label width`) and 16px apart, with tooltips hooked on (`HookScript`: `SetScript` would
+  replace UI.Check's own hover). `Chat:Notify` checks sound and pop-ups; the unread count doesn't depend on either.
+  `Chat:Echo` writes an incoming addon line (never a whisper, never our own) to DEFAULT_CHAT_FRAME in whisper pink:
+  "[Pog chat] Name: text", or "[group name or its people] Name: text". No volume slider: the game plays a sound kit at
+  its channel's volume and gives addons no per-sound volume (Jake asked; a mute is what's possible). Settings' "Pop-up
+  sounds" still mutes all.
+- 0.16.8 group name and picture (Jake: "like imessage"): `c.name` (cleaned by Codec.CleanText, 24 chars), `c.icon` (a
+  file ID from `Profiles:IconChoices()`), `c.metaAt` (when set; the newest wins). Groups only (`Chat:IsGroup`, 3+).
+  Set from Edit in the chat's heading or its right-click menu (`Chat:Menu` -> `UI.Prompt` / `UI.Picker`); `SetMeta`
+  whispers `R<n:2><names><at>~<icon>~<name>` to everyone online with HasChat. `OnMeta` takes a newer one, ignores one
+  with our stamp, and answers an older one with ours. `Chat.told[key .. "\n" .. name]` (session) is the stamp each
+  member has from us: someone who writes a line without it is sent it once, so people who were offline catch up.
+  0.16.5 to 0.16.7 ignore "R" (unknown op), so they just don't see names. `Chat:Title` = the name, else
+  `Chat:Members`; `Chat:Picture` = the group's icon (or `Chat.GROUP_ICON`), or the other person's portrait. The chat
+  list rows and the heading show the picture.
+- 0.16.8 Home: a Chats card (`Home.chatsCard`, `BuildChats` / `RefreshChats`) has the bottom third of what was all
+  Message board: `CHATS_H = HEAD_H + 8 + 3 rows`, `BOARD_H = HALF_H - GAP - CHATS_H` (the board now shows two posts and
+  scrolls). Rows: picture, title, a grey preview of the last line (`Chat:Preview`: "You: ", or the speaker in a
+  group), and on the right the unread count in the accent colour, else how long ago. Click opens the chat; "New chat"
+  in the heading and the "Start a chat" button (when there are none, like LFM's) call `Chat:StartNew` (the window on
+  its picker). An open post still takes the whole column and hides it. `Chat:Badge` / `Chat:Changed` call
+  `Home:ChatsChanged` (just this card). The Chat button beside Show offline is gone.
 - 0.16.7 chat window layout (Jake, from his screenshot: chats and the whole guild in one column "looks a little
   confusing"): the left list is ONLY our chats (`Chat:Items`, "No chats yet" when empty) with a New chat button under
   it. New chat (`Chat.picking`) shows the picker in the right card in place of the open chat: a search box (any part
