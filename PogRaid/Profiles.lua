@@ -1965,7 +1965,7 @@ function Profiles:Open(name)
     self.viewing = self:Main(key)
     self.profChar = key
     self.bookFor = nil
-    if self.page and self.page:IsShown() then
+    if self.page and self.page:IsVisible() then
         self:Refresh()
     else
         ns.Editor:Toggle("profiles")
@@ -1973,7 +1973,7 @@ function Profiles:Open(name)
 end
 
 function Profiles:Changed()
-    if self.page and self.page:IsShown() then self:Refresh() end
+    if self.page and self.page:IsVisible() then self:Refresh() end
 end
 
 function Profiles:Refresh()
@@ -1996,7 +1996,9 @@ function Profiles:RefreshAll()
     if not guild then return end
     -- a new profile on screen: its song plays (if the owner picked one and
     -- profile songs are on), except our own
-    if self.songFor ~= self.viewing then
+    -- (only on screen: a page of the closed window still gets refreshed by whoever
+    -- calls Refresh directly, and its song played with the addon closed, Jake)
+    if self.songFor ~= self.viewing and self.page:IsVisible() then
         self.songFor = self.viewing
         self:StopSong()
         if not self:IsMine(self.viewing) and ns.db.settings.profileSongs ~= false then

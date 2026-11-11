@@ -139,7 +139,15 @@ function M:Hide()
     end
 end
 function M:IsShown() return self.__shown end
-function M:IsVisible() return self.__shown end
+-- like the game: shown itself AND everything it sits in (a page of a closed window is "shown" but not visible)
+function M:IsVisible()
+    local f = self
+    while f do
+        if not f.__shown then return false end
+        f = f.__parent
+    end
+    return true
+end
 function M:SetShown(v) if v then self:Show() else self:Hide() end end
 function M:SetScript(name, fn) self.__scripts[name] = fn end
 function M:GetScript(name) return self.__scripts[name] end
@@ -208,6 +216,7 @@ function M:SetMask(path) self.__mask = path end
 function M:SetAtlas(name) self.__atlas = name end
 function M:SetColorTexture(r, g, b, a) self.__color = { r, g, b, a }; self.__texture = nil end
 function M:SetBlendMode(mode) self.__blend = mode end
+function M:SetRotation(radians) self.__rotation = radians end
 function M:SetGradient(orientation, minColor, maxColor) self.__gradient = { orientation, minColor, maxColor } end
 -- frames made with "BackdropTemplate" (the game's border and fill mixin)
 function M:SetBackdrop(b) self.__backdrop = b end
@@ -250,6 +259,7 @@ end
 
 function CreateFrame(kind, name, parent, template)
     local f = new(kind, parent or UIParent)
+    f.__level = ((parent or UIParent).__level or 0) + 1 -- like the game: a frame starts one level above what it sits in
     if type(template) == "string" and template:find("Secure", 1, true) then
         f.__secure = true
         STUB.secureFrames[#STUB.secureFrames + 1] = f
@@ -306,6 +316,7 @@ RAID_CLASS_COLORS = { HUNTER = { r = 0.67, g = 0.83, b = 0.45 }, MAGE = { r = 0.
     WARRIOR = { r = 0.78, g = 0.61, b = 0.43 }, PRIEST = { r = 1, g = 1, b = 1 } }
 
 function GetTime() return STUB.now end
+function UnitOnTaxi(unit) return unit == "player" and STUB.onTaxi == true end
 function GetCursorPosition() return STUB.cursorX, STUB.cursorY end
 function IsMouseButtonDown(b) return STUB.mouseDown[b] or false end
 STUB.race, STUB.sex = 7, 2 -- gnome, male
@@ -351,6 +362,7 @@ function PlayMusic(file) STUB.music = file return true end
 function StopMusic() STUB.music = nil end
 SOUNDKIT = { RAID_WARNING = 8959, IG_CHARACTER_INFO_OPEN = 839, IG_CHARACTER_INFO_CLOSE = 840, IG_CHARACTER_INFO_TAB = 841,
     IG_MAINMENU_OPTION_CHECKBOX_ON = 856, IG_MAINMENU_OPTION_CHECKBOX_OFF = 857, TELL_MESSAGE = 3081,
+    LOOT_WINDOW_COIN_SOUND = 120, IG_BACKPACK_COIN_SELECT = 1204,
     IG_QUEST_LIST_COMPLETE = 878 }
 STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
 UISpecialFrames = {}
@@ -546,6 +558,9 @@ function STUB.Link(id, name, color)
 end
 function issecretvalue(v) return type(v) == "table" and v.__secret == true end
 function ChatEdit_InsertLink(text) return false end
+-- a link clicked in the chat box (the game's own handling: it does nothing with an addon's link)
+function SetItemRef(link, text, button) STUB.itemRef = link end
+
 function hooksecurefunc(name, fn)
     local orig = _G[name]
     _G[name] = function(...) local r = orig(...) fn(...) return r end

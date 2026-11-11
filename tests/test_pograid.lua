@@ -35,6 +35,16 @@ for _, file in ipairs(toc) do
     chunk("PogRaid", ns)
 end
 ns.DEV = nil -- (the tests run a release build; the dev build has its own checks)
+-- A tab is only ever shown in the open window (/pog and the tabs see to that). The tests go straight to
+-- ShowTab, so here it opens the window too: pages refresh themselves only while they are really on screen
+-- (IsVisible), and a test that wants the window closed hides it.
+do
+    local showTab = ns.Editor.ShowTab
+    ns.Editor.ShowTab = function(self, key)
+        showTab(self, key)
+        if not self.frame:IsShown() then self.frame:Show() end
+    end
+end
 STUB.Fire("ADDON_LOADED", "PogRaid")
 STUB.Fire("PLAYER_LOGIN")
 
@@ -3583,6 +3593,46 @@ do
     check(STUB.music == 53211, "song: (playing)")
     Editor:ShowTab("home")
     check(STUB.music == nil, "song: leaving the page stops it")
+    -- closing the window stops it, and it stays off while the window is closed (0.16.9, Jake: "playing profile
+    -- music when the addon is closed"): the page was still flagged shown, so a guildie's profile or kudos
+    -- arriving in the background redrew it and started the song again
+    P:Open("Raider03-Realm")
+    check(STUB.music == 53211 and P.page:IsVisible(), "song: (playing again)")
+    Editor.frame:Hide()
+    check(STUB.music == nil and P.page:IsShown() and not P.page:IsVisible(), "song: closing the window stops it")
+    local refreshes, realRefresh = 0, P.Refresh
+    P.Refresh = function(...) refreshes = refreshes + 1 return realRefresh(...) end
+    Sync:Apply(Sync.collections.kudos, { id = "Raider09-Realm:5:Raider03-Realm", rev = ns.Now() + 2, by = "Raider09-Realm", author = "Raider09-Realm",
+        t = ns.Now(), to = "Raider03-Realm", kind = 5, n = 1, wk = P.Week(), msg = "While you were out" })
+    P:Changed()
+    check(STUB.music == nil and refreshes == 0, "song: news arriving with the window closed doesn't redraw the page or start the song")
+    P:Refresh()
+    check(STUB.music == nil, "song: nor does anything else that redraws it while it's closed")
+    P.Refresh = realRefresh
+    Editor:Toggle("profiles")
+    check(Editor.frame:IsShown() and STUB.music == 53211, "song: opening the window on that profile plays it again")
+    -- a profile asked for while the window is closed opens the window (the page being flagged shown isn't enough)
+    Editor.frame:Hide()
+    STUB.music = nil
+    P:Open("Raider03-Realm")
+    check(Editor.frame:IsShown() and P.page:IsVisible() and Editor.currentTab == "profiles" and STUB.music == 53211,
+        "profile: asking for one with the window closed opens the window")
+    Sync:Store("kudos")["Raider09-Realm:5:Raider03-Realm"] = nil
+    Sync.index = nil
+    -- the same for every page: closed means no redrawing in the background
+    Editor:ShowTab("home")
+    Editor.frame:Hide()
+    local homeRefreshes, realHome = 0, ns.Home.Refresh
+    ns.Home.Refresh = function(...) homeRefreshes = homeRefreshes + 1 return realHome(...) end
+    ns.Home:Changed()
+    ns.Home:OnChat("anyone on?", "Raider03-Realm")
+    check(homeRefreshes == 0, "home: nothing is redrawn while the window is closed")
+    Editor:Toggle("home")
+    check(homeRefreshes >= 1 and Editor.frame:IsShown(), "home: opening the window redraws it")
+    ns.Home.Refresh = realHome
+    table.remove(ns.db.guild.chat, 1)
+    Editor:ShowTab("home")
+    STUB.music = nil
 
     -- View profile from names elsewhere
     local entries = ns.Roster:PlayerEntries("Raider03-Realm")
@@ -5955,15 +6005,23 @@ do
     -- turned off here (Settings): the window goes, lines are turned away with a note back
     ns.Editor:ShowTab("settings")
     local checks = ns.Settings.checks
-    check(#checks == 8 and checks[7].label:GetText() == "Kudos pop-ups" and checks[8].label:GetText() == "Group chat"
-        and checks[7].checked and checks[8].checked, "settings: Kudos pop-ups and Group chat, on by default")
+    check(#checks == 10 and checks[7].label:GetText() == "Kudos pop-ups" and checks[8].label:GetText() == "Group chat"
+        and checks[9].label:GetText() == "Level-up pop-ups" and checks[7].checked and checks[8].checked and checks[9].checked,
+        "settings: Kudos pop-ups, Group chat and Level-up pop-ups, on by default")
+    check(checks[10].label:GetText() == "Open Games on flight paths" and not checks[10].checked and ns.db.settings.gamesOnFlight == false,
+        "settings: Open Games on flight paths, off unless ticked")
     local _, gtop, _, gh2 = STUB.rect(ns.Settings.general)
     local _, c8t, _, c8h = STUB.rect(checks[8])
+    local _, c9t, _, c9h = STUB.rect(checks[9])
+    local _, c10t, _, c10h = STUB.rect(checks[10])
     local _, tbt, _, tbh = STUB.rect(ns.Settings.themeBtn)
     local _, ot, _, oh = STUB.rect(ns.Settings.officers)
+    local _, r9t = STUB.rect(ns.Settings.officers.ranks[9])
     local _, r10t, _, r10h = STUB.rect(ns.Settings.officers.ranks[10])
-    check(gh2 == 300 and tbt <= c8t - c8h and near((tbt - tbh - 26) - (gtop - gh2), 12) and near(gtop - gh2 - ot, 8)
-        and r10t - r10h >= ot - oh, "settings: eight checks, the theme and Reload fit the card, ten officer ranks under it")
+    -- (0.16.9: ten checks; the rows of both cards sit 23px apart so ten officer ranks still fit)
+    check(gh2 == 322 and near(c8t - c9t, 23) and near(c9t - c10t, 23) and c10h <= 23 and tbt <= c10t - c10h
+        and near((tbt - tbh - 26) - (gtop - gh2), 12) and near(gtop - gh2 - ot, 8) and near(r9t - r10t, 23) and r10t - r10h >= ot - oh + 8,
+        "settings: ten checks, the theme and Reload fit the card, ten officer ranks under it")
     Chat:Open()
     STUB.Script(checks[8], "OnClick")
     check(ns.db.settings.chat == false and not Chat:Enabled() and not Chat.frame:IsShown() and #Chat:Buddies() == 0,
@@ -6336,10 +6394,11 @@ do
     check(msgs[1]:find("|Hitem:2100", 1, true) and not msgs[1]:find("||Hitem", 1, true) and msgs[1]:find("Noaddon", 1, true),
         "whispers: shown as the game sent it, item link and all")
     local got
+    local realItemRef = SetItemRef
     SetItemRef = function(l, t, b) got = l .. "/" .. b end
     STUB.Script(Chat.log, "OnHyperlinkClick", "item:2100::::::::60", "[Precisely Calibrated Boomstick]", "LeftButton")
     check(got == "item:2100::::::::60/LeftButton", "whispers: clicking a link opens it like the game's chat does")
-    SetItemRef = nil
+    SetItemRef = realItemRef
     -- reading the open chat: a new whisper just appears
     whisperIn("you there", E)
     check(ec.unread == 0 and Chat.log.__messages[#Chat.log.__messages]:find("you there", 1, true), "whispers: in the open chat it just appears")
@@ -6581,8 +6640,40 @@ do
         check(#STUB.printed == 0, "in game chat: nothing is written there by default")
         STUB.Script(echo, "OnClick")
         lineFrom("loud | one")
-        check(ns.db.settings.chatEcho == true and echo.checked and #STUB.printed == 1 and STUB.printed[1] == "[Pog chat] Raider03: loud || one",
+        -- (the [label] is a link: the words without it)
+        local function plain(s) return (s:gsub("|Haddon:[^|]*|h", ""):gsub("|h", "")) end
+        check(ns.db.settings.chatEcho == true and echo.checked and #STUB.printed == 1 and plain(STUB.printed[1]) == "[Pog chat] Raider03: loud || one",
             "in game chat: ticked, a new line is written to the chat box too (escaped)")
+        -- clicking its [Pog chat] opens that chat, ready to answer (0.16.9, Jake)
+        local link = STUB.printed[1]:match("^|H(addon:PogRaid:chat:%d+)|h%[Pog chat%]|h Raider03: ")
+        check(link ~= nil and Chat:Link(wa, "x") == "|H" .. link .. "|h[x]|h", "in game chat: the [label] is a link to that chat, the same one each time")
+        Chat.frame:Hide()
+        Chat.current = nil
+        wa.unread = 2
+        SetItemRef(link, "[Pog chat]", "LeftButton")
+        check(STUB.itemRef == link and Chat.frame:IsShown() and Chat.current == wa and wa.unread == 0 and Chat.input.__focus and not Chat.picking,
+            "in game chat: clicking the link opens the chat, read, ready to type")
+        STUB.Script(Chat.newBtn, "OnClick")
+        SetItemRef(link, "[Pog chat]", "LeftButton")
+        check(not Chat.picking and Chat.current == wa and Chat.log:IsShown(), "in game chat: (also from behind the New chat picker)")
+        Chat.frame:Hide()
+        Chat.current = nil
+        SetItemRef("item:2100::::::::60", "[Boomstick]", "LeftButton")
+        SetItemRef("addon:questie:offer:1", "[More Info]", "LeftButton")
+        SetItemRef("addon:PogRaid:chat:999", "[x]", "LeftButton")
+        SetItemRef("addon:PogRaid:chat:1x", "[x]", "LeftButton")
+        check(not Chat.frame:IsShown() and Chat:OnLink("item:1") == false and Chat:OnLink(nil) == false and Chat:OnLink("addon:PogRaid:chat:999") == true,
+            "in game chat: other links, and ours for a chat that isn't there, open nothing")
+        ns.db.settings.chat = false
+        SetItemRef(link, "[Pog chat]", "LeftButton")
+        check(not Chat.frame:IsShown(), "in game chat: nor with chat turned off")
+        ns.db.settings.chat = true
+        local gone = Chat:Get({ me, E }, true)
+        local goneLink = Chat:Link(gone, "x"):match("|H([^|]+)|h")
+        Chat:Delete(gone)
+        SetItemRef(goneLink, "[x]", "LeftButton")
+        check(not Chat.frame:IsShown() and goneLink ~= link, "in game chat: a deleted chat's link opens nothing")
+        wa.unread = 0
         whisperIn("a real whisper", E)
         Chat:Send(wa, "my own line")
         check(#STUB.printed == 1, "in game chat: not whispers (the game prints those), nor our own lines")
@@ -6609,7 +6700,8 @@ do
         local gc = Chat:Get({ me, A, B })
         check(gc and Chat:IsGroup(gc) and not Chat:IsGroup(wa) and Chat:Picture(gc) == Chat.GROUP_ICON and Chat:Picture(wa) == ns.Profiles:Portrait(A)
             and Chat:Title(gc, true) == "Raider03, Raider04" and gc.name == nil, "group: a chat of three or more is a group, with a picture of its own")
-        check(STUB.printed[1] == "[Raider03, Raider04] Raider03: hi all", "in game chat: a group's line says which group")
+        check(STUB.printed[1]:gsub("|Haddon:[^|]*|h", ""):gsub("|h", "") == "[Raider03, Raider04] Raider03: hi all"
+            and STUB.printed[1]:find("|Haddon:PogRaid:chat:%d+|h%[Raider03, Raider04%]|h"), "in game chat: a group's line says which group, as a link to it")
         T.notes = {}
         T.frame:Hide()
         -- its heading: the picture, who's in it, and Edit; a one-to-one chat has the person's portrait and no Edit
@@ -6736,7 +6828,9 @@ do
         T.frame:Hide()
         STUB.printed = {}
         wireTo("M", A, { me, B }, "pull")
-        check(T.frame:IsShown() and T.frame.sub:GetText() == "Crew" and STUB.printed[1] == "[Crew] Raider03: pull", "group: its pop-up and its game chat line go by the name")
+        check(T.frame:IsShown() and T.frame.sub:GetText() == "Crew" and STUB.printed[1]:find("|h%[Crew%]|h Raider03: pull$") ~= nil
+            and STUB.printed[1]:match("|H(addon:PogRaid:chat:%d+)|h") == Chat:Link(gc, "x"):match("|H([^|]+)|h"),
+            "group: its pop-up and its game chat line go by the name (the link is still the same chat's)")
         T.notes = {}
         T.frame:Hide()
         -- only people with chat are sent it
@@ -6763,6 +6857,1107 @@ do
     Roster:ScanGuild()
     ns.Attendance.keyCache = nil
     ns.Editor:ShowTab("home")
+end
+
+-- 0.16.9: Motherlode, the peg-drop roguelike (Lode.lua) --------------------------------------------
+do
+    local Lode, Sync = ns.Lode, ns.Sync
+    local Run = Lode.Run
+    local W, H, STEP = Lode.W, Lode.H, Lode.STEP
+    local function count(t) local n = 0 for _ in pairs(t or {}) do n = n + 1 end return n end
+    local function peg(x, y, kind) return { x = x, y = y, kind = kind or "ore", hits = 0 } end
+    -- play the bombs in the air out; how long it took, and whether they stayed inside the walls
+    local function fly(run, limit)
+        local t, inside, most = 0, true, 0
+        while run.state == "flying" and t < (limit or 60) do
+            run:Step(0.02)
+            t = t + 0.02
+            most = math.max(most, #run.balls)
+            for _, b in ipairs(run.balls) do
+                if b.x < 0 or b.x > W or b.y < 0 then inside = false end
+            end
+        end
+        return t, inside, most
+    end
+
+    -- the dice: a seed gives the same run every time
+    do
+        local a, b, c = Lode.Rng(42), Lode.Rng(42), Lode.Rng(43)
+        local same, differs, inRange = true, false, true
+        for _ = 1, 200 do
+            local x, y, z = a(), b(), c()
+            if x ~= y then same = false end
+            if x ~= z then differs = true end
+            if x < 0 or x >= 1 then inRange = false end
+        end
+        check(same and differs and inRange, "lode: the same seed rolls the same dice, between 0 and 1")
+        check(Lode.Rng(0)() ~= nil and Lode.Rng(-5)() < 1 and Lode.Rng("x")() < 1, "lode: any seed will do")
+    end
+
+    -- quotas climb; the seam changes every two floors
+    check(Lode.Quota(1) == 450 and Lode.Quota(2) == 680 and Lode.Quota(3) > Lode.Quota(2) and Lode.Quota(7) % 10 == 0
+        and Lode.Quota(10) > 15 * Lode.Quota(1), "lode: each floor wants half as much ore again")
+    check(Lode.Ore(1)[2] == "Copper" and Lode.Ore(2)[2] == "Copper" and Lode.Ore(3)[2] == "Tin" and Lode.Ore(99)[2] == Lode.ORES[#Lode.ORES][2],
+        "lode: the seam changes every two floors, down to the last")
+
+    -- a floor's pegs
+    do
+        local pegs = Lode.Board(Lode.Rng(7))
+        local kinds, inside, apart = {}, true, true
+        for i, a in ipairs(pegs) do
+            kinds[a.kind] = (kinds[a.kind] or 0) + 1
+            if a.x < 30 or a.x > W - 30 or a.y < 90 or a.y > H - Lode.POCKET_H - 54 then inside = false end
+            for j = i + 1, #pegs do
+                local b = pegs[j]
+                if (a.x - b.x) ^ 2 + (a.y - b.y) ^ 2 < (2 * Lode.PEG_R + 2 * Lode.BALL_R) ^ 2 then apart = false end
+            end
+        end
+        check(#pegs == Lode.PEGS and kinds.keg == 3 and kinds.crystal == 2 and kinds.gold == 5 and kinds.ore == Lode.PEGS - 10,
+            "lode: a floor has its ore, five gold veins, three kegs and two crystals")
+        check(inside and apart, "lode: pegs stay clear of the walls, the mortar and the pockets, with room for a bomb between any two")
+        local again, other = Lode.Board(Lode.Rng(7)), Lode.Board(Lode.Rng(8))
+        local same, differs = true, false
+        for i, a in ipairs(pegs) do
+            if a.x ~= again[i].x or a.kind ~= again[i].kind then same = false end
+            if a.x ~= other[i].x then differs = true end
+        end
+        check(same and differs, "lode: the same seed lays the same floor")
+        local rich = Lode.Board(Lode.Rng(7), 9)
+        local gold = 0
+        for _, a in ipairs(rich) do if a.kind == "gold" then gold = gold + 1 end end
+        check(gold == 9 and #rich == Lode.PEGS, "lode: more gold veins take ore's place")
+    end
+
+    -- a run starts on floor 1; a bomb drops where it's aimed
+    local run = Run.New(11)
+    check(run.floor == 1 and run.bombs == Lode.BOMBS and run.quota == 450 and run.ore == 0 and run.state == "aim" and #run.pegs == Lode.PEGS
+        and run:OreValue() == 10 and run:GoldValue() == 50, "lode: a run starts on floor 1 with five bombs")
+    run.pegs = {}
+    check(run:Fire(9) == true and run.state == "flying" and run.bombs == Lode.BOMBS - 1
+        and near(run.balls[1].vx, Lode.SPEED * math.sin(Lode.MAX_AIM), 1e-6) and run.balls[1].vy > 0 and run.balls[1].x == W / 2,
+        "lode: a bomb drops from the mortar, never aimed higher than the limit")
+    check(run:Fire(0) == false and run.bombs == Lode.BOMBS - 1 and #run.balls == 1, "lode: one shot at a time")
+    -- with nothing in the way it bounces off the wall and lands, mining nothing
+    local hitWall = false
+    while run.state == "flying" do
+        run:Tick(STEP)
+        if run.balls[1] and run.balls[1].vx < 0 then hitWall = true end
+        if run.balls[1] and (run.balls[1].x < Lode.BALL_R - 0.001 or run.balls[1].x > W - Lode.BALL_R + 0.001) then hitWall = "outside" end
+    end
+    check(hitWall == true and run.state == "aim" and run.ore == 0 and run.last.gain == 0 and #run.last.landed == 1 and #run.balls == 0,
+        "lode: it bounces off the wall, stays on the board and lands")
+
+    -- straight down onto one peg: mined once, bounced on three times, then it crumbles and the bomb lands in the middle pocket
+    do
+        local r = Run.New(11)
+        local p = peg(W / 2, 300)
+        r.pegs = { p }
+        r:Fire(0)
+        while r.state == "flying" and not p.lit do r:Tick(STEP) end
+        local b = r.balls[1]
+        check(p.lit and p.hits == 1 and not p.gone and b.vy < 0 and near(b.vx, 0) and b.ore == 10 and b.y < 300,
+            "lode: a bomb bounces off a peg, which is mined")
+        local speedIn = Lode.SPEED -- (it left the mortar at this, and gravity only adds)
+        check(math.abs(b.vy) < (speedIn ^ 2 + 2 * Lode.GRAVITY * 300) ^ 0.5 * Lode.BOUNCE + 1, "lode: it loses speed on the bounce")
+        local t = fly(r)
+        check(p.hits == Lode.MAX_HITS and p.gone and r.state == "aim" and r.ore == 50 and r.total == 50 and r.last.gain == 50
+            and r.last.landed[1].pocket == 3 and r.last.landed[1].mult == 5 and r.last.landed[1].ore == 10 and t < 8,
+            "lode: bounced on three times a peg crumbles; its ore is counted once, times the pocket the bomb lands in")
+    end
+
+    -- a peg glanced once is still cleared away when the shot ends
+    do
+        local r = Run.New(11)
+        local p = peg(W / 2 + 12, 300)
+        r.pegs = { p }
+        r:Fire(0)
+        fly(r)
+        check(p.lit and p.hits == 1 and p.gone and r.last.landed[1].ore == 10 and r.last.landed[1].pocket < 3 and r.ore == 10 * r.last.landed[1].mult,
+            "lode: a peg hit once is mined and cleared away when the bomb lands")
+    end
+
+    -- pockets, left to right
+    do
+        local r = Run.New(11)
+        r.landed = {}
+        local function land(x) local b = { x = x, y = H, ore = 7 } r:Land(b) return r.landed[#r.landed] end
+        local a, m, z, o = land(30), land(W / 2), land(W - 30), land(-5)
+        check(a.pocket == 1 and a.mult == 1 and a.gain == 7 and m.pocket == 3 and m.gain == 35 and z.pocket == 5 and o.pocket == 1
+            and land(W / 5 + 1).mult == 2 and r.ore == 7 + 35 + 7 + 7 + 14, "lode: the pockets multiply 1, 2, 5, 2, 1")
+        r.upgrades.loaded = 2
+        check(r:PocketMult(1) == 3 and r:PocketMult(3) == 7, "lode: Loaded Pockets adds to every pocket")
+    end
+
+    -- a powder keg takes its neighbours with it, and the next keg along
+    do
+        local r = Run.New(11)
+        local keg, a, keg2, b, far = peg(W / 2, 300, "keg"), peg(W / 2 + 20, 330), peg(W / 2 + 55, 300, "keg"), peg(W / 2 + 105, 300), peg(W / 2 + 220, 300)
+        r.pegs = { keg, a, keg2, b, far }
+        r:Fire(0)
+        while r.state == "flying" and not keg.lit do r:Tick(STEP) end
+        check(keg.gone and a.gone and keg2.gone and b.gone and not far.gone and not far.lit and r.balls[1].ore == 40 and #r.blasts == 2,
+            "lode: a keg blows up nearby pegs, other kegs in turn, and the bomb gets the ore")
+        fly(r)
+        check(r.ore == 200 and not far.gone, "lode: (and lands with it)")
+        r.upgrades.big = 2
+        check(near(r:KegRadius(), Lode.KEG_R * 1.6), "lode: Big Kegs widens the blast")
+    end
+
+    -- a crystal splits the bomb; Twin Fuse splits it on its first peg
+    do
+        local r = Run.New(11)
+        local c = peg(W / 2, 300, "crystal")
+        r.pegs = { c }
+        r:Fire(0)
+        while r.state == "flying" and not c.lit do r:Tick(STEP) end
+        check(c.gone and #r.balls == 2 and r.balls[2].vx ~= 0 and r.balls[2].ore == 0 and r.balls[1].ore == 10, "lode: a crystal splits your bomb")
+        fly(r)
+        check(#r.last.landed == 2 and r.ore == 50, "lode: both land, each with what it mined")
+        local t = Run.New(11)
+        local p = peg(W / 2, 300)
+        t.upgrades.twin = 1
+        t.pegs = { p }
+        t:Fire(0)
+        while t.state == "flying" and not p.lit do t:Tick(STEP) end
+        check(#t.balls == 2, "lode: Twin Fuse splits a bomb on the first peg it hits")
+        local _, _, most = fly(t)
+        check(most == 2 and #t.last.landed == 2 and p.hits == Lode.MAX_HITS, "lode: once a shot, not on every peg")
+        local many = Run.New(11)
+        many.balls = {}
+        for i = 1, Lode.MAX_BALLS do many.balls[i] = { x = 1, y = 1, vx = 1, vy = 1, ore = 0 } end
+        many:Split(many.balls[1])
+        check(#many.balls == Lode.MAX_BALLS, "lode: only so many bombs in the air at once")
+    end
+
+    -- what pegs are worth, and the upgrades that change it
+    do
+        local r = Run.New(11)
+        local b = { ore = 0 }
+        r:Mine(peg(1, 1, "gold"), b)
+        check(b.ore == 50, "lode: a gold vein is worth five ore pegs")
+        r.upgrades.fever, r.upgrades.rich = 1, 2
+        b.ore = 0
+        r:Mine(peg(1, 1, "gold"), b)
+        r:Mine(peg(1, 1, "ore"), b)
+        check(r:OreValue() == 16 and b.ore == 160 + 16, "lode: Rich Seams and Gold Fever raise them")
+        local again = peg(1, 1)
+        b.ore = 0
+        r:Mine(again, b)
+        r:Mine(again, b)
+        check(b.ore == 16, "lode: a peg is mined once")
+        r.upgrades.lucky = 1
+        r.rand = function() return 0.05 end
+        b.ore = 0
+        local lucky = peg(1, 1)
+        r:Mine(lucky, b)
+        r.rand = function() return 0.5 end
+        r:Mine(peg(1, 1), b)
+        r:Mine(peg(1, 1, "gold"), b)
+        check(lucky.lucky and b.ore == 32 + 16 + 160, "lode: Lucky Strike sometimes doubles an ore peg")
+        r.rand = function() return 0.05 end
+        b.ore = 0
+        r:Mine(peg(1, 1, "gold"), b)
+        r:Mine(peg(1, 1, "keg"), b)
+        check(b.ore == 160 + 16, "lode: never a gold vein or a keg")
+        r.floor = 5
+        check(r:OreValue() == 10 + 8 + 6, "lode: ore is worth more the deeper you go")
+    end
+
+    -- reaching the quota: three upgrades to pick from, then the next floor
+    do
+        local r = Run.New(21)
+        r.pegs = { peg(W / 2, 300) }
+        r.quota = 40
+        r:Fire(0)
+        fly(r)
+        local o = r.offers
+        check(r.state == "choose" and r.cleared == 1 and #o == 3 and o[1] ~= o[2] and o[2] ~= o[3] and o[1] ~= o[3]
+            and Lode.UPGRADE[o[1]] and Lode.UPGRADE[o[2]] and Lode.UPGRADE[o[3]], "lode: reaching the quota offers three different upgrades")
+        check(r:Fire(0) == false and r:Choose(4) == false and r:Choose(0) == false and r.state == "choose", "lode: nothing else until one is picked")
+        local distinct = true
+        for seed = 1, 60 do
+            local x = Run.New(seed):Offers()
+            if #x ~= 3 or x[1] == x[2] or x[2] == x[3] or x[1] == x[3] then distinct = false end
+        end
+        check(distinct, "lode: the three offered are never the same one twice")
+        local key = o[2]
+        check(r:Choose(2) == true and r:Has(key) == 1 and r.floor == 2 and r.quota == Lode.Quota(2) and r.ore == 0 and r.total == 50
+            and r.state == "aim" and #r.pegs == Lode.PEGS and r.bombs == Lode.BOMBS + r:Has("spare") and r.offers == nil,
+            "lode: picking one goes down a floor, with a fresh board and bombs")
+        -- Spare Bomb, Deep Pockets, Prospector
+        local d = Run.New(21)
+        d.upgrades.deep, d.upgrades.spare, d.upgrades.prospector = 1, 2, 1
+        d.pegs = { peg(W / 2, 300) }
+        d.quota = 40
+        d:Fire(0)
+        fly(d)
+        local left = d.bombs
+        d:Choose(1)
+        local gold = 0
+        for _, a in ipairs(d.pegs) do if a.kind == "gold" then gold = gold + 1 end end
+        check(left == Lode.BOMBS - 1 and d.bombs == Lode.BOMBS + d:Has("spare") + left and gold == Lode.GOLD + 2 * d:Has("prospector"),
+            "lode: Spare Bomb, Deep Pockets and Prospector do what they say on the next floor")
+        -- upgrades taken as often as they can be aren't offered; with none left the run just goes on
+        local m = Run.New(21)
+        for _, u in ipairs(Lode.UPGRADES) do m.upgrades[u[1]] = u[4] end
+        m.upgrades.rich, m.upgrades.lucky = 1, 0
+        local offers = m:Offers()
+        table.sort(offers)
+        check(#offers == 2 and offers[1] == "lucky" and offers[2] == "rich", "lode: an upgrade taken as often as it can be isn't offered")
+        m.upgrades.rich, m.upgrades.lucky = Lode.UPGRADE.rich[4], Lode.UPGRADE.lucky[4]
+        m.pegs = { peg(W / 2, 300) }
+        m.quota = 40
+        m:Fire(0)
+        fly(m)
+        check(m.state == "aim" and m.floor == 2 and m.cleared == 1, "lode: with nothing left to offer the run goes straight down")
+    end
+
+    -- out of bombs short of the quota: the run is over
+    do
+        local r = Run.New(31)
+        r.pegs = {}
+        r.bombs = 1
+        r:Fire(0.3)
+        fly(r)
+        check(r.state == "over" and r.cleared == 0 and r:Fire(0) == false, "lode: out of bombs short of the quota ends the run")
+        ns.db.games.lode = nil
+        check(Lode:Finish(r) == false and Lode.Saved().runs == 1 and Lode.Saved().depth == 0, "lode: a run that cleared nothing is counted, not a best")
+        check(Lode:Finish({ cleared = 3, total = 900 }) == true and Lode:Finish({ cleared = 3, total = 800 }) == false
+            and Lode:Finish({ cleared = 3, total = 1000 }) == true and Lode:Finish({ cleared = 2, total = 99999 }) == false
+            and Lode.Saved().depth == 3 and Lode.Saved().ore == 1000 and Lode.Saved().runs == 5,
+            "lode: the deepest run is kept, more ore breaking a tie")
+    end
+
+    -- the guild's deepest runs: understood from this version, not shared until it's turned on
+    do
+        local me = Sync:Me()
+        local def = Sync.collections.lode
+        check(def ~= nil and def.code == "m" and Lode.share == true and count(Sync:Store("lode")) == 1 and Sync:Store("lode")[me]
+            and Sync:Store("lode")[me].depth == 3 and Sync:Store("lode")[me].ore == 1000 and Lode:Publish() == false,
+            "lode: our best run is shared with the guild as it's made, once")
+        local now = ns.Now()
+        local function rec(who, depth, ore, extra)
+            local r = { id = who, rev = now, by = who, author = who, t = now, depth = depth, ore = ore }
+            for k, v in pairs(extra or {}) do r[k] = v end
+            return r
+        end
+        check(Sync:Apply(def, rec("Raider03-Realm", 6, 4000)) and Sync:Apply(def, rec("Raider04-Realm", 6, 5200))
+            and Sync:Apply(def, rec("Raider05-Realm", 9, 100)), "lode: other addons' scores are taken")
+        check(not Sync:Apply(def, rec("Raider06-Realm", 2, 5, { by = "Raider07-Realm" })) and not Sync:Apply(def, rec("Raider06-Realm", -1, 5))
+            and not Sync:Apply(def, rec("Raider06-Realm", 2.5, 5)) and not Sync:Apply(def, rec("Raider06-Realm", 1000, 5))
+            and not Sync:Apply(def, rec("Raider06-Realm", 2, -1)) and not Sync:Apply(def, rec("Raider06-Realm", 2, 5, { id = "Raider06-Realm:x" })),
+            "lode: someone else's, or one that makes no sense, is refused")
+        Lode.share = false
+        Lode.Saved().ore = 2000
+        check(Lode:Publish() == false and Sync:Store("lode")[me].ore == 1000, "lode: (with sharing switched off nothing is written)")
+        Lode.share = true
+        check(Lode:Publish() == true and Sync:Store("lode")[me].depth == 3 and Sync:Store("lode")[me].ore == 2000 and Lode:Publish() == false,
+            "lode: a better best replaces it")
+        local board = Lode:Leaderboard()
+        check(#board == 4 and board[1].author == "Raider05-Realm" and board[2].author == "Raider04-Realm" and board[3].author == "Raider03-Realm"
+            and board[4].author == me, "lode: deepest first, then most ore")
+        for id in pairs(Sync:Store("lode")) do Sync:Store("lode")[id] = nil end
+        Sync.index = nil
+        STUB.sent = {}
+    end
+
+    -- every shot ends, whatever the aim and the upgrades, and nothing leaves the board
+    do
+        local longest, allInside, mostBalls, whole = 0, true, 0, true
+        for seed = 1, 12 do
+            local r = Run.New(seed * 97)
+            r.upgrades.twin, r.upgrades.rubber, r.upgrades.big = 1, 3, 3
+            r.quota = 1e9
+            r.bombs = 4
+            for shot = 1, 4 do
+                r:Fire((shot * 0.37 + seed * 0.21) % (2 * Lode.MAX_AIM) - Lode.MAX_AIM)
+                local t, inside, most = fly(r, 40)
+                longest, mostBalls = math.max(longest, t), math.max(mostBalls, most)
+                if not inside or r.state == "flying" then allInside = false end
+                if r.ore ~= math.floor(r.ore) or r.ore < 0 then whole = false end
+            end
+            if r.state ~= "over" then allInside = false end
+        end
+        check(allInside and longest <= Lode.SHOT_CAP + 0.1 and mostBalls <= Lode.MAX_BALLS and whole,
+            "lode: every shot ends in time with its bombs on the board, however it's aimed")
+    end
+
+    -- the same seed, aims and picks play the same run
+    do
+        local function play(seed)
+            local r = Run.New(seed)
+            local n = 0
+            while r.state ~= "over" and n < 60 do
+                if r.state == "choose" then r:Choose(1) else r:Fire(((n * 0.61) % 1.6) - 0.8) fly(r) end
+                n = n + 1
+            end
+            return r
+        end
+        local a, b, c = play(5), play(5), play(6)
+        check(a.total == b.total and a.cleared == b.cleared and a.floor == b.floor and a.shots == b.shots
+            and (a.total ~= c.total or a.shots ~= c.shots), "lode: the same seed, aims and picks play out the same")
+    end
+
+    -- the aiming dots follow the bomb's path until its first peg
+    do
+        local r = Run.New(11)
+        r.pegs = { peg(W / 2, 200) }
+        local dots = r:Preview(0, 14, 0.045)
+        local ok = #dots > 0 and #dots < 14
+        for i, d in ipairs(dots) do
+            if not near(d.x, W / 2) or d.y >= 200 - Lode.PEG_R - Lode.BALL_R + 0.01 or (i > 1 and d.y <= dots[i - 1].y) then ok = false end
+        end
+        check(ok, "lode: the aiming dots run down from the mortar and stop at the first peg")
+        r.pegs = {}
+        local wide = r:Preview(Lode.MAX_AIM, 14, 0.045)
+        local inside = #wide > 3
+        for _, d in ipairs(wide) do if d.x < Lode.BALL_R - 0.01 or d.x > W - Lode.BALL_R + 0.01 or d.y > H then inside = false end end
+        check(inside and wide[1].x > W / 2 and #r:Preview(0, 5, 0.045) == 5, "lode: they bend off the walls and stay on the board")
+    end
+
+    check(Lode.Commas(999) == "999" and Lode.Commas(1000) == "1,000" and Lode.Commas(1234567) == "1,234,567" and Lode.Commas(0) == "0",
+        "lode: big numbers get their commas")
+
+    -- on screen: its own tab on Games, /pog motherlode
+    do
+        local Games, UI = ns.Games, ns.UI
+        ns.Editor:ShowTab("home")
+        ns.db.games.lode = nil
+        Lode.run = nil
+        SlashCmdList.POGRAID("motherlode")
+        local view = Games.views.lode
+        check(ns.Editor.currentTab == "games" and Games.mode == "lode" and view and view:IsVisible() and Games.modeTabs.lode.selected
+            and not Games.board:IsShown() and not Games.views.gems:IsShown(), "lode: /pog motherlode opens its tab on Games")
+        local found
+        for i, m in ipairs(Games.MODES) do if m.key == "lode" then found = i end end
+        check(found == 4 and Games.MODES[3].key == "gems" and Games.MODES[5].key == "duels" and Games.MODES[found].label == "Motherlode", "lode: between Gem Cutter and Ranked Duels")
+        local board, side, o = Lode.board, Lode.side, Lode.overlay
+        -- before a run: how to play, and Start run
+        check(o:IsShown() and o.title:GetText() == "Motherlode" and o.start:IsShown() and o.start.label:GetText() == "Start run"
+            and o.sub:GetText():find("pocket it lands in", 1, true) and not o.tiles[1]:IsShown() and side.best:GetText() == "No runs yet"
+            and side.newRun.label:GetText() == "Start run", "lode: before a run it says how to play")
+        -- layout: the board from the page's left edge, the run beside it, both to the bottom margin
+        local pl, pt = STUB.rect(Games.page)
+        local bl, bt, bw, bh = STUB.rect(board)
+        local sl, st, sw, sh = STUB.rect(side)
+        check(near(bl - pl, 12) and bw == Lode.W and bh == Lode.H and near(sl - (bl + bw), 8) and near(sl + sw, pl + 890) and near(st, bt)
+            and near(sh, bh) and near(pt - (bt - bh), ns.PAGE_H - 12), "lode layout: the board and the run card fill the page side by side")
+        local okPockets = #Lode.pockets == #Lode.POCKETS
+        for i, p in ipairs(Lode.pockets) do
+            local l, t, w, h = STUB.rect(p)
+            if not near(l - bl, (i - 1) * Lode.W / 5) or not near(w, Lode.W / 5) or not near(t - h, bt - bh) or h ~= Lode.POCKET_H then okPockets = false end
+        end
+        check(okPockets and Lode.pockets[3].text:GetText() == "x5" and Lode.pockets[1].text:GetText() == "x1", "lode layout: five pockets along the bottom")
+        local t1l, t1t, tw, th = STUB.rect(o.tiles[1])
+        local t3l = STUB.rect(o.tiles[3])
+        check(near(t1l - bl, (bl + bw) - (t3l + tw)) and near(STUB.rect(o.tiles[2]) - (t1l + tw), Lode.layout.TILE_GAP) and t1l > bl
+            and t1t - th > bt - bh + Lode.POCKET_H, "lode layout: the three upgrade tiles are centred on the board")
+
+        -- Start run
+        STUB.Script(o.start, "OnClick")
+        local run = Lode.run
+        check(run and run.state == "aim" and not o:IsShown() and side.floor:GetText() == "1" and side.ore:GetText() == "0 / 450"
+            and side.bombs:GetText() == "5" and side.seam:GetText() == "Copper seam" and side.noUps:IsShown() and Lode.mortar:IsShown(),
+            "lode: Start run lays out floor 1")
+        local shown = 0
+        for i, art in ipairs(Lode.pegArt) do
+            if art.icon:IsShown() then
+                shown = shown + 1
+                local l, t, w, h = STUB.rect(art.icon)
+                if not near(l + w / 2 - bl, run.pegs[i].x, 0.01) or not near(bt - (t - h / 2), run.pegs[i].y, 0.01) then shown = -999 end
+            end
+        end
+        local anOre
+        for i, a in ipairs(run.pegs) do if a.kind == "ore" then anOre = anOre or i end end
+        check(shown == Lode.PEGS and Lode.pegArt[1].icon:GetTexture() == Lode.PegIcon(run.pegs[1].kind, 1) and not Lode.pegArt[anOre].glow:IsShown(),
+            "lode: every peg is drawn where it is, with its picture")
+        -- aiming with the mouse: dots along the path; a click drops the bomb
+        STUB.cursorX, STUB.cursorY = bl + W / 2 + 100, bt - (Lode.LAUNCH_Y + 300)
+        check(near(Lode:AimAngle(), math.atan2(100, 300), 1e-9), "lode: the aim is from the mortar to the mouse")
+        STUB.cursorX, STUB.cursorY = bl + W / 2 + 500, bt + 40
+        check(near(Lode:AimAngle(), Lode.MAX_AIM), "lode: (never above the limit)")
+        STUB.cursorX, STUB.cursorY = bl + W / 2 + 100, bt - (Lode.LAUNCH_Y + 300)
+        STUB.Script(board, "OnUpdate", 0.016)
+        local waiting = Lode.ballArt[#Lode.ballArt]
+        local wl, wt, ww, wh = STUB.rect(waiting)
+        check(Lode.dots[1]:IsShown() and waiting:IsShown() and near(wl + ww / 2 - bl, W / 2) and near(bt - (wt - wh / 2), Lode.LAUNCH_Y)
+            and not Lode.ballArt[1]:IsShown(), "lode: aiming shows the path in dots and a bomb waiting in the mortar")
+        run.quota = 1e9
+        STUB.Script(board, "OnClick")
+        check(run.state == "flying" and run.bombs == 4 and side.bombs:GetText() == "4" and not Lode.dots[1]:IsShown() and not waiting:IsShown(),
+            "lode: a click drops it")
+        STUB.Script(board, "OnClick")
+        check(run.bombs == 4 and #run.balls >= 1, "lode: clicking while it's in the air does nothing")
+        STUB.Script(board, "OnUpdate", 0.016)
+        local al, at, aw, ah = STUB.rect(Lode.ballArt[1])
+        check(Lode.ballArt[1]:IsShown() and near(al + aw / 2 - bl, run.balls[1].x, 0.01) and near(bt - (at - ah / 2), run.balls[1].y, 0.01),
+            "lode: the bomb is drawn where it is")
+        for _ = 1, 3000 do
+            if run.state ~= "flying" then break end
+            STUB.Script(board, "OnUpdate", 0.02)
+        end
+        check(run.state == "aim" and not Lode.ballArt[1]:IsShown() and Lode.message:GetText() ~= "" and waiting:IsShown()
+            and side.ore:GetText() == Lode.Commas(run.ore) .. " / " .. Lode.Commas(run.quota), "lode: when it lands the card and the message catch up")
+        -- (a mined peg fades away over a moment)
+        local fadingNow = 0
+        for i, a in ipairs(run.pegs) do
+            if a.gone and Lode.pegArt[i].icon:IsShown() and Lode.pegArt[i].fading then fadingNow = fadingNow + 1 end
+        end
+        for _ = 1, 6 do STUB.Script(board, "OnUpdate", 0.1) end
+        local gone, hidden = 0, 0
+        for i, a in ipairs(run.pegs) do
+            if a.gone then gone = gone + 1 end
+            if not Lode.pegArt[i].icon:IsShown() then hidden = hidden + 1 end
+        end
+        check(gone == hidden and gone > 0 and fadingNow > 0, "lode: mined pegs fade off the board")
+        -- New run in the middle of one asks twice
+        STUB.Script(side.newRun, "OnClick")
+        check(Lode.run == run and side.newRun.armed, "lode: New run in the middle of a run wants a second click")
+        STUB.Script(side.newRun, "OnClick")
+        check(Lode.run ~= run and Lode.run.floor == 1 and Lode.run.shots == 0, "lode: which starts over")
+
+        -- clearing a floor: three tiles; picking one goes down
+        run = Lode.run
+        run.pegs = { peg(W / 2, 300) }
+        run.quota = 40
+        run.dirty = true
+        STUB.cursorX, STUB.cursorY = bl + W / 2, bt - 400
+        STUB.Script(board, "OnUpdate", 0.016)
+        STUB.sounds = {}
+        STUB.Script(board, "OnClick")
+        for _ = 1, 3000 do
+            if run.state ~= "flying" then break end
+            STUB.Script(board, "OnUpdate", 0.02)
+        end
+        check(run.state == "choose" and o:IsShown() and o.title:GetText() == "Floor 1 cleared" and not o.start:IsShown()
+            and o.tiles[1]:IsShown() and o.tiles[2]:IsShown() and o.tiles[3]:IsShown()
+            and o.tiles[1].name:GetText() == Lode.UPGRADE[run.offers[1]][2] and o.tiles[3].desc:GetText() == Lode.UPGRADE[run.offers[3]][3]
+            and STUB.sounds[#STUB.sounds] == SOUNDKIT.IG_QUEST_LIST_COMPLETE, "lode: a cleared floor shows three upgrades to pick from")
+        check(Lode.message:GetText() == "10 ore x5: +50" and Lode.pockets[3].flash:IsShown() and not Lode.pockets[1].flash:IsShown(),
+            "lode: the message and the pocket say what the bomb did")
+        STUB.Script(board, "OnClick")
+        check(run.state == "choose", "lode: (the board doesn't take shots under the tiles)")
+        local picked = run.offers[2]
+        STUB.Script(o.tiles[2], "OnClick")
+        check(run.state == "aim" and run.floor == 2 and run:Has(picked) == 1 and not o:IsShown() and side.floor:GetText() == "2"
+            and side.ups[1]:IsShown() and side.ups[1].name:GetText() == Lode.UPGRADE[picked][2] and not side.noUps:IsShown()
+            and not side.ups[2]:IsShown() and side.ore:GetText() == "0 / " .. Lode.Commas(Lode.Quota(2)), "lode: picking one goes down a floor and lists it")
+        STUB.Script(side.ups[1], "OnEnter")
+        check(GameTooltip.shown and GameTooltip.lines[1] == Lode.UPGRADE[picked][2], "lode: hovering an upgrade says what it does")
+        STUB.Script(side.ups[1], "OnLeave")
+        local fillW = side.bar.fill:GetWidth()
+        check(fillW <= 1.01, "lode: the quota bar starts empty")
+
+        -- the run ending
+        run.pegs = {}
+        run.bombs = 1
+        run.dirty = true
+        STUB.Script(board, "OnUpdate", 0.016)
+        STUB.Script(board, "OnClick")
+        for _ = 1, 3000 do
+            if run.state ~= "flying" then break end
+            STUB.Script(board, "OnUpdate", 0.02)
+        end
+        check(run.state == "over" and o:IsShown() and o.title:GetText() == "New best!" and o.start:IsShown() and o.start.label:GetText() == "New run"
+            and o.sub:GetText() == "Cleared 1 floor, 50 ore mined. Floor 2 needed 680." and not o.tiles[1]:IsShown()
+            and Lode.Saved().runs == 1 and Lode.Saved().depth == 1 and side.best:GetText() == "Best: floor 1, 50 ore",
+            "lode: the run over, how it went, and our best kept")
+        STUB.Script(o.start, "OnClick")
+        check(Lode.run ~= run and Lode.run.state == "aim" and not o:IsShown() and Lode.message:GetText() == "", "lode: New run from there starts again")
+        -- a worse run doesn't call itself a best
+        run = Lode.run
+        run.pegs = {}
+        run.bombs = 1
+        run.dirty = true
+        STUB.Script(board, "OnUpdate", 0.016)
+        STUB.Script(board, "OnClick")
+        for _ = 1, 3000 do
+            if run.state ~= "flying" then break end
+            STUB.Script(board, "OnUpdate", 0.02)
+        end
+        check(run.state == "over" and o.title:GetText() == "Out of bombs" and o.sub:GetText():find("Cleared 0 floors", 1, true)
+            and Lode.Saved().runs == 2 and Lode.Saved().depth == 1, "lode: a run that isn't our deepest says so")
+        -- how it looks and feels (0.16.9, Jake: "more visually appealing", "the ball could be brighter"): a mine behind
+        -- the board, a glowing bomb with sparks, numbers floating off what's mined, pops, blasts and a peg count
+        do
+            check(Lode.boardArt ~= nil and Lode.depth.__gradient ~= nil and board.artAlpha == Lode.ART_ALPHA,
+                "lode looks: a faint picture of the mine behind the board, darker toward the bottom")
+            check(Lode.pockets[3].text.__fontSize > Lode.pockets[1].text.__fontSize and Lode.pockets[3].fill.__color[4] > Lode.pockets[2].fill.__color[4]
+                and Lode.pockets[2].fill.__color[4] > Lode.pockets[1].fill.__color[4], "lode looks: the richer the pocket, the brighter it is")
+            Lode:NewRun(77)
+            local r = Lode.run
+            -- a keg with five pegs round it, straight under the mortar
+            local keg, gold = peg(W / 2, 300, "keg"), peg(W / 2 - 40, 320, "gold")
+            r.pegs = { keg, peg(W / 2 + 20, 330), gold, peg(W / 2 + 45, 300), peg(W / 2 - 45, 290), peg(W / 2, 350) }
+            r.quota = 1e9
+            r.dirty = true
+            STUB.cursorX, STUB.cursorY = bl + W / 2, bt - 400
+            STUB.Script(board, "OnUpdate", 0.016)
+            local waiting = Lode.ballArt[#Lode.ballArt]
+            check(waiting:IsShown() and waiting.glow:IsShown() and waiting.hot:IsShown() and waiting.glow.__blend == "ADD" and Lode.mortarGlow:IsShown()
+                and waiting.__vertex[1] == 1 and waiting.__vertex[2] > 0.6, "lode looks: the bomb is a bright core in a glow")
+            local shownPips = 0
+            for _, pip in ipairs(side.pips) do if pip:IsShown() then shownPips = shownPips + 1 end end
+            check(shownPips == r.bombs, "lode looks: a pip for every bomb left")
+            -- a click that misses the board still drops the bomb while aiming, even off the window (Jake)
+            local c = Lode.catcher
+            local cl, ct, cw, ch = STUB.rect(c)
+            local CATCH = Lode.layout.CATCH
+            check(c:IsShown() and near(bl - cl, CATCH.side) and near(ct, bt) and near((cl + cw) - (sl + sw), CATCH.side)
+                and near((bt - bh) - (ct - ch), CATCH.bottom) and CATCH.side >= 250 and c:GetFrameLevel() < board:GetFrameLevel() and c:GetFrameLevel() < side:GetFrameLevel(),
+                "lode: while aiming, clicks are caught well to either side of the window and below it (never above the board)")
+            STUB.sounds = {}
+            STUB.Script(c, "OnClick")
+            check(r.state == "flying" and r.bombs == Lode.BOMBS - 1 and not c:IsShown() and not Lode.mortarGlow:IsShown(),
+                "lode: a click off the board drops the bomb; with one in the air the world gets its clicks back")
+            STUB.Script(c, "OnClick")
+            check(r.bombs == Lode.BOMBS - 1, "lode: (nothing more while it flies)")
+            -- sparks behind it
+            for _ = 1, 3 do STUB.Script(board, "OnUpdate", 0.016) end
+            local art = Lode.ballArt[1]
+            local tl, tt, tw, th = STUB.rect(art.trail[1])
+            check(art:IsShown() and art.glow:IsShown() and art.hot:IsShown() and art.trail[1]:IsShown() and art.trail[2]:IsShown()
+                and not art.trail[3]:IsShown() and near(tl + tw / 2 - bl, r.balls[1].x, 0.01) and bt - (tt - th / 2) < r.balls[1].y
+                and #art.trail == Lode.layout.TRAIL, "lode looks: sparks trail behind the bomb")
+            -- the keg goes up: a ring spreads, a number floats off everything mined, the count climbs, a word of praise
+            for _ = 1, 600 do
+                if keg.lit then break end
+                STUB.Script(board, "OnUpdate", 0.01)
+            end
+            local texts, sizes = {}, {}
+            for _, f in ipairs(Lode.floats) do
+                if f:IsShown() then
+                    texts[f:GetText()] = (texts[f:GetText()] or 0) + 1
+                    sizes[f:GetText()] = f.__fontSize
+                end
+            end
+            check(keg.lit and r.pegsHit == 6 and texts["+10"] == 5 and texts["+50"] == 1 and sizes["+50"] > sizes["+10"] and #r.events == 0,
+                "lode looks: a number floats off every peg mined, bigger for gold")
+            local ring
+            for _, x in ipairs(Lode.rings) do if x:IsShown() then ring = x end end
+            check(ring and ring.__blend == "ADD" and Lode.combo:IsShown() and Lode.combo:GetText() == "6 pegs"
+                and texts[Lode.PRAISE[6]] == 1 and sizes[Lode.PRAISE[6]] >= 20, "lode looks: a keg's blast spreads in a ring, the pegs are counted, six earns a word")
+            local ringW = ring:GetWidth()
+            STUB.Script(board, "OnUpdate", 0.1)
+            check(ring:GetWidth() > ringW and ring:GetAlpha() < 1, "lode looks: (the ring grows and fades)")
+            -- landing: the pocket pays out in a big number, with a coin sound
+            for _ = 1, 3000 do
+                if r.state ~= "flying" then break end
+                STUB.Script(board, "OnUpdate", 0.02)
+            end
+            local payout
+            for _, f in ipairs(Lode.floats) do if f:IsShown() and f:GetText() == "x5  +500" then payout = f end end
+            local coin = false
+            for _, id in ipairs(STUB.sounds) do if id == SOUNDKIT.LOOT_WINDOW_COIN_SOUND then coin = true end end
+            check(r.state == "aim" and r.ore == 500 and payout and payout.__fontSize >= 16 and Lode.pockets[3].flash:IsShown() and coin
+                and not Lode.combo:IsShown() and not art:IsShown() and not art.glow:IsShown() and not art.trail[1]:IsShown() and c:IsShown(),
+                "lode looks: the pocket pays out in a big number and a coin sound; the bomb and its sparks are gone")
+            for _ = 1, 30 do STUB.Script(board, "OnUpdate", 0.1) end
+            local lingering = false
+            for _, f in ipairs(Lode.floats) do if f:IsShown() then lingering = true end end
+            for _, ring in ipairs(Lode.rings) do if ring:IsShown() then lingering = true end end
+            check(not lingering, "lode looks: the numbers and rings fade away")
+            -- a peg that's hit: it lights up and its ring jumps
+            local p = peg(W / 2, 300)
+            r.pegs = { p }
+            r.dirty = true
+            STUB.Script(board, "OnUpdate", 0.016)
+            STUB.Script(board, "OnClick")
+            for _ = 1, 600 do
+                if p.lit then break end
+                STUB.Script(board, "OnUpdate", 0.01)
+            end
+            local pa = Lode.artOf[p]
+            STUB.Script(board, "OnUpdate", 0.05)
+            check(pa == Lode.pegArt[1] and pa.glow:IsShown() and pa.flash:IsShown() and pa.shadow:IsShown() and pa.ring:GetWidth() > 2 * Lode.PEG_R + 6 + 3,
+                "lode looks: a peg that's hit lights up and its ring jumps")
+            STUB.Script(board, "OnUpdate", Lode.layout.POP)
+            check(near(pa.ring:GetWidth(), 2 * Lode.PEG_R + 6) and pa.pop == nil, "lode looks: and settles back")
+            for _ = 1, 3000 do
+                if r.state ~= "flying" then break end
+                STUB.Script(board, "OnUpdate", 0.02)
+            end
+            check(pa.icon:GetAlpha() < 1 or not pa.icon:IsShown(), "lode looks: a mined peg fades out")
+            for _ = 1, 5 do STUB.Script(board, "OnUpdate", 0.1) end
+            check(not pa.icon:IsShown() and not pa.shadow:IsShown() and not pa.glow:IsShown() and pa.fading == nil, "lode looks: and is gone")
+            -- the next floor's pegs are at full strength again, on the same art
+            r.pegs = { peg(100, 200) }
+            r.dirty = true
+            STUB.Script(board, "OnUpdate", 0.016)
+            for _ = 1, 10 do STUB.Script(board, "OnUpdate", 0.1) end
+            check(Lode.pegArt[1].icon:IsShown() and Lode.pegArt[1].icon:GetAlpha() == 1 and not Lode.pegArt[1].glow:IsShown(), "lode looks: a new peg on that spot is solid again")
+            -- upgrades have pictures, on the tiles and in the list
+            r.pegs = { peg(W / 2, 300) }
+            r.quota = 1
+            r.dirty = true
+            STUB.Script(board, "OnUpdate", 0.016)
+            STUB.Script(board, "OnClick")
+            for _ = 1, 3000 do
+                if r.state ~= "flying" then break end
+                STUB.Script(board, "OnUpdate", 0.02)
+            end
+            local first = r.offers[1]
+            check(r.state == "choose" and o.tiles[1].icon:GetTexture() == Lode.UpgradeIcon(first) and Lode.UpgradeIcon(first) ~= nil
+                and not c:IsShown(), "lode looks: each upgrade tile has its picture")
+            STUB.Script(o.tiles[1], "OnClick")
+            check(side.ups[1].icon:GetTexture() == Lode.UpgradeIcon(first), "lode looks: and so does the list")
+            -- polish (0.16.9, Jake: "go a little deeper on the design and polish it")
+            do
+                local L = Lode.layout
+                Lode:NewRun(91)
+                local q = Lode.run
+                -- a new floor's pegs fade in, the top rows first
+                local low, high, gold, ore
+                for i, a in ipairs(q.pegs) do
+                    if not high or a.y < q.pegs[high].y then high = i end
+                    if not low or a.y > q.pegs[low].y then low = i end
+                    if a.kind == "gold" then gold = gold or i end
+                    if a.kind == "ore" then ore = ore or i end
+                end
+                check(Lode.pegArt[low].icon:IsShown() and Lode.pegArt[low].icon:GetAlpha() == 0 and Lode.pegArt[high].icon:GetAlpha() == 0,
+                    "lode polish: a new floor's pegs start unseen")
+                STUB.Script(board, "OnUpdate", 0.35)
+                check(Lode.pegArt[high].icon:GetAlpha() == 1 and Lode.pegArt[low].icon:GetAlpha() < 0.5, "lode polish: and fade in, the top rows first")
+                for _ = 1, 8 do STUB.Script(board, "OnUpdate", 0.1) end
+                check(Lode.pegArt[low].icon:GetAlpha() == 1 and Lode.pegArt[low].appear == nil and Lode.pegArt[low].ring:GetAlpha() == 1, "lode polish: until all are solid")
+                -- gold, kegs and crystals breathe; plain ore doesn't glow at rest
+                local g1 = Lode.pegArt[gold].glow:GetAlpha()
+                STUB.Script(board, "OnUpdate", 0.4)
+                local g2 = Lode.pegArt[gold].glow:GetAlpha()
+                check(Lode.pegArt[gold].glow:IsShown() and g1 ~= g2 and g1 > 0 and g1 <= L.IDLE_GLOW and g2 > 0 and g2 <= L.IDLE_GLOW
+                    and not Lode.pegArt[ore].glow:IsShown() and Lode.pegArt[1].glow:IsShown(), "lode polish: gold, kegs and crystals glow softly, and it moves")
+                -- the mortar: a dark bowl in a gold ring, its barrel turned to the aim
+                STUB.cursorX, STUB.cursorY = bl + W / 2 + 100, bt - (Lode.LAUNCH_Y + 300)
+                STUB.Script(board, "OnUpdate", 0.016)
+                local a = math.atan2(100, 300)
+                local rl, rt, rw, rh = STUB.rect(Lode.barrel)
+                check(near(Lode.barrelAngle, a, 1e-9) and Lode.barrel.__rotation == Lode.barrelAngle and Lode.barrel:IsShown() and Lode.mortar:IsShown()
+                    and Lode.mortarRing:IsShown() and near(rl + rw / 2 - bl, W / 2 + 15 * math.sin(a), 0.01)
+                    and near(bt - (rt - rh / 2), Lode.LAUNCH_Y + 15 * math.cos(a), 0.01) and Lode.mortar.__texture == ns.MEDIA .. "disc",
+                    "lode polish: the mortar's barrel turns to where the bomb will go")
+                -- how far to the quota: along the top of the board and on the card, in words too
+                q.ore = 225
+                q.dirty = true
+                STUB.Script(board, "OnUpdate", 0.016)
+                check(near(Lode.topBar.fill:GetWidth(), (W - 2) / 2) and near(side.bar.fill:GetWidth(), (L.SIDE_W - 24) / 2) and Lode.topBar:IsShown()
+                    and side.togo:GetText() == "225 to go" and side.ore:GetText() == "225 / 450", "lode polish: the quota fills along the top of the board and on the card")
+                q.ore = 450
+                q.dirty = true
+                STUB.Script(board, "OnUpdate", 0.016)
+                check(side.togo:GetText() == "Quota hit!" and Lode.topBar.fill.__color[1] == 0.45 and side.bar.fill.__color[1] == 0.45
+                    and near(Lode.topBar.fill:GetWidth(), W - 2), "lode polish: both turn green at the quota")
+                q.ore = 0
+                -- the run card: the floor big, the seam's ore, and what the pegs do
+                q.dirty = true
+                STUB.Script(board, "OnUpdate", 0.016)
+                check(side.floor:GetText() == "1" and side.floor.__fontSize >= 28 and side.floorLabel:GetText() == "FLOOR"
+                    and side.seamIcon:IsShown() and side.seamIcon:GetTexture() == Lode.PegIcon("ore", 1), "lode polish: the floor in big figures, with the seam's ore")
+                local lg = side.legend
+                check(#lg == 4 and lg[1].name:GetText() == "Copper ore" and lg[1].what:GetText() == "+10" and lg[2].name:GetText() == "Gold vein"
+                    and lg[2].what:GetText() == "+50" and lg[3].name:GetText() == "Powder keg" and lg[3].what:GetText() == "blows up nearby pegs"
+                    and lg[4].name:GetText() == "Crystal" and lg[4].what:GetText() == "splits your bomb"
+                    and lg[2].icon:GetTexture() == Lode.PegIcon("gold", 1) and lg[1]:IsShown(), "lode polish: the card says what each peg does and is worth")
+                q.upgrades.rich, q.upgrades.fever = 1, 1
+                q.floor = 3
+                q.dirty = true
+                STUB.Script(board, "OnUpdate", 0.016)
+                check(lg[1].name:GetText() == "Tin ore" and lg[1].what:GetText() == "+17" and lg[2].what:GetText() == "+170"
+                    and lg[1].icon:GetTexture() == Lode.PegIcon("ore", 3), "lode polish: worth what it is now, on this floor with these upgrades")
+                -- it all fits: the legend above the foot, the upgrades above the legend (which gives way if they ever reach it)
+                local _, l4t, _, l4h = STUB.rect(lg[4])
+                local _, ltt = STUB.rect(side.legendTitle)
+                local _, nt = STUB.rect(side.newRun)
+                local _, u2t, _, u2h = STUB.rect(side.ups[2])
+                check(l4t - l4h >= (st - sh) + L.FOOT_H and nt < l4t - l4h and u2t - u2h > ltt, "lode polish: upgrades, then the pegs, then the foot")
+                local n = 0
+                for _, u in ipairs(Lode.UPGRADES) do
+                    n = n + 1
+                    q.upgrades[u[1]] = n <= 8 and 1 or nil
+                end
+                q.dirty = true
+                STUB.Script(board, "OnUpdate", 0.016)
+                local _, u8t, _, u8h = STUB.rect(side.ups[8])
+                local _, lrt = STUB.rect(side.legendRule)
+                check(side.ups[8]:IsShown() and not side.ups[9]:IsShown() and lg[1]:IsShown() and u8t - u8h >= lrt, "lode polish: eight upgrades still clear the legend")
+                q.upgrades[Lode.UPGRADES[9][1]] = 1
+                q.dirty = true
+                STUB.Script(board, "OnUpdate", 0.016)
+                check(side.ups[9]:IsShown() and not lg[1]:IsShown() and not side.legendTitle:IsShown() and not side.legendRule:IsShown(),
+                    "lode polish: with more than that the legend gives way")
+                q.upgrades, q.floor = {}, 1
+                -- a hit peg keeps its picture: a halo and a light wash, not a white disc
+                local hp = peg(W / 2, 300)
+                q.pegs = { hp }
+                q.quota = 1e9
+                q.dirty = true
+                STUB.cursorX, STUB.cursorY = bl + W / 2, bt - 400
+                for _ = 1, 10 do STUB.Script(board, "OnUpdate", 0.1) end
+                STUB.Script(board, "OnClick")
+                for _ = 1, 600 do
+                    if hp.lit then break end
+                    STUB.Script(board, "OnUpdate", 0.01)
+                end
+                STUB.Script(board, "OnUpdate", 0.01)
+                local ha = Lode.artOf[hp]
+                check(ha.icon:IsShown() and ha.icon:GetAlpha() == 1 and near(ha.glow:GetAlpha(), L.LIT_GLOW) and L.LIT_GLOW <= 0.6 and ha.flash:IsShown()
+                    and ha.flash.__vertex[4] <= 0.2 and ha.ring.__vertex[1] == 1, "lode polish: a hit peg keeps its picture under a halo, not a white disc")
+                for _ = 1, 3000 do
+                    if q.state ~= "flying" then break end
+                    STUB.Script(board, "OnUpdate", 0.02)
+                end
+                -- a keg lights the whole board up for a moment
+                local kg = peg(W / 2, 300, "keg")
+                q.pegs = { kg }
+                q.dirty = true
+                for _ = 1, 10 do STUB.Script(board, "OnUpdate", 0.1) end
+                STUB.Script(board, "OnClick")
+                for _ = 1, 600 do
+                    if kg.lit then break end
+                    STUB.Script(board, "OnUpdate", 0.01)
+                end
+                check(Lode.flash:IsShown() and Lode.flash:GetAlpha() > 0 and Lode.flash:GetAlpha() <= 0.2 and Lode.flash.__blend == "ADD",
+                    "lode polish: a keg lights the board up for a moment")
+                STUB.Script(board, "OnUpdate", 0.3)
+                check(not Lode.flash:IsShown(), "lode polish: (and it's gone)")
+                for _ = 1, 3000 do
+                    if q.state ~= "flying" then break end
+                    STUB.Script(board, "OnUpdate", 0.02)
+                end
+                check(Lode.walls[1].__gradient ~= nil and Lode.walls[2].__gradient ~= nil and Lode.pockets[3].shine.__gradient ~= nil,
+                    "lode polish: the walls fall into shadow and the pockets are lit from below")
+            end
+
+            -- what the rules report for the screen to show
+            local pr = Run.New(11)
+            local k2, n2 = peg(W / 2, 300, "keg"), peg(W / 2 + 20, 330)
+            pr.pegs = { k2, n2 }
+            pr:Fire(0)
+            while pr.state == "flying" and not k2.lit do pr:Tick(STEP) end
+            local kinds = {}
+            for _, e in ipairs(pr.events) do kinds[e.kind] = (kinds[e.kind] or 0) + 1 end
+            check(kinds.mine == 2 and kinds.blast == 1 and kinds.land == nil and pr.pegsHit == 2 and pr.events[1].ref == k2 and pr.events[1].v == 10,
+                "lode: the rules note what happened: pegs mined, a keg gone up")
+            fly(pr)
+            check(pr.events[#pr.events].kind == "land" and pr.events[#pr.events].gain == 100 and pr.events[#pr.events].pocket == 3, "lode: and where each bomb landed")
+            local one = Run.New(11)
+            local op = peg(W / 2, 300)
+            one.pegs = { op }
+            one:Fire(0)
+            while one.state == "flying" and op.hits < 2 do one:Tick(STEP) end
+            local hits = 0
+            for _, e in ipairs(one.events) do if e.kind == "hit" and e.ref == op then hits = hits + 1 end end
+            check(hits == 1 and one.pegsHit == 1, "lode: bouncing on a peg already mined is a hit, not another peg")
+            one:Fire(0)
+            fly(one)
+            one:Fire(0)
+            check(#one.events == 0 and one.pegsHit == 0, "lode: each shot starts its notes afresh")
+        end
+
+        -- the guild's hiscores (0.16.9, Jake: "add a hiscore"): on the board before and after a run, and in the
+        -- middle of one from the Hiscores button
+        do
+            local L = Lode.layout
+            local store = Sync:Store("lode")
+            for id in pairs(store) do store[id] = nil end
+            Sync.index = nil
+            Lode.run = nil
+            ns.db.games.lode = nil
+            Lode:Refresh()
+            check(o:IsShown() and o.scoreTitle:IsShown() and o.scoreTitle:GetText() == "Guild hiscores" and o.noScores:IsShown()
+                and not o.scores[1]:IsShown() and #o.scores == L.SCORE_ROWS and not side.scoresBtn:IsEnabled(),
+                "hiscores: before a run the board has the guild's, or says there are none yet")
+            local now = ns.Now()
+            local function score(who, depth, ore)
+                return Sync:Apply(Sync.collections.lode, { id = who, rev = now, by = who, author = who, t = now, depth = depth, ore = ore })
+            end
+            score("Raider03-Realm", 6, 4000)
+            score("Raider04-Realm", 6, 5200)
+            score("Raider05-Realm", 9, 100)
+            local sc = o.scores
+            check(sc[1]:IsShown() and sc[1].rank:GetText() == "1." and sc[1].name:GetText() == "Raider05" and sc[1].floor:GetText() == "floor 9"
+                and sc[1].ore:GetText() == "100 ore" and sc[2].name:GetText() == "Raider04" and sc[2].ore:GetText() == "5,200 ore"
+                and sc[3].name:GetText() == "Raider03" and not sc[4]:IsShown() and not o.noScores:IsShown() and not sc[1].mine:IsShown(),
+                "hiscores: scores show as they arrive, deepest first, then most ore")
+            local cls = ns.db.guild.players["Raider05-Realm"].class
+            check(cls and sc[1].name.__textColor[1] == RAID_CLASS_COLORS[cls].r, "hiscores: names in their class colour")
+            -- laid out under Start run, centred on the board, clear of the pockets
+            local r1l, r1t, r1w, r1h = STUB.rect(sc[1])
+            local _, r8t, _, r8h = STUB.rect(sc[#sc])
+            local _, stt, _, sth = STUB.rect(o.start)
+            local _, ttl = STUB.rect(o.scoreTitle)
+            check(near(r1l + r1w / 2, bl + bw / 2) and r1w == L.SCORE_W and near(bt - r1t, L.SCORE_TOP) and ttl < stt - sth and ttl > r1t
+                and r8t - r8h >= bt - bh + Lode.POCKET_H + 20, "hiscores: the list sits under Start run, centred, clear of the pockets")
+            -- our own best goes on it as it's made, marked
+            local me = Sync:Me()
+            local wasBest = Lode:Finish({ cleared = 7, total = 3000 })
+            check(wasBest == true and Lode.Saved().depth == 7, "hiscores: (a new best of ours)")
+            check(store[me] ~= nil and store[me].depth == 7 and store[me].ore == 3000, "hiscores: a new best of ours is shared")
+            Lode:Refresh()
+            check(sc[2].name:GetText() == "Jake" and sc[2].rank:GetText() == "2." and sc[2].floor:GetText() == "floor 7" and sc[2].mine:IsShown()
+                and not sc[1].mine:IsShown() and sc[3].name:GetText() == "Raider04", "hiscores: and shows in its place, marked as ours")
+            -- further down than the list is long: ours takes the last row, with its real rank
+            for i = 1, 9 do score(("Deep%02d-Realm"):format(i), 20 + i, 10) end
+            check(sc[1].name:GetText() == "Deep09" and sc[7].rank:GetText() == "7." and sc[8].name:GetText() == "Jake" and sc[8].rank:GetText() == "11."
+                and sc[8].mine:IsShown() and not sc[7].mine:IsShown(), "hiscores: off the bottom of the list, ours still shows, with its real place")
+            -- in the middle of a run: the Hiscores button
+            local bsl, bst, bsw, bsh = STUB.rect(side.scoresBtn)
+            local nrl, nrt, nrw = STUB.rect(side.newRun)
+            check(near(nrl - (bsl + bsw), 8) and near(bst, nrt) and bsw == nrw and near((bsl + nrl + nrw) / 2, sl + sw / 2)
+                and near((bst - bsh) - (st - sh), 12) and not side.scoresBtn.red, "hiscores: a Hiscores button beside New run, centred at the card's foot")
+            STUB.Script(o.start, "OnClick")
+            local hr = Lode.run
+            check(hr and hr.state == "aim" and not o:IsShown() and side.scoresBtn:IsEnabled() and not side.scoresBtn.selected, "hiscores: (a run under way)")
+            STUB.Script(side.scoresBtn, "OnClick")
+            check(o:IsShown() and o.title:GetText() == "Hiscores" and o.start:IsShown() and o.start.label:GetText() == "Back" and sc[1]:IsShown()
+                and not o.tiles[1]:IsShown() and side.scoresBtn.selected == true, "hiscores: the button shows them over the board")
+            STUB.Script(Lode.catcher, "OnClick")
+            STUB.Script(board, "OnClick")
+            check(hr.state == "aim" and hr.bombs == Lode.BOMBS, "hiscores: no bombs drop while they're up")
+            STUB.Script(o.start, "OnClick")
+            check(Lode.run == hr and not o:IsShown() and not side.scoresBtn.selected and hr.shots == 0, "hiscores: Back returns to the same run")
+            STUB.Script(side.scoresBtn, "OnClick")
+            STUB.Script(side.scoresBtn, "OnClick")
+            check(not o:IsShown(), "hiscores: (the button again closes them too)")
+            -- not while a bomb is in the air
+            hr.quota = 1e9
+            STUB.cursorX, STUB.cursorY = bl + W / 2 + 60, bt - 400
+            STUB.Script(board, "OnClick")
+            check(hr.state == "flying" and not side.scoresBtn:IsEnabled(), "hiscores: the button waits while a bomb is in the air")
+            STUB.Script(side.scoresBtn, "OnClick")
+            check(not o:IsShown() and Lode.showScores == nil, "hiscores: (and does nothing then)")
+            for _ = 1, 3000 do
+                if hr.state ~= "flying" then break end
+                STUB.Script(board, "OnUpdate", 0.02)
+            end
+            -- a run ending shows them again, with ours
+            hr.pegs = {}
+            hr.bombs = 1
+            hr.dirty = true
+            STUB.Script(board, "OnUpdate", 0.016)
+            STUB.Script(board, "OnClick")
+            for _ = 1, 3000 do
+                if hr.state ~= "flying" then break end
+                STUB.Script(board, "OnUpdate", 0.02)
+            end
+            check(hr.state == "over" and o:IsShown() and o.scoreTitle:IsShown() and sc[8].name:GetText() == "Jake" and o.start.label:GetText() == "New run",
+                "hiscores: and they're up again when the run ends")
+            for id in pairs(store) do store[id] = nil end
+            Sync.index = nil
+            STUB.sent = {}
+        end
+
+        Lode.run = nil
+        ns.db.games.lode = nil
+        Lode:Refresh()
+        STUB.cursorX, STUB.cursorY = 0, 0
+        Games:SetMode("wowdle")
+        ns.Editor:ShowTab("home")
+    end
+end
+
+-- 0.16.9: level milestones: a pop-up at 20, 30, 40 and 50, a banner at 60 ---------------------------
+do
+    local M, T, Roster, Chat = ns.Milestone, ns.GroupToast, ns.Roster, ns.Chat
+    local G = ns.db.guild
+    local me = ns.Sync:Me()
+    check(M.Crossed(19, 20) == 20 and M.Crossed(19, 21) == 20 and M.Crossed(20, 21) == nil and M.Crossed(29, 41) == 40
+        and M.Crossed(59, 60) == 60 and M.Crossed(1, 60) == 60 and M.Crossed(60, 60) == nil and M.Crossed(38, 39) == nil,
+        "milestone: 20, 30, 40, 50 and 60, the highest one passed")
+    -- two guildies online, one offline
+    local saved = {}
+    for i, m in ipairs(STUB.guild) do saved[i] = { m, m.online, m.level } end
+    local function member(name, online, level)
+        for _, m in ipairs(STUB.guild) do
+            if m.name == name then m.online, m.level = online, level return m end
+        end
+        local m = { name = name, rankIndex = 2, level = level, online = online, class = "MAGE" }
+        table.insert(STUB.guild, m)
+        return m
+    end
+    local a, b, off = member("Dinger-Realm", true, 39), member("Sixty-Realm", true, 59), member("Sleeper-Realm", false, 49)
+    Roster:ScanGuild()
+    T.notes = {}
+    if T.frame then T.frame:Hide() end
+    if M.frame then M.frame:Hide() end
+    M.queue = {}
+    if Chat.frame then Chat.frame:Hide() end
+    check(ns.db.settings.levelToasts == true, "milestone: on by default")
+
+    -- someone reaches 40 while we watch: the small pop-up, with the game's level-up sound
+    STUB.sounds = {}
+    a.level = 40
+    Roster:ScanGuild()
+    local f = T.frame
+    check(f and f:IsShown() and f.note and f.text:GetText():find("Dinger", 1, true) and f.text:GetText():find("reached level 40!", 1, true)
+        and f.sub:GetText() == "Click to say grats" and f.icon:GetTexture() == ns.Profiles:Portrait("Dinger-Realm") and STUB.sounds[1] == 888
+        and not (M.frame and M.frame:IsShown()), "milestone: a guildie reaching 40 pops up, with the level-up sound")
+    check(G.feed[1].kind == "level" and G.feed[1].name == "Dinger-Realm" and G.feed[1].value == 40, "milestone: (Activity still has it)")
+    STUB.Script(f, "OnClick", "LeftButton")
+    check(Chat.frame:IsShown() and Chat.current == Chat:Get({ me, "Dinger-Realm" }) and not f:IsShown(), "milestone: clicking it opens a chat with them")
+    Chat:Delete(Chat.current)
+    Chat.frame:Hide()
+    -- an ordinary level is just Activity
+    a.level = 41
+    Roster:ScanGuild()
+    check(not f:IsShown() and #T.notes == 0 and G.feed[1].value == 41, "milestone: an ordinary level-up is no pop-up")
+    -- two levels at once, across 50
+    a.level = 51
+    Roster:ScanGuild()
+    check(f:IsShown() and f.text:GetText():find("reached level 50!", 1, true), "milestone: passing 50 in one go still counts")
+    f:Hide()
+    -- not for someone offline (it happened earlier), nor what's found at login
+    off.level = 50
+    Roster:ScanGuild()
+    check(not f:IsShown() and #T.notes == 0, "milestone: not for an offline member's level")
+    a.level = 60
+    Roster.sessionScan = nil
+    Roster:ScanGuild()
+    check(not f:IsShown() and not (M.frame and M.frame:IsShown()) and #M.queue == 0, "milestone: not for what's found at login")
+    -- turned off in Settings
+    ns.db.settings.levelToasts = false
+    b.level = 60
+    Roster:ScanGuild()
+    check(not (M.frame and M.frame:IsShown()) and #M.queue == 0 and not f:IsShown(), "milestone: none with Level-up pop-ups off")
+    ns.db.settings.levelToasts = true
+
+    -- 60: the banner
+    G.players["Sixty-Realm"].level = 59
+    STUB.sounds = {}
+    Roster:ScanGuild()
+    local bn = M.frame
+    check(bn and bn:IsShown() and not f:IsShown() and bn.level:GetText() == "LEVEL 60" and bn.who:GetText() == "Sixty"
+        and bn.who.__textColor[1] == RAID_CLASS_COLORS.MAGE.r and bn.sub:GetText() == "One of <Pog Squad> has made it."
+        and bn.portrait:GetTexture() == ns.Profiles:Portrait("Sixty-Realm") and bn.level.__fontSize >= 30,
+        "milestone: reaching 60 gets a banner with their name, in their class colour")
+    local quest = false
+    for _, id in ipairs(STUB.sounds) do if id == SOUNDKIT.IG_QUEST_LIST_COMPLETE then quest = true end end
+    check(STUB.sounds[1] == 888 and quest and bn:GetAlpha() == 0 and bn.__strata == "DIALOG", "milestone: with a fanfare, arriving from nothing")
+    STUB.Script(bn, "OnUpdate", M.IN / 2)
+    local midAlpha, midScale, midLine = bn:GetAlpha(), bn:GetScale(), bn.lines[1]:GetWidth()
+    STUB.Script(bn, "OnUpdate", M.IN / 2 + 0.01)
+    check(midAlpha > 0 and midAlpha < 1 and midScale > 1 and midLine > 1 and midLine < 380 and bn:GetAlpha() == 1 and near(bn:GetScale(), 1)
+        and near(bn.lines[1]:GetWidth(), 380) and near(bn.lines[2]:GetWidth(), 380), "milestone: it lands a little large and settles, its rules opening out")
+    local bl, bt, bw, bh = STUB.rect(bn)
+    local inside, lit = true, 0
+    for _, sp in ipairs(bn.sparks) do
+        local l, t, w = STUB.rect(sp)
+        if l + w / 2 < bl or l + w / 2 > bl + bw or t > bt + 4 or t < bt - bh - 4 then inside = false end
+        if sp:GetAlpha() > 0.05 then lit = lit + 1 end
+    end
+    check(#bn.sparks == M.SPARKS and inside and lit > 4, "milestone: gold sparks drift up through it")
+    local s1 = STUB.rect(bn.sparks[1])
+    local _, s1t = STUB.rect(bn.sparks[1])
+    STUB.Script(bn, "OnUpdate", 0.5)
+    local _, s1t2 = STUB.rect(bn.sparks[1])
+    check(s1t2 ~= s1t and bn:IsShown() and bn:GetAlpha() == 1, "milestone: (they move, and it stays a while)")
+    STUB.Script(bn, "OnUpdate", M.HOLD)
+    check(bn:IsShown() and bn:GetAlpha() < 1 and bn:GetAlpha() > 0, "milestone: then it fades")
+    STUB.Script(bn, "OnUpdate", M.OUT)
+    check(not bn:IsShown(), "milestone: and goes")
+
+    -- two at once take turns; a click sends one on its way; none in a fight
+    M:Celebrate("Dinger-Realm", 60)
+    M:Celebrate("Sixty-Realm", 60)
+    check(bn:IsShown() and bn.who:GetText() == "Dinger" and #M.queue == 1, "milestone: two banners take turns")
+    STUB.Script(bn, "OnClick", "LeftButton")
+    check(bn:IsShown() and bn.who:GetText() == "Sixty" and #M.queue == 0 and bn:GetAlpha() == 0, "milestone: a click dismisses one, and the next arrives")
+    STUB.Script(bn, "OnClick", "RightButton")
+    check(not bn:IsShown(), "milestone: (and that one)")
+    STUB.combat = true
+    M:Celebrate("Sixty-Realm", 60)
+    check(not bn:IsShown() and #M.queue == 1, "milestone: a banner waits out a fight")
+    STUB.combat = false
+    STUB.Fire("PLAYER_REGEN_ENABLED")
+    check(bn:IsShown() and bn.who:GetText() == "Sixty", "milestone: and shows when it ends")
+    bn:Hide()
+
+    -- our own: "You"
+    M:Celebrate(me, 60)
+    check(bn.who:GetText() == "You" and bn.sub:GetText() == "The long road ends. Well played.", "milestone: our own 60 says You")
+    bn:Hide()
+    T.notes = {}
+    f:Hide()
+    M:Celebrate(me, 20)
+    check(f:IsShown() and f.text:GetText() == "You reached level 20!" and f.sub:GetText() == "" and f.note.onClick == nil, "milestone: and our own 20, with nothing to click")
+    f:Hide()
+
+    -- with Pop-up sounds off in Settings they're silent
+    ns.db.settings.sounds = false
+    STUB.sounds = {}
+    M:Celebrate(me, 30)
+    M:Celebrate(me, 60)
+    check(#STUB.sounds == 0 and f:IsShown() and bn:IsShown(), "milestone: silent with Pop-up sounds off")
+    ns.db.settings.sounds = true
+    f:Hide()
+    bn:Hide()
+    T.notes = {}
+
+    -- /pog ding: a look at them
+    SlashCmdList.POGRAID("ding")
+    check(bn:IsShown() and bn.level:GetText() == "LEVEL 60" and bn.who:GetText() == "You", "milestone: /pog ding previews the banner")
+    bn:Hide()
+    SlashCmdList.POGRAID("ding 40")
+    check(f:IsShown() and f.text:GetText() == "You reached level 40!" and not bn:IsShown(), "milestone: /pog ding 40 previews the small one")
+    f:Hide()
+
+    -- tidy up
+    T.notes, M.queue = {}, {}
+    for _, e in ipairs(saved) do e[1].online, e[1].level = e[2], e[3] end
+    for i = #STUB.guild, #saved + 1, -1 do table.remove(STUB.guild, i) end
+    Roster:ScanGuild()
+    for _, n in ipairs({ "Dinger-Realm", "Sixty-Realm", "Sleeper-Realm" }) do G.players[n] = nil end
+    for i = #G.feed, 1, -1 do
+        local n = G.feed[i].name
+        if n == "Dinger-Realm" or n == "Sixty-Realm" or n == "Sleeper-Realm" then table.remove(G.feed, i) end
+    end
+    ns.Attendance.keyCache = nil
+    STUB.sounds = {}
+    ns.Editor:ShowTab("home")
+end
+
+-- 0.16.9: Games open by themselves on a flight path, if asked ---------------------------------------
+do
+    local Games, E = ns.Games, ns.Editor
+    E:ShowTab("home")
+    E.frame:Hide()
+    STUB.timers = {}
+    STUB.onTaxi = true
+    STUB.Fire("PLAYER_CONTROL_LOST")
+    STUB.Advance(Games.FLIGHT_WAIT + 0.5)
+    check(ns.db.settings.gamesOnFlight == false and not E.frame:IsShown(), "flight: nothing opens unless it's been asked for")
+    ns.db.settings.gamesOnFlight = true
+    STUB.Fire("PLAYER_CONTROL_LOST")
+    STUB.Advance(Games.FLIGHT_WAIT - 0.2)
+    check(not E.frame:IsShown() and Games.FLIGHT_WAIT >= 0.5, "flight: (not at once: the game says we're flying a moment later)")
+    STUB.Advance(0.3)
+    check(E.frame:IsShown() and E.currentTab == "games" and Games.page:IsVisible(), "flight: taking a flight path opens Games")
+    -- losing control for another reason isn't a flight
+    E.frame:Hide()
+    STUB.onTaxi = false
+    STUB.Fire("PLAYER_CONTROL_LOST")
+    STUB.Advance(Games.FLIGHT_WAIT + 0.1)
+    check(not E.frame:IsShown(), "flight: losing control for any other reason doesn't")
+    -- a window that's already open is left on its tab
+    STUB.onTaxi = true
+    E:Toggle("home")
+    STUB.Fire("PLAYER_CONTROL_LOST")
+    STUB.Advance(Games.FLIGHT_WAIT + 0.1)
+    check(E.frame:IsShown() and E.currentTab == "home", "flight: a window already open is left as it is")
+    -- unticked while we wait: nothing
+    E.frame:Hide()
+    STUB.Fire("PLAYER_CONTROL_LOST")
+    ns.db.settings.gamesOnFlight = false
+    STUB.Advance(Games.FLIGHT_WAIT + 0.1)
+    check(not E.frame:IsShown(), "flight: unticking it in the meantime stops it")
+    -- the checkbox in Settings
+    E:ShowTab("settings")
+    local c = ns.Settings.checks[10]
+    STUB.Script(c, "OnClick")
+    check(ns.db.settings.gamesOnFlight == true and c.checked, "flight: ticked in Settings")
+    STUB.Script(c, "OnClick")
+    check(ns.db.settings.gamesOnFlight == false and not c.checked, "flight: and unticked")
+    STUB.onTaxi = nil
+    E:ShowTab("home")
 end
 
 return results

@@ -353,7 +353,7 @@ end
 -- Our records shared under an earlier name of ours (the short name, before
 -- the guild roster told us the full one) move to the new name; the old
 -- copies are withdrawn as they were written, so nobody sees us twice.
-Sync.OWN = { "profs", "recipes", "gems", "scores", "wowdle", "profile", "kudos", "wish", "gear" }
+Sync.OWN = { "profs", "recipes", "gems", "scores", "wowdle", "profile", "kudos", "wish", "gear", "lode" }
 
 function Sync:MoveAuthor(old, new)
     if not old or not new or old == new or not self:GuildName() then return end

@@ -228,7 +228,7 @@ end
 ------------------------------------------------------------------------
 function Loot:Changed()
     self.counts = nil
-    if self.page and self.page:IsShown() then self:Refresh() end
+    if self.page and self.page:IsVisible() then self:Refresh() end
 end
 
 -- Per player: main spec items and all items over the last 8 nights, and

@@ -634,7 +634,7 @@ function Dungeons:BuildLooking(page)
 end
 
 function Dungeons:Changed()
-    if self.page and self.page:IsShown() then self:Refresh() end
+    if self.page and self.page:IsVisible() then self:Refresh() end
 end
 
 local function timeLeft(exp)

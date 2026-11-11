@@ -373,7 +373,7 @@ end
 -- UI
 ------------------------------------------------------------------------
 function Crafting:Changed()
-    if self.page and self.page:IsShown() then self:Refresh() end
+    if self.page and self.page:IsVisible() then self:Refresh() end
 end
 
 Crafting.PLACEHOLDER = "Search recipes"

@@ -633,8 +633,8 @@ ns.OnGuildChanged(function() Att.keyCache, Att.cache, Att.sessionsCache = nil, n
 
 function Att:Changed()
     self.cache, self.sessionsCache = nil, nil
-    if self.page and self.page:IsShown() then self:Refresh() end
-    if ns.Roster.page and ns.Roster.page:IsShown() then ns.Roster:RefreshPool() end
+    if self.page and self.page:IsVisible() then self:Refresh() end
+    if ns.Roster.page and ns.Roster.page:IsVisible() then ns.Roster:RefreshPool() end
 end
 
 function Att:Summary()

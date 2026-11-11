@@ -40,6 +40,7 @@ Games.MODES = {
     { key = "wowdle", label = "Wowdle", w = 76 },
     { key = "sweeper", label = "Sapper Sweeper", w = 128 },
     { key = "gems", label = "Gem Cutter", w = 100 },
+    { key = "lode", label = "Motherlode", w = 100 },
     { key = "duels", label = "Ranked Duels", w = 112 },
 }
 
@@ -228,7 +229,7 @@ function Games:Rank(level, who)
 end
 
 function Games:Changed()
-    if self.page and self.page:IsShown() and self.mode == "sweeper" then self:RefreshScores() end
+    if self.page and self.page:IsVisible() and self.mode == "sweeper" then self:RefreshScores() end
 end
 
 ------------------------------------------------------------------------
@@ -337,7 +338,7 @@ function Games:Build(page)
     self:BuildScores(page)
     -- the other games each get a full-page view under the tabs
     self.views = {}
-    for key, mod in pairs({ duels = ns.Duels, gems = ns.Gems, wowdle = ns.Wowdle }) do
+    for key, mod in pairs({ duels = ns.Duels, gems = ns.Gems, wowdle = ns.Wowdle, lode = ns.Lode }) do
         local v = CreateFrame("Frame", nil, page)
         v:SetAllPoints()
         v:Hide()
@@ -369,7 +370,7 @@ function Games:SetMode(mode)
         self.bar:Hide()
         self.board:Hide()
         self.bar.message:Hide()
-        local mod = ({ duels = ns.Duels, gems = ns.Gems, wowdle = ns.Wowdle })[mode]
+        local mod = ({ duels = ns.Duels, gems = ns.Gems, wowdle = ns.Wowdle, lode = ns.Lode })[mode]
         mod:Refresh()
     end
 end
@@ -686,3 +687,25 @@ ns.Editor:RegisterTab("games", "Games", 5,
         Games:Refresh()
         if Games.mode ~= "sweeper" then Games:SetMode(Games.mode) end
     end)
+
+------------------------------------------------------------------------
+-- On a flight path there's nothing to do but wait: with "Open Games on
+-- flight paths" ticked in Settings (off unless you tick it; Jake, 0.16.9),
+-- taking one opens the Games tab on the game you last played. The game says
+-- we've lost control of our character for other reasons too (a fear, a
+-- cutscene), so we look a moment later whether we're really on a taxi. A
+-- window already open is left as it is, and nothing closes on landing.
+------------------------------------------------------------------------
+Games.FLIGHT_WAIT = 1 -- seconds after losing control before asking the game if we're flying
+
+function Games:OnControlLost()
+    if ns.db.settings.gamesOnFlight ~= true then return end
+    C_Timer.After(Games.FLIGHT_WAIT, function()
+        if ns.db.settings.gamesOnFlight ~= true or not (UnitOnTaxi and UnitOnTaxi("player")) then return end
+        local E = ns.Editor
+        if E.frame and E.frame:IsShown() then return end
+        E:Toggle("games")
+    end)
+end
+
+ns.On("PLAYER_CONTROL_LOST", function() Games:OnControlLost() end)

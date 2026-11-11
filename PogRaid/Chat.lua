@@ -487,8 +487,40 @@ function Chat:Echo(c, line)
     local label = c.name or (self:IsGroup(c) and self:Members(c, true)) or "Pog chat"
     if #label > 30 then label = label:sub(1, 27) .. "..." end
     local info = ChatTypeInfo and ChatTypeInfo.WHISPER
-    DEFAULT_CHAT_FRAME:AddMessage(("[%s] %s: %s"):format(esc(label), first(line.from), esc(line.text)),
+    DEFAULT_CHAT_FRAME:AddMessage(("%s %s: %s"):format(self:Link(c, esc(label)), first(line.from), esc(line.text)),
         info and info.r or 1, info and info.g or 0.5, info and info.b or 1)
+end
+
+-- "[label]" as a link in the game's chat box: clicking it opens that chat,
+-- ready to answer (Jake, 0.16.9), the way a whisper's name does. The game's
+-- "addon" link type: its own click handler leaves it alone and ours runs
+-- after it (Questie's links work the same way on this client). The link
+-- carries a number for the chat, good for this session (the chat box doesn't
+-- outlive a reload either).
+Chat.links = {}  -- number -> chat key
+Chat.linkOf = {} -- chat key -> number
+
+function Chat:Link(c, label)
+    local n = self.linkOf[c.key]
+    if not n then
+        n = #self.links + 1
+        self.links[n], self.linkOf[c.key] = c.key, n
+    end
+    return ("|Haddon:PogRaid:chat:%d|h[%s]|h"):format(n, label)
+end
+
+-- A link was clicked in chat: if it's one of ours, open its chat. True if it was ours.
+function Chat:OnLink(link)
+    local n = type(link) == "string" and link:match("^addon:PogRaid:chat:(%d+)$")
+    if not n then return false end
+    local key = self.links[tonumber(n)]
+    local c = key and self:Enabled() and self:Store()[key]
+    if c then self:Open(c, true) end
+    return true
+end
+
+if hooksecurefunc and SetItemRef then
+    hooksecurefunc("SetItemRef", function(link) Chat:OnLink(link) end)
 end
 
 -- Is `c` open in front of us? (Not while the New chat picker is over it.)

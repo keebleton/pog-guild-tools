@@ -123,6 +123,68 @@ launchers and plain-English steps. Read this whole file before changing anything
   "[Pog chat] Name: text", or "[group name or its people] Name: text". No volume slider: the game plays a sound kit at
   its channel's volume and gives addons no per-sound volume (Jake asked; a mute is what's possible). Settings' "Pop-up
   sounds" still mutes all.
+- 0.16.9 Motherlode (`Lode.lua`, `ns.Lode`; Jake asked for "a peggle roguelike": ours is its own game in that genre,
+  never Peggle's name, levels or look). Games tab mode "lode" (`/pog lode` or `/pog motherlode`). Rules in `Lode.Run`
+  (no UI, dice from `Lode.Rng(seed)` so a run replays exactly): board space 560 x 566, y DOWN; a bomb drops from the
+  mortar at an angle from straight down (max 80 degrees), gravity and bounces in fixed 1/240 s ticks (`Run:Step` takes
+  real elapsed time). A peg is mined once (`Mine`), stays to bounce on until the shot ends, crumbles at once after 3
+  bounces; kegs blow up their neighbours (chaining), crystals split the bomb; the pocket a bomb lands in (x1 x2 x5 x2
+  x1) multiplies what THAT bomb mined. Floor quota `Lode.Quota` = 450 x 1.5 per floor, 5 bombs; reach it for a pick
+  of 3 upgrades (`Lode.UPGRADES`, each with a cap) and the next floor, else the run is over. Tuned by simulation
+  (scratch script: random clicking clears ~2 floors, best of 4 aims ~7, best of 10 ~9); retune `QUOTA` /
+  `QUOTA_GROWTH` from Jake's playtesting. UI: board card left (pegs are round-masked ore icons from item IDs, a tinted
+  disc where masks aren't available), run card right (floor, ore / quota bar, bombs, upgrades, best, New run with a
+  confirm click mid-run), overlays on the board (how to play, the 3 upgrade tiles, run over). Best run in
+  `db.games.lode = { depth, ore, runs }`. Guild hiscores (Jake: "add a hiscore", after being told the cost): the `lode`
+  Sync collection (code "m", id = author, fields depth and ore), written by `Lode:Publish` when a run is a new best
+  (and once when the game is first opened, for a best made earlier). `Lode.share = true`; false stops the writing.
+  The cost, accepted: an addon older than 0.16.9 can't file a record of a collection it doesn't know and asks for it
+  again at every check-in, a few small messages every ten minutes while old and new are online together, until it
+  updates. The list (`Lode:ScoreRows`: top 8, ours on the last row with its real rank if we're lower) is on the
+  board's overlay before and after a run, and mid-run from the Hiscores button at the card's foot (`showScores`,
+  only while aiming; no bomb drops while it's up; Back returns to the same run).
+  Naming trap: the rules constructor is `Run.New(seed)`; `Lode:NewRun()` is the button's handler.
+  Looks (Jake: "more visually appealing", "the ball could be brighter or more dopamine enhancing"): a faint talent
+  picture behind the board (`Lode.ART`, not a gallery page: its "Use on" row is full) under a top-to-bottom shade; pegs
+  have a shadow, a ring in their colour, a glow and flash when lit, a ring that jumps when hit (`POP`) and they fade
+  out when mined (`FADE`) instead of vanishing; the bomb is a bright core in an additive glow with `TRAIL` sparks
+  behind it; "+10" floats off every peg mined (bigger and gold for gold, green "x2" for a lucky one), a keg's blast is
+  a spreading ring, the pocket pays out in a big "x5  +500" with a coin sound, a "6 pegs" count runs top right and
+  `Lode.PRAISE` words pop at 6 / 10 / 14 / 18 pegs in one shot. All of it is driven by `Run.events` (mine / hit / blast
+  / land, emptied by `Lode:ShowEvents` each frame; `Fire` starts the list afresh) and `Lode:StepEffects(dt)`; the
+  rules never wait on an effect. A bomb's spark path is noted once a frame in `Update` (not in `Draw`, which also runs
+  inside `Refresh`). `Lode.catcher`: an invisible button under the board and run card, 320px past either side and
+  170px below (never above the board), shown only while a bomb is waiting, so a click that slips off the board or the
+  window while aiming still drops it (Jake); it sits at the view's own frame level, below the cards.
+- 0.16.9 Motherlode polish (Jake, from his screenshot: "go a little deeper on the design"): the mortar is a dark bowl in
+  a gold ring with a barrel that turns to the aim (`Lode:AimBarrel`; the Goblin Mortar icon read as a black crescent);
+  a hit peg keeps its picture under a halo (`LIT_GLOW` 0.5, a faint wash) instead of blowing out to a white disc
+  (`FadePeg` gives the glow its own strength); gold, kegs and crystals pulse faintly at rest (`IDLE_GLOW`); a new
+  floor's pegs fade in top rows first (`APPEAR`, `STAGGER`); the walls fall into shadow; the quota also fills a 3px bar
+  along the top of the board (`Lode.topBar`); a keg and the best pocket flash the whole board (`Lode:Flash`). The run
+  card: FLOOR in 30pt gold with the seam's ore icon, a 12px quota bar with "225 to go" / "Quota reached", bomb pips,
+  upgrades (icon, name, count), a "Pegs" legend (what each kind does and is worth on this floor with these upgrades;
+  it hides if more than 8 upgrades reach down to it) and the foot (best, New run).
+- 0.16.9 level milestones (`ns.Milestone`, in JoinPopup.lua): `Roster:ScanGuild` passes each level-up's old level
+  (`from`); `Home:OnGuildScan` hands live ones (not `away`) to `Milestone:OnLevel`. `Milestone.Crossed(from, to)` is
+  the highest of 20/30/40/50/60 passed. Below 60: a note in the new-group pop-up with their portrait (click opens a
+  chat to say grats). 60: `PogRaidLevelBanner`, no box, a dark cloud and gold light, their portrait in a gold ring,
+  the name in class colour, "LEVEL 60" in 36pt, rules that open out, sparks drifting up; it lands at scale 1.18 and
+  settles, holds 7s, fades; banners queue and wait out combat. Sound: the game's level-up (SOUNDKIT.LEVELUP or 888).
+  `settings.levelToasts`; `/pog ding` previews the banner, `/pog ding 40` the small one.
+- 0.16.9 `settings.gamesOnFlight` (off by default): PLAYER_CONTROL_LOST, then a second later `UnitOnTaxi("player")`,
+  opens the Games tab if the window is closed (`Games:OnControlLost`). Nothing closes on landing.
+- Settings' General card now has ten checks at `CHECK_PITCH` 23 (both cards), `GENERAL_H` 322: ten officer ranks
+  still fit under it with 9px to spare. An eleventh check needs a rethink of that column, not another squeeze.
+- 0.16.9 pages refresh only when really on screen: every `X:Changed()` guard is `page:IsVisible()`, not `IsShown()`. A
+  page of the closed window is still flagged shown, so background sync kept redrawing whichever tab was last open; on
+  Profiles that restarted the profile song with the addon closed (Jake). `Profiles:Open` uses it too, so asking for a
+  profile with the window closed opens the window. The test stub's `IsVisible` walks the parents, and the tests' copy
+  of `Editor:ShowTab` opens the window (as /pog and the tabs always do in the game).
+- 0.16.9: the "[label]" of an echoed line is a link, `|Haddon:PogRaid:chat:<n>|h[label]|h` (`Chat:Link`; n is a
+  session number for the chat, `Chat.links` / `Chat.linkOf`). Clicking it runs the game's `SetItemRef`, which leaves
+  "addon" links alone, then our `hooksecurefunc("SetItemRef")` -> `Chat:OnLink` opens that chat with the keyboard in
+  its box. Same mechanism as Questie's links on this client (a post-hook, so nothing is tainted).
 - 0.16.8 group name and picture (Jake: "like imessage"): `c.name` (cleaned by Codec.CleanText, 24 chars), `c.icon` (a
   file ID from `Profiles:IconChoices()`), `c.metaAt` (when set; the newest wins). Groups only (`Chat:IsGroup`, 3+).
   Set from Edit in the chat's heading or its right-click menu (`Chat:Menu` -> `UI.Prompt` / `UI.Picker`); `SetMeta`

@@ -140,7 +140,7 @@ function Roster:ScanGuild()
                 if not p or not p.inGuild then
                     joined[#joined + 1] = name
                 elseif p.level and level and level > p.level then
-                    levels[#levels + 1] = { name = name, level = level, away = catchUp or not online }
+                    levels[#levels + 1] = { name = name, level = level, from = p.level, away = catchUp or not online }
                 end
             end
             p = self:Player(name)
@@ -552,7 +552,7 @@ function Roster:OnGroupChanged()
         end
     end
     if self.arranging then self:ArrangeStep() end
-    if self.page and self.page:IsShown() then self:Refresh() end
+    if self.page and self.page:IsVisible() then self:Refresh() end
 end
 
 function Roster:Arrange()
@@ -1167,7 +1167,7 @@ end
 ------------------------------------------------------------------------
 ns.On("GUILD_ROSTER_UPDATE", function()
     Roster:ScanGuild()
-    if Roster.page and Roster.page:IsShown() then Roster:Refresh() end
+    if Roster.page and Roster.page:IsVisible() then Roster:Refresh() end
 end)
 ns.On("GROUP_ROSTER_UPDATE", function() Roster:OnGroupChanged() end)
 ns.OnGuildChanged(function() wipe(Roster.online) end)

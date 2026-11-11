@@ -1,4 +1,12 @@
-# Pog Guild Tools 0.16.8
+# Pog Guild Tools 0.16.9
+
+- **New game: Motherlode.** Bomb your way down a mine on the Games tab (or /pog motherlode). Aim with the mouse and click to drop a bomb: every peg it bounces off is mined, and the pocket it lands in multiplies the haul. Reach each floor's ore quota before you run out of bombs, then pick one of three upgrades and go deeper. Bombs glow and trail sparks, ore numbers float off what you mine, kegs go up in a ring, and a click still counts if your aim takes the mouse off the board. Your deepest run goes on the guild hiscores, which show on the board before and after a run (or any time from the Hiscores button).
+- **Level-up pop-ups.** When a guildie reaches level 20, 30, 40 or 50 you get a pop-up, and reaching 60 gets a banner across the top of your screen. They don't need the addon for you to see it. Settings turns them off; /pog ding shows you what the level 60 one looks like.
+- **Open Games on flight paths.** A new Settings tick (off unless you turn it on): take a flight path and the Games tab opens by itself.
+- **Fixed: profile songs playing with the window closed.** A guildie's profile song could start by itself after you closed Pog Guild Tools. Pages no longer redraw in the background while the window is closed.
+- **Click to reply.** With "In game chat" ticked, the name in brackets at the start of a chat line in your game chat box is now a link. Click it to open that chat, ready to type.
+
+New in 0.16.8:
 
 - **Chats on Home.** A new Chats card under the Message board shows your latest chats, their last line and how many lines are unread. Click one to open it, or New chat to start one. It replaces the small Chat button next to Show offline.
 - **Name your group chats.** A group chat can have its own name and picture, shared with everyone in it. Open the chat and click Edit, or right-click it in the list.

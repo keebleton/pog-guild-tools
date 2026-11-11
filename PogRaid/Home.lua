@@ -95,7 +95,11 @@ end
 
 -- Called by the roster scan with what changed since the last scan.
 function Home:OnGuildScan(levels, joined, left, catchUp)
-    for _, x in ipairs(levels) do self:AddFeed("level", x.name, x.level, x.away) end
+    for _, x in ipairs(levels) do
+        self:AddFeed("level", x.name, x.level, x.away)
+        -- (20, 30, 40, 50 and 60 are worth a pop-up: JoinPopup.lua)
+        if ns.Milestone then ns.Milestone:OnLevel(x.name, x.from, x.level, x.away) end
+    end
     for _, n in ipairs(joined) do self:AddFeed("join", n, nil, catchUp) end
     for _, n in ipairs(left) do self:AddFeed("leave", n, nil, catchUp) end
 end
@@ -210,7 +214,7 @@ function Home:RecentLoot()
 end
 
 function Home:Changed()
-    if self.page and self.page:IsShown() then self:Refresh() end
+    if self.page and self.page:IsVisible() then self:Refresh() end
 end
 
 function Home:FeedText(e)
@@ -684,7 +688,7 @@ end
 
 -- A chat line came, went or was read (Chat.lua): just this card.
 function Home:ChatsChanged()
-    if self.page and self.page:IsShown() then self:RefreshChats() end
+    if self.page and self.page:IsVisible() then self:RefreshChats() end
 end
 
 function Home:RefreshBoard()
@@ -1112,13 +1116,13 @@ ns.On("ENCOUNTER_LOOT_RECEIVED", function(_, _, itemLink, _, playerName) Home:On
 
 -- Group finder times tick down while the page is open.
 local function tick()
-    if Home.page and Home.page:IsShown() then Home:RefreshGroups() end
+    if Home.page and Home.page:IsVisible() then Home:RefreshGroups() end
     C_Timer.After(30, tick)
 end
 ns.On("PLAYER_LOGIN", function() C_Timer.After(30, tick) end)
 
 ns.On("PLAYER_SPECIALIZATION_CHANGED", function(unit)
-    if (unit == nil or unit == "player") and Home.page and Home.page:IsShown() then Home:RefreshArt() end
+    if (unit == nil or unit == "player") and Home.page and Home.page:IsVisible() then Home:RefreshArt() end
 end)
 
 ns.Editor:RegisterTab("home", "Home", 0,

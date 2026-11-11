@@ -255,3 +255,186 @@ function Toast:Click(button)
     -- leave soon after a click
     f.stay = math.min(f.stay, f.age + 1.5)
 end
+
+------------------------------------------------------------------------
+-- Level milestones (Jake, 0.16.9): a guildie reaching level 20, 30, 40 or
+-- 50 gets a pop-up like a new group's; reaching 60 gets a banner across
+-- the top of the screen. Every addon sees it for itself in the guild
+-- roster (Roster:ScanGuild), so the one levelling doesn't need the addon.
+-- Only for level-ups seen as they happen: not what's caught up on at login,
+-- nor an offline member's. Settings turns them off; /pog ding previews one.
+------------------------------------------------------------------------
+local Milestone = {}
+ns.Milestone = Milestone
+
+Milestone.LEVELS = { 20, 30, 40, 50, 60 }
+Milestone.TOP = 60                 -- this one gets the banner
+Milestone.IN, Milestone.HOLD, Milestone.OUT = 0.45, 7, 1.2 -- seconds: the banner arriving, staying, leaving
+Milestone.SPARKS = 16
+Milestone.queue = {}               -- banners waiting their turn (or for a fight to end)
+local GOLD = { 1.00, 0.82, 0.20 }
+local BANNER_W, BANNER_H, LINE_W = 520, 150, 380
+
+-- The highest milestone passed going from level `from` to level `to`, or nil.
+function Milestone.Crossed(from, to)
+    local best
+    for _, level in ipairs(Milestone.LEVELS) do
+        if from < level and to >= level then best = level end
+    end
+    return best
+end
+
+local function ding()
+    if ns.db.settings.sounds == false or not PlaySound then return end
+    pcall(PlaySound, SOUNDKIT and SOUNDKIT.LEVELUP or 888) -- the game's own level-up sound
+end
+
+-- A guildie's level went from `from` to `to` (`away`: we weren't there to see it).
+function Milestone:OnLevel(name, from, to, away)
+    if away or not name or not from or not to then return end
+    local level = Milestone.Crossed(from, to)
+    if not level or ns.db.settings.levelToasts == false then return end
+    self:Celebrate(name, level)
+end
+
+function Milestone:Celebrate(name, level)
+    if level >= Milestone.TOP then
+        self.queue[#self.queue + 1] = { name = name, level = level }
+        self:Next()
+    else
+        self:Toast(name, level)
+    end
+end
+
+-- 20 to 50: the small pop-up, with their portrait. Clicking it opens a chat with them to say so.
+function Milestone:Toast(name, level)
+    local mine = name == ns.Sync:Me()
+    local canChat = not mine and ns.Chat and ns.Chat:CanChat(name)
+    ding()
+    Toast:Note({
+        icon = ns.Profiles and ns.Profiles:Portrait(name) or 134400,
+        text = mine and ("You reached level %d!"):format(level) or ("%s reached level %d!"):format(colorName(name), level),
+        sub = canChat and "Click to say grats" or "",
+        onClick = canChat and function() ns.Chat:OpenWith({ name }) end or nil,
+    })
+end
+
+function Milestone:Build()
+    local f = CreateFrame("Button", "PogRaidLevelBanner", UIParent)
+    f:SetSize(BANNER_W, BANNER_H)
+    f:SetFrameStrata("DIALOG")
+    f:SetPoint("TOP", 0, -150)
+    f:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    f:SetScript("OnClick", function() self:Dismiss() end)
+    f:SetScript("OnUpdate", function(_, elapsed) self:Step(elapsed) end)
+    -- no box: a soft dark cloud behind gold light, like the game's own level-up
+    f.back = f:CreateTexture(nil, "BACKGROUND")
+    f.back:SetTexture(ns.MEDIA .. "glow")
+    f.back:SetSize(BANNER_W + 160, BANNER_H + 110)
+    f.back:SetPoint("CENTER")
+    f.back:SetVertexColor(0, 0, 0, 0.85)
+    f.shine = f:CreateTexture(nil, "BORDER")
+    f.shine:SetTexture(ns.MEDIA .. "glow")
+    f.shine:SetSize(BANNER_W - 60, BANNER_H + 30)
+    f.shine:SetPoint("CENTER", 0, -6)
+    f.shine:SetVertexColor(GOLD[1], GOLD[2], GOLD[3], 0.5)
+    if f.shine.SetBlendMode then f.shine:SetBlendMode("ADD") end
+    -- two gold rules that open out from the middle
+    f.lines = {}
+    for i, y in ipairs({ -52, -134 }) do
+        local line = f:CreateTexture(nil, "ARTWORK")
+        line:SetPoint("CENTER", f, "TOP", 0, y)
+        line:SetSize(1, 2)
+        line:SetColorTexture(GOLD[1], GOLD[2], GOLD[3], 0.9)
+        f.lines[i] = line
+    end
+    -- their portrait in a gold ring, sitting on the top rule
+    f.portrait = UI.RoundIcon(f, 44)
+    f.portrait:SetPoint("CENTER", f, "TOP", 0, -26)
+    f.ring = f:CreateTexture(nil, "OVERLAY")
+    f.ring:SetTexture(ns.MEDIA .. "ring")
+    f.ring:SetSize(58, 58)
+    f.ring:SetPoint("CENTER", f.portrait, "CENTER")
+    f.ring:SetVertexColor(GOLD[1], GOLD[2], GOLD[3], 1)
+    f.who = UI.Text(f, 18)
+    f.who:SetFont(UI.FONT, 18, "OUTLINE")
+    f.who:SetPoint("TOP", 0, -60)
+    f.level = UI.Text(f, 36)
+    f.level:SetFont(UI.FONT, 36, "OUTLINE")
+    f.level:SetPoint("TOP", 0, -82)
+    f.level:SetTextColor(GOLD[1], GOLD[2], GOLD[3])
+    f.sub = UI.Text(f, 12)
+    f.sub:SetPoint("TOP", 0, -122)
+    f.sub:SetTextColor(0.85, 0.8, 0.65)
+    -- gold sparks drifting up through it
+    f.sparks = {}
+    for i = 1, Milestone.SPARKS do
+        local s = f:CreateTexture(nil, "OVERLAY")
+        s:SetTexture(ns.MEDIA .. "disc")
+        s:SetVertexColor(1, 0.9, 0.55, 1)
+        if s.SetBlendMode then s:SetBlendMode("ADD") end
+        f.sparks[i] = s
+    end
+    f:Hide()
+    self.frame = f
+end
+
+-- The next banner in the queue, unless one is up or we're in a fight.
+function Milestone:Next()
+    if not self.queue[1] or (self.frame and self.frame:IsShown()) then return end
+    if InCombatLockdown and InCombatLockdown() then return end
+    if not self.frame then self:Build() end
+    local f = self.frame
+    local it = table.remove(self.queue, 1)
+    local mine = it.name == ns.Sync:Me()
+    local p = ns.db.guild.players[it.name]
+    local c = p and p.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[p.class]
+    f.name = it.name
+    f.portrait:SetTexture(ns.Profiles and ns.Profiles:Portrait(it.name) or 134400)
+    f.who:SetText(mine and "You" or Ambiguate(it.name, "short"))
+    f.who:SetTextColor(c and c.r or 1, c and c.g or 1, c and c.b or 1)
+    f.level:SetText(("LEVEL %d"):format(it.level))
+    local guild = ns.Sync:GuildName()
+    f.sub:SetText(mine and "The long road ends. Well played." or guild and ("One of <%s> has made it."):format(guild) or "A guildmate has made it.")
+    f.age = 0
+    for i, s in ipairs(f.sparks) do
+        -- (spread by number, not by chance: the same banner every time)
+        s.x = (i - 0.5) / #f.sparks * (BANNER_W - 80) - (BANNER_W - 80) / 2
+        s.phase = (i * 0.37) % 1
+        s.size = 3 + (i % 3)
+        s:SetSize(s.size, s.size)
+    end
+    f:SetAlpha(0)
+    f:Show()
+    self:Step(0)
+    ding()
+    ns.Sound("IG_QUEST_LIST_COMPLETE")
+end
+
+function Milestone:Step(elapsed)
+    local f = self.frame
+    f.age = f.age + (elapsed or 0)
+    local M = Milestone
+    local age = f.age
+    if age >= M.IN + M.HOLD + M.OUT then return self:Dismiss() end
+    local arrive = math.min(1, age / M.IN)
+    local ease = 1 - (1 - arrive) ^ 3
+    f:SetAlpha(age > M.IN + M.HOLD and 1 - (age - M.IN - M.HOLD) / M.OUT or ease)
+    -- it lands a little large and settles; the rules open out
+    f:SetScale(1.18 - 0.18 * ease)
+    for _, line in ipairs(f.lines) do line:SetWidth(math.max(1, LINE_W * ease)) end
+    f.shine:SetAlpha(0.38 + 0.14 * math.sin(age * 2.4))
+    for _, s in ipairs(f.sparks) do
+        local k = (age * 0.32 + s.phase) % 1
+        s:ClearAllPoints()
+        s:SetPoint("CENTER", f, "BOTTOM", s.x + 10 * math.sin(age * 1.7 + s.phase * 6.3), 6 + k * (BANNER_H - 10))
+        s:SetAlpha(math.sin(math.pi * k) * 0.9)
+    end
+end
+
+function Milestone:Dismiss()
+    if self.frame then self.frame:Hide() end
+    self:Next()
+end
+
+ns.On("PLAYER_REGEN_ENABLED", function() Milestone:Next() end)

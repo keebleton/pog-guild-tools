@@ -989,7 +989,7 @@ function Wishlist.SourceText(it)
 end
 
 function Wishlist:Changed()
-    if self.page and self.page:IsShown() then self:Refresh() end
+    if self.page and self.page:IsVisible() then self:Refresh() end
 end
 
 -- The model wears our gear with the wishlist tried on over it. Dressed again

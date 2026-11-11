@@ -1,7 +1,7 @@
 -- PogRaid core: saved data, event dispatch, slash commands, API probe.
 local ADDON, ns = ...
 
-ns.VERSION = "0.16.8"
+ns.VERSION = "0.16.9"
 
 -- Running from the project folder, not a packaged release (the packager and
 -- tools/package.py delete this block). A dev build tells other addons it is
@@ -429,6 +429,8 @@ ns.On("ADDON_LOADED", function(name)
     if st.chatSound == nil then st.chatSound = true end
     if st.chatToasts == nil then st.chatToasts = true end
     if st.chatEcho == nil then st.chatEcho = false end
+    if st.levelToasts == nil then st.levelToasts = true end
+    if st.gamesOnFlight == nil then st.gamesOnFlight = false end
     if st.kudosToasts == nil then st.kudosToasts = true end
     if st.theme == nil then st.theme = st.classic == false and "plain" or ns.UI.DEFAULT_THEME end
     st.classic = nil
@@ -537,14 +539,19 @@ SlashCmdList.POGRAID = function(msg)
         if not ns.db.settings.minimap.hide then ns.Print("minimap button shown") end
     elseif cmd == "settings" then
         ns.Editor:Toggle("settings")
+    elseif cmd == "ding" then
+        -- a look at the level pop-ups: "/pog ding" is the level 60 banner, "/pog ding 40" the small one
+        local level = tonumber((msg or ""):match("(%d+)")) or ns.Milestone.TOP
+        ns.Milestone:Celebrate(ns.Sync:Me(), ns.Milestone.Crossed(level - 1, level) or ns.Milestone.TOP)
     elseif cmd == "chat" then
         -- "/pog chat test": a practice chat that answers back (nothing is sent to anyone)
         if (msg or ""):lower():match("test") then ns.Chat:Test() else ns.Chat:Toggle() end
-    elseif cmd == "duels" or cmd == "wowdle" or cmd == "gems" then
+    elseif cmd == "duels" or cmd == "wowdle" or cmd == "gems" or cmd == "lode" or cmd == "motherlode" then
         ns.Editor:Toggle("games")
+        if cmd == "motherlode" then cmd = "lode" end
         if ns.Games.page then ns.Games:SetMode(cmd) end
         -- asked for by name: ready to type (opening the tab alone doesn't take the keyboard)
-        if cmd == "wowdle" and ns.Games.page and ns.Games.page:IsShown() then ns.Wowdle:Focus() end
+        if cmd == "wowdle" and ns.Games.page and ns.Games.page:IsVisible() then ns.Wowdle:Focus() end
     elseif cmd == "late" then
         local _, early = ns.Attendance:MyNotice()
         ns.Attendance:SetNotice(true, early)
@@ -586,6 +593,6 @@ SlashCmdList.POGRAID = function(msg)
         if ns.Chat.frame then ns.UI.RestorePosition(ns.Chat.frame, "chat", 40) end
         ns.Print("window positions reset")
     else
-        ns.Print("/pog opens the window. Also: home, roster, attendance, loot, crafting, games, gems, wowdle, duels, plans, chat, settings, minimap, probe, art, bug, sync, check, test, reset")
+        ns.Print("/pog opens the window. Also: home, roster, attendance, loot, crafting, games, gems, wowdle, motherlode, duels, plans, chat, settings, minimap, probe, art, bug, sync, check, test, reset")
     end
 end

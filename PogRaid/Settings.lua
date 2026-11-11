@@ -22,7 +22,8 @@ local RX = PAD + LEFT_W + PAD
 local RW = FRAME_W - RX - PAD
 local TOP = TITLE_H
 local ROW_H = 22
-local GENERAL_H = 300   -- eight checks, the theme and its reload button (ten officer ranks still fit under it)
+local CHECK_PITCH = 23  -- a row of checks (26 while there were eight of them)
+local GENERAL_H = 32 + 10 * CHECK_PITCH + 26 + 22 + 12 -- ten checks, the theme and its reload button (ten officer ranks still fit under it)
 
 local function S() return ns.db.settings end
 
@@ -101,17 +102,19 @@ function Settings:Build(page)
         { "New group pop-ups", function() return S().groupToasts end, function(v) S().groupToasts = v end },
         { "Kudos pop-ups", function() return S().kudosToasts end, function(v) S().kudosToasts = v end },
         { "Group chat", function() return S().chat end, function(v) ns.Chat:SetEnabled(v) end },
+        { "Level-up pop-ups", function() return S().levelToasts end, function(v) S().levelToasts = v end },
+        { "Open Games on flight paths", function() return S().gamesOnFlight end, function(v) S().gamesOnFlight = v and true or false end },
     }
     for i, it in ipairs(items) do
         local c = UI.Check(gen, it[1], it[2], it[3])
         c:SetWidth(LEFT_W - 24)
-        c:SetPoint("TOPLEFT", 12, -(32 + (i - 1) * 26))
+        c:SetPoint("TOPLEFT", 12, -(32 + (i - 1) * CHECK_PITCH))
         self.checks[i] = c
     end
     -- the theme: a button with the current one, a menu of the rest. The look is
     -- set when the UI is built, so a new pick shows after a reload: the Reload
     -- button appears (addons can't reload the UI themselves here)
-    local y = -(32 + #items * 26)
+    local y = -(32 + #items * CHECK_PITCH)
     local label = UI.Text(gen, 12)
     label:SetPoint("TOPLEFT", 12, y - 4)
     label:SetText("Theme")
@@ -149,7 +152,7 @@ function Settings:Build(page)
         local c = UI.Check(off, "", function() return self:IsOfficerRank(idx) end,
             function(v) self:SetOfficerRank(idx, v) end)
         c:SetWidth(LEFT_W - 24)
-        c:SetPoint("TOPLEFT", 12, -(32 + (i - 1) * 26))
+        c:SetPoint("TOPLEFT", 12, -(32 + (i - 1) * CHECK_PITCH))
         off.ranks[i] = c
     end
     self.officers = off
@@ -213,7 +216,7 @@ function Settings:IsOfficerRank(index)
 end
 
 function Settings:Changed()
-    if self.page and self.page:IsShown() then self:Refresh() end
+    if self.page and self.page:IsVisible() then self:Refresh() end
 end
 
 function Settings:Refresh()

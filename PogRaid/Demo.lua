@@ -151,7 +151,7 @@ function Demo:Refresh()
     ns.Attendance.viewing = nil
     ns.Loot.counts = nil
     for _, m in ipairs({ ns.Attendance, ns.Loot, ns.Home }) do
-        if m.page and m.page:IsShown() then m:Refresh() end
+        if m.page and m.page:IsVisible() then m:Refresh() end
     end
-    if ns.Roster.page and ns.Roster.page:IsShown() then ns.Roster:Refresh() end
+    if ns.Roster.page and ns.Roster.page:IsVisible() then ns.Roster:Refresh() end
 end
