@@ -165,6 +165,10 @@ launchers and plain-English steps. Read this whole file before changing anything
   card: FLOOR in 30pt gold with the seam's ore icon, a 12px quota bar with "225 to go" / "Quota reached", bomb pips,
   upgrades (icon, name, count), a "Pegs" legend (what each kind does and is worth on this floor with these upgrades;
   it hides if more than 8 upgrades reach down to it) and the foot (best, New run).
+- 0.16.10: `Roster:Poll` asks the game for the guild roster every `Roster.POLL` (30) seconds from login (not in combat).
+  Before, it was only asked for when the Home or Roster tab showed, so level-ups (and their pop-ups) were noticed only
+  when the window opened (Jake). The milestone pop-ups no longer play the game's level-up sound (it read as our own
+  level-up): the small ones are silent, the 60 banner keeps IG_QUEST_LIST_COMPLETE.
 - 0.16.9 level milestones (`ns.Milestone`, in JoinPopup.lua): `Roster:ScanGuild` passes each level-up's old level
   (`from`); `Home:OnGuildScan` hands live ones (not `away`) to `Milestone:OnLevel`. `Milestone.Crossed(from, to)` is
   the highest of 20/30/40/50/60 passed. Below 60: a note in the new-group pop-up with their portrait (click opens a

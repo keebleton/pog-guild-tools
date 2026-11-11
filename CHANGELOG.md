@@ -1,4 +1,9 @@
-# Pog Guild Tools 0.16.9
+# Pog Guild Tools 0.16.10
+
+- **Level-up pop-ups show up on time.** They used to wait until you opened Pog Guild Tools. The addon now checks the guild roster quietly in the background, so a pop-up appears within about half a minute of the level-up. Activity and who's online stay fresher too.
+- **No more level-up sound on the pop-ups.** It sounded like you had levelled yourself. The small pop-ups are silent and the level 60 banner has its own chime.
+
+New in 0.16.9:
 
 - **New game: Motherlode.** Bomb your way down a mine on the Games tab (or /pog motherlode). Aim with the mouse and click to drop a bomb: every peg it bounces off is mined, and the pocket it lands in multiplies the haul. Reach each floor's ore quota before you run out of bombs, then pick one of three upgrades and go deeper. Bombs glow and trail sparks, ore numbers float off what you mine, kegs go up in a ring, and a click still counts if your aim takes the mouse off the board. Your deepest run goes on the guild hiscores, which show on the board before and after a run (or any time from the Hiscores button).
 - **Level-up pop-ups.** When a guildie reaches level 20, 30, 40 or 50 you get a pop-up, and reaching 60 gets a banner across the top of your screen. They don't need the addon for you to see it. Settings turns them off; /pog ding shows you what the level 60 one looks like.

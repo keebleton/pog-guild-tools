@@ -1171,8 +1171,25 @@ ns.On("GUILD_ROSTER_UPDATE", function()
 end)
 ns.On("GROUP_ROSTER_UPDATE", function() Roster:OnGroupChanged() end)
 ns.OnGuildChanged(function() wipe(Roster.online) end)
+-- The game only sends the guild roster when it's asked for, and we only
+-- asked when our window opened: so a guildie's level-up (the pop-ups at 20
+-- to 60, Activity, who's online) wasn't noticed until then (Jake, 0.16.9).
+-- Now it's asked for every POLL seconds in the background (not in a fight;
+-- the game itself ignores asks closer than ten seconds apart).
+Roster.POLL = 30
+
+function Roster:Poll()
+    C_Timer.After(Roster.POLL, function() self:Poll() end)
+    if IsInGuild() and C_GuildInfo and C_GuildInfo.GuildRoster and not (InCombatLockdown and InCombatLockdown()) then
+        C_GuildInfo.GuildRoster()
+    end
+end
+
 ns.On("PLAYER_LOGIN", function()
-    C_Timer.After(5, function() Roster:RequestGuild() end)
+    C_Timer.After(5, function()
+        Roster:RequestGuild()
+        C_Timer.After(Roster.POLL, function() Roster:Poll() end)
+    end)
 end)
 
 ns.Editor:RegisterTab("roster", "Roster", 1,

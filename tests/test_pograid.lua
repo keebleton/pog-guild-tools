@@ -7789,8 +7789,8 @@ do
     Roster:ScanGuild()
     local f = T.frame
     check(f and f:IsShown() and f.note and f.text:GetText():find("Dinger", 1, true) and f.text:GetText():find("reached level 40!", 1, true)
-        and f.sub:GetText() == "Click to say grats" and f.icon:GetTexture() == ns.Profiles:Portrait("Dinger-Realm") and STUB.sounds[1] == 888
-        and not (M.frame and M.frame:IsShown()), "milestone: a guildie reaching 40 pops up, with the level-up sound")
+        and f.sub:GetText() == "Click to say grats" and f.icon:GetTexture() == ns.Profiles:Portrait("Dinger-Realm") and #STUB.sounds == 0
+        and not (M.frame and M.frame:IsShown()), "milestone: a guildie reaching 40 pops up, without a sound (the game's level-up sound read as our own, Jake)")
     check(G.feed[1].kind == "level" and G.feed[1].name == "Dinger-Realm" and G.feed[1].value == 40, "milestone: (Activity still has it)")
     STUB.Script(f, "OnClick", "LeftButton")
     check(Chat.frame:IsShown() and Chat.current == Chat:Get({ me, "Dinger-Realm" }) and not f:IsShown(), "milestone: clicking it opens a chat with them")
@@ -7831,7 +7831,9 @@ do
         "milestone: reaching 60 gets a banner with their name, in their class colour")
     local quest = false
     for _, id in ipairs(STUB.sounds) do if id == SOUNDKIT.IG_QUEST_LIST_COMPLETE then quest = true end end
-    check(STUB.sounds[1] == 888 and quest and bn:GetAlpha() == 0 and bn.__strata == "DIALOG", "milestone: with a fanfare, arriving from nothing")
+    local levelUp = false
+    for _, id in ipairs(STUB.sounds) do if id == 888 or (SOUNDKIT.LEVELUP and id == SOUNDKIT.LEVELUP) then levelUp = true end end
+    check(quest and not levelUp and bn:GetAlpha() == 0 and bn.__strata == "DIALOG", "milestone: with a chime of its own (not the level-up sound), arriving from nothing")
     STUB.Script(bn, "OnUpdate", M.IN / 2)
     local midAlpha, midScale, midLine = bn:GetAlpha(), bn:GetScale(), bn.lines[1]:GetWidth()
     STUB.Script(bn, "OnUpdate", M.IN / 2 + 0.01)
@@ -7958,6 +7960,62 @@ do
     check(ns.db.settings.gamesOnFlight == false and not c.checked, "flight: and unticked")
     STUB.onTaxi = nil
     E:ShowTab("home")
+end
+
+-- 0.16.10: the guild roster is asked for in the background, so level-ups are noticed with the window closed ---
+do
+    local Roster, M, T = ns.Roster, ns.Milestone, ns.GroupToast
+    local G = ns.db.guild
+    ns.Editor:ShowTab("home")
+    ns.Editor.frame:Hide()
+    STUB.timers = {}
+    STUB.guildRequests = 0
+    STUB.Fire("PLAYER_LOGIN")
+    STUB.Advance(5)
+    local atLogin = STUB.guildRequests
+    STUB.Advance(Roster.POLL - 1)
+    check(atLogin >= 1 and STUB.guildRequests == atLogin, "roster: asked for at login, then not again straight away")
+    STUB.Advance(1)
+    check(STUB.guildRequests == atLogin + 1, "roster: asked for again half a minute later, with the window closed")
+    for _ = 1, 3 do STUB.Advance(Roster.POLL) end -- (the stub jumps the clock in one go: a step at a time)
+    check(STUB.guildRequests == atLogin + 4 and Roster.POLL >= 15 and Roster.POLL <= 60, "roster: and every half minute after")
+    -- not in a fight, and not without a guild; it picks up again after
+    STUB.combat = true
+    for _ = 1, 2 do STUB.Advance(Roster.POLL) end
+    check(STUB.guildRequests == atLogin + 4, "roster: not asked for in a fight")
+    STUB.combat = false
+    local savedGuild = STUB.guild
+    STUB.guild = nil
+    STUB.Advance(Roster.POLL)
+    check(STUB.guildRequests == atLogin + 4, "roster: nor without a guild")
+    STUB.guild = savedGuild
+    STUB.Advance(Roster.POLL)
+    check(STUB.guildRequests == atLogin + 5, "roster: it carries on afterwards")
+    -- so a level-up while the window is closed pops up when the game answers
+    local saved = {}
+    for i, m in ipairs(STUB.guild) do saved[i] = { m, m.online, m.level } end
+    local m = { name = "Thirty-Realm", rankIndex = 2, level = 29, online = true, class = "MAGE" }
+    table.insert(STUB.guild, m)
+    Roster:ScanGuild()
+    T.notes = {}
+    if T.frame then T.frame:Hide() end
+    m.level = 30
+    STUB.Advance(Roster.POLL)
+    STUB.Fire("GUILD_ROSTER_UPDATE") -- (the game's answer to the ask)
+    check(not ns.Editor.frame:IsShown() and T.frame:IsShown() and T.frame.text:GetText():find("Thirty", 1, true)
+        and T.frame.text:GetText():find("level 30!", 1, true), "milestone: a level-up pops up with the window closed")
+    T.frame:Hide()
+    T.notes = {}
+    for _, e in ipairs(saved) do e[1].online, e[1].level = e[2], e[3] end
+    for i = #STUB.guild, #saved + 1, -1 do table.remove(STUB.guild, i) end
+    Roster:ScanGuild()
+    G.players["Thirty-Realm"] = nil
+    for i = #G.feed, 1, -1 do
+        if G.feed[i].name == "Thirty-Realm" then table.remove(G.feed, i) end
+    end
+    ns.Attendance.keyCache = nil
+    STUB.timers = {}
+    ns.Editor:ShowTab("home")
 end
 
 return results

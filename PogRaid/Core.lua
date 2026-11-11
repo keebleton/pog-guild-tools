@@ -1,7 +1,7 @@
 -- PogRaid core: saved data, event dispatch, slash commands, API probe.
 local ADDON, ns = ...
 
-ns.VERSION = "0.16.9"
+ns.VERSION = "0.16.10"
 
 -- Running from the project folder, not a packaged release (the packager and
 -- tools/package.py delete this block). A dev build tells other addons it is

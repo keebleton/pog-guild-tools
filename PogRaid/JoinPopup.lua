@@ -284,11 +284,6 @@ function Milestone.Crossed(from, to)
     return best
 end
 
-local function ding()
-    if ns.db.settings.sounds == false or not PlaySound then return end
-    pcall(PlaySound, SOUNDKIT and SOUNDKIT.LEVELUP or 888) -- the game's own level-up sound
-end
-
 -- A guildie's level went from `from` to `to` (`away`: we weren't there to see it).
 function Milestone:OnLevel(name, from, to, away)
     if away or not name or not from or not to then return end
@@ -310,7 +305,7 @@ end
 function Milestone:Toast(name, level)
     local mine = name == ns.Sync:Me()
     local canChat = not mine and ns.Chat and ns.Chat:CanChat(name)
-    ding()
+    -- (silent, like a new group's: the game's level-up sound here made it seem we'd levelled ourselves, Jake)
     Toast:Note({
         icon = ns.Profiles and ns.Profiles:Portrait(name) or 134400,
         text = mine and ("You reached level %d!"):format(level) or ("%s reached level %d!"):format(colorName(name), level),
@@ -407,8 +402,7 @@ function Milestone:Next()
     f:SetAlpha(0)
     f:Show()
     self:Step(0)
-    ding()
-    ns.Sound("IG_QUEST_LIST_COMPLETE")
+    ns.Sound("IG_QUEST_LIST_COMPLETE") -- (a chime of our own, never the game's level-up sound)
 end
 
 function Milestone:Step(elapsed)
