@@ -70,6 +70,14 @@ function Kos.Key(name)
     return key
 end
 
+-- A mark as it's shown: without the angle brackets a guildie typed round it
+-- (Jake, from a poster reading "<Kraken Skulls>": "gives guild name instead of
+-- player"). Old marks keep their brackets in the record (the id is made from
+-- the name as stored), new ones are stored without.
+function Kos.Show(name)
+    return (tostring(name or ""):gsub("[<>]", ""))
+end
+
 Sync:Register({
     name = "kos", code = "t", order = 3,
     fields = { "name", "note" },
@@ -121,7 +129,7 @@ function Kos:Find(name)
     local key = Kos.Key(name)
     if not key then return nil end
     local idx = self:Index()
-    local rec = idx.full[key]
+    local rec = idx.full[key] or idx.full["<" .. key .. ">"]
     if rec then return rec end
     local first = key:match("^(%S+)")
     if first == key then return idx.first[first] end
@@ -135,12 +143,13 @@ end
 -- Marks a player. Returns the record, or nil and why not.
 function Kos:Add(name, note)
     if not Sync:GuildName() then return nil, "You need to be in a guild." end
-    name = ns.Codec.CleanText(name, 200):gsub("%s+", " ")
+    name = Kos.Show(ns.Codec.CleanText(name, 200)):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "")
     if name == "" then return nil, "Whose name?" end
     if #name > Kos.MAX_NAME then return nil, "That name is too long." end
     local id = Kos.Key(name)
     local store = Sync:Store("kos")
-    if store[id] and not store[id].deleted then return nil, name .. " is already on the list." end
+    local old = store[id] or store["<" .. id .. ">"]
+    if old and not old.deleted then return nil, name .. " is already on the list." end
     if ns.SameName(name, ns.PlayerName()) or (ns.db.guild.players[ns.Attendance:Key(name)] or {}).inGuild then
         return nil, name .. " is in the guild."
     end
@@ -180,15 +189,15 @@ function Kos:Slash(text)
         if not rec then
             ns.Print(gone .. " isn't on the kill on sight list.")
         elseif not self:Remove(rec) then
-            ns.Print(("Only %s or an officer can take %s off the list."):format(display(rec.author), rec.name))
+            ns.Print(("Only %s or an officer can take %s off the list."):format(display(rec.author), Kos.Show(rec.name)))
         else
-            ns.Print(rec.name .. " is off the kill on sight list.")
+            ns.Print(Kos.Show(rec.name) .. " is off the kill on sight list.")
         end
         return
     end
     local name, note = Kos.Parse(text)
     local rec, why = self:Add(name, note)
-    ns.Print(rec and (Kos.RED .. "Kill on sight:|r " .. rec.name .. (rec.note and (" (" .. rec.note .. ")") or "")) or why)
+    ns.Print(rec and (Kos.RED .. "Kill on sight:|r " .. Kos.Show(rec.name) .. (rec.note and (" (" .. rec.note .. ")") or "")) or why)
 end
 
 ------------------------------------------------------------------------
@@ -209,7 +218,7 @@ function Kos:OnRecord(rec)
     if not (ns.GroupToast and ns.GroupToast.Note) then return end
     ns.GroupToast:Note({
         icon = Kos.ICON,
-        text = ("%s marked %s%s|r kill on sight"):format(colorName(rec.author), Kos.RED, rec.name),
+        text = ("%s marked %s%s|r kill on sight"):format(colorName(rec.author), Kos.RED, Kos.Show(rec.name)),
         sub = rec.note or "",
         onClick = function() self:Open() end,
     })
@@ -234,6 +243,12 @@ function Kos:Check(unit)
     local first, last = UnitName(unit)
     if not first or secret(first) or secret(last) then return end
     local rec = (last and last ~= "" and self:Find(first .. " " .. last)) or self:Find(first)
+    -- a mark can be a whole guild: anyone in it is called out
+    if not rec and GetGuildInfo then
+        local guild = GetGuildInfo(unit)
+        local key = guild and not secret(guild) and Kos.Key(guild)
+        if key then rec = self:Index().full[key] or self:Index().full["<" .. key .. ">"] end
+    end
     if not rec then return end
     -- who they are, for when they die (the kill event names nobody, only a GUID)
     local guid = UnitGUID and UnitGUID(unit)
@@ -242,19 +257,22 @@ function Kos:Check(unit)
     local now = GetTime()
     if self.spotted[rec.id] and now - self.spotted[rec.id] < Kos.SPOT_EVERY then return end
     self.spotted[rec.id] = now
-    self:Spot(rec, describe(unit))
+    local what = describe(unit)
+    -- for a guild's mark, say which of them this is
+    if Kos.Key(first) ~= rec.id:match("^<?(%S+)") then what = first .. (what ~= "" and (", " .. what) or "") end
+    self:Spot(rec, what)
     return rec
 end
 
 function Kos:Spot(rec, what)
     local sub = what or ""
     if rec.note then sub = sub ~= "" and (sub .. ": " .. rec.note) or rec.note end
-    ns.Print(Kos.RED .. "Kill on sight:|r " .. rec.name .. (sub ~= "" and (" (" .. sub .. ")") or ""))
+    ns.Print(Kos.RED .. "Kill on sight:|r " .. Kos.Show(rec.name) .. (sub ~= "" and (" (" .. sub .. ")") or ""))
     ns.Sound("RAID_WARNING")
     if ns.GroupToast and ns.GroupToast.Note then
         ns.GroupToast:Note({
             icon = Kos.ICON,
-            text = Kos.RED .. "Kill on sight:|r " .. rec.name,
+            text = Kos.RED .. "Kill on sight:|r " .. Kos.Show(rec.name),
             sub = sub,
             onClick = function() self:Open() end,
         })
@@ -323,8 +341,8 @@ function Kos:OnKill(_, victim)
     if self.killed[id] and now - self.killed[id] < Kos.KILL_EVERY then return end
     self.killed[id] = now
     local n = self:Kills() + 1
-    if not Sync:Write("koskills", { id = Sync:Me(), author = Sync:Me(), t = ns.Now(), n = n, last = rec.name }) then return end
-    ns.Print(("%sKill on sight:|r you got %s. That's %d."):format(Kos.RED, rec.name, n))
+    if not Sync:Write("koskills", { id = Sync:Me(), author = Sync:Me(), t = ns.Now(), n = n, last = Kos.Show(rec.name) }) then return end
+    ns.Print(("%sKill on sight:|r you got %s. That's %d."):format(Kos.RED, Kos.Show(rec.name), n))
     ns.Sound("IG_QUEST_LIST_COMPLETE")
     return n
 end
@@ -568,7 +586,7 @@ function Kos:AddFromBoxes()
     self.noteBox:SetText("")
     self.nameBox:ClearFocus()
     self.noteBox:ClearFocus()
-    self:Say(rec.name .. " is on the list.")
+    self:Say(Kos.Show(rec.name) .. " is on the list.")
 end
 
 -- The player we have targeted goes on the list (with whatever's in the Why box).
@@ -581,16 +599,16 @@ function Kos:AddTarget()
     end
     local rec, why = self:Add((last and last ~= "") and (first .. " " .. last) or first, self.noteBox:GetText())
     if rec then self.noteBox:SetText("") end
-    self:Say(rec and (rec.name .. " is on the list.") or why)
+    self:Say(rec and (Kos.Show(rec.name) .. " is on the list.") or why)
 end
 
 function Kos:Menu(row)
     local rec = row.item
     if not rec then return end
-    local entries = { { text = rec.name, header = true } }
+    local entries = { { text = Kos.Show(rec.name), header = true } }
     if self:CanRemove(rec) then
         entries[#entries + 1] = { text = "Take off the list", func = function()
-            if self:Remove(rec) then self:Say(rec.name .. " is off the list.") end
+            if self:Remove(rec) then self:Say(Kos.Show(rec.name) .. " is off the list.") end
         end }
     else
         entries[#entries + 1] = { text = ("Only %s or an officer can take them off"):format(display(rec.author)), header = true }
@@ -602,7 +620,7 @@ function Kos:Tip(row)
     local rec = row.item
     if not rec or not GameTooltip then return end
     GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
-    GameTooltip:AddLine(rec.name, 1, 0.35, 0.3)
+    GameTooltip:AddLine(Kos.Show(rec.name), 1, 0.35, 0.3)
     if rec.note then GameTooltip:AddLine(rec.note, 1, 1, 1, true) end
     local ago = ns.Home.Ago(rec.t)
     GameTooltip:AddLine(("Marked by %s %s"):format(display(rec.author), ago == "now" and "just now" or ago .. " ago"), 0.6, 0.6, 0.65)
@@ -620,7 +638,7 @@ function Kos:Refresh()
         row.item = rec
         row:SetShown(rec ~= nil)
         if rec then
-            row.name:SetText(rec.name)
+            row.name:SetText(Kos.Show(rec.name))
             row.note:SetText(rec.note or "")
             row.by:SetText("by " .. (display(rec.author) or "?"))
         end

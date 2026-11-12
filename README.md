@@ -69,7 +69,7 @@ A page for every guildie running Pog Guild Tools, one per account.
 
 A list of enemy players the whole guild shares. `/pog kos` opens it; `/pog kos Name Surname reason` marks someone and `/pog kos remove Name` takes them off (whoever marked them, or an officer). Everyone gets a pop-up when a guildie marks someone, and a pop-up, a sound and a chat line when they come across someone on the list. The Alerts tick at the top of the list turns those off.
 
-The list is a board of wanted posters. Beside it are the guild's hunters: who has killed the most players that someone else marked. A kill counts when you or your group land it (marking someone yourself and killing them doesn't), and the guild gets a pop-up.
+A mark can be a whole guild: type the guild's name, and anyone in it is called out. The list is a board of wanted posters. Beside it are the guild's hunters: who has killed the most players that someone else marked. A kill counts when you or your group land it (marking someone yourself and killing them doesn't), and the guild gets a pop-up.
 
 ## Guildies on the map
 

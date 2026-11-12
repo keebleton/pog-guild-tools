@@ -405,7 +405,13 @@ local MAPS = {
 STUB.currentMap = 1453
 C_Map = {
     GetBestMapForUnit = function() return STUB.currentMap end,
-    GetMapInfo = function(id) local m = MAPS[id] return m and { mapID = id, name = m.name } end,
+    GetMapInfo = function(id)
+        local m = MAPS[id]
+        if m then return { mapID = id, name = m.name, mapType = 3 } end
+        -- a continent or the world, for the tests that look at one: STUB.mapTypes[id] = type
+        local t = STUB.mapTypes and STUB.mapTypes[id]
+        return t and { mapID = id, name = "Map " .. id, mapType = t } or nil
+    end,
     GetMapArtLayers = function(id) local m = MAPS[id] return m and { m.layer } end,
     GetMapArtLayerTextures = function(id)
         local m = MAPS[id]
@@ -631,6 +637,10 @@ end
 do
     local guid = UnitGUID
     function UnitGUID(unit) local u = STUB.units[unit] if u then return u.guid end return guid(unit) end
+end
+do
+    local guild = GetGuildInfo
+    function GetGuildInfo(unit) local u = STUB.units[unit] if u then return u.guild end return guild(unit) end
 end
 -- whose GUID is this? STUB.guids[guid] = name
 STUB.guids = {}

@@ -188,6 +188,13 @@ launchers and plain-English steps. Read this whole file before changing anything
   made, once per `KILL_EVERY` 5 min per target; `koskills` collection (code "j", id = author, `n`, `last` = the latest
   victim's name, `perRecord`): `Kos:OnKills` pops up "X got Y" once per new count, fresh ones only. `Kos:Hunters`.
   Not proven in game yet: that PARTY_KILL fires for player kills in the open world.
+- 0.18.1 (Jake, from a poster a guildie made reading "<Kraken Skulls>"): `Kos.Show(name)` drops angle brackets wherever
+  a mark is shown; `Kos:Add` stores new marks without them; old ones keep them in the record (the id must equal
+  `Kos.Key(name)`), so `Find`, `Add` and the spotter also look under "<key>". A mark can be a guild: `Kos:Check` falls
+  back to `GetGuildInfo(unit)` (whole name only) and the call-out then leads with the player's first name.
+- 0.18.1 map dots match OneForAll's (Jake saw two sizes side by side): the "PlayerPartyBlip" atlas tinted to the
+  class, 14px on a zone and 10px on a continent or the world (`mapType <= Continent`), scale = 1 / the scroll
+  container's `GetCanvasScale()`. Our disc with a dark edge is only the fallback.
 - 0.18.0 guildies on the world map (`GuildMap.lua`, `ns.GuildMap`; asked for by guildies). An addon can't read where
   anyone else is, so each one says where its own player is: Comm kind "G" on GUILD, one unchunked message in the
   background lane, `G1:<map>:<x>:<y>:<continent>:<wx>:<wy>` (x, y in 1/10000 of the zone map; world yards from

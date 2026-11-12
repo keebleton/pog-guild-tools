@@ -9289,4 +9289,120 @@ do
     ns.Editor:ShowTab("home")
 end
 
+-- 0.18.1: no angle brackets on a mark, and a mark can be a guild ----------------------------------
+do
+    local Kos, Sync, T = ns.Kos, ns.Sync, ns.GroupToast
+    local me = Sync:Me()
+    local mate
+    for name, p in pairs(ns.db.guild.players) do
+        if p.inGuild and name ~= me and (not mate or name < mate) then mate = name end
+    end
+    local now = ns.Now()
+    local store = Sync:Store("kos")
+    for id in pairs(store) do store[id] = nil end
+    Kos.index, Kos.spotted, Kos.told, Kos.guids = nil, {}, {}, {}
+    T.notes = {}
+    if T.frame then T.frame:Hide() end
+    check(Kos.Show("<Kraken Skulls>") == "Kraken Skulls" and Kos.Show("Grom") == "Grom", "brackets: a name is shown without angle brackets")
+    -- a mark made on 0.18.0 with the brackets typed in
+    check(Sync:Apply(Sync.collections.kos, { id = "<kraken skulls>", rev = now + 1, by = mate, author = mate, t = now - 9999, name = "<Kraken Skulls>", note = "camped us in tanaris" }),
+        "brackets: an old mark with brackets is still taken")
+    Kos:Open()
+    local row = Kos.list.rows[1]
+    check(row.name:GetText() == "Kraken Skulls", "brackets: the poster shows the name without them")
+    STUB.Script(row, "OnEnter")
+    check(GameTooltip.lines[1] == "Kraken Skulls", "brackets: and so does its tooltip")
+    STUB.Script(row, "OnLeave")
+    check(Kos:Find("Kraken Skulls") == store["<kraken skulls>"] and select(2, Kos:Add("kraken skulls", "")):find("already on the list", 1, true),
+        "brackets: it's found, and not marked twice, by the plain name")
+    local rec = Kos:Add("  <Bloodsail Bullies> ", "gank squad")
+    check(rec and rec.id == "bloodsail bullies" and rec.name == "Bloodsail Bullies", "brackets: a new mark is stored without them")
+    -- a guild's mark: anyone in that guild is called out, by name
+    STUB.printed = {}
+    STUB.units.target = { first = "Zug", last = "Zugson", guild = "Kraken Skulls", guid = "Player-1-ZUG" }
+    STUB.Fire("PLAYER_TARGET_CHANGED")
+    check(printedContains("Kill on sight:|r Kraken Skulls (Zug: camped us in tanaris)") and Kos.guids["Player-1-ZUG"] == "<kraken skulls>",
+        "guild mark: a member of a marked guild is called out, with who it is")
+    T.frame:Hide()
+    STUB.printed = {}
+    STUB.units.target = { first = "Nob", last = "Ody", guild = "Nice People" }
+    STUB.Fire("PLAYER_TARGET_CHANGED")
+    STUB.units.target = { first = "Kraken", last = "Skulls" }
+    Kos.spotted = {}
+    STUB.Fire("PLAYER_TARGET_CHANGED")
+    check(#STUB.printed == 1 and printedContains("Kill on sight:|r Kraken Skulls (camped us in tanaris)"),
+        "guild mark: other guilds are left alone, and a player of that very name still matches")
+    STUB.units = {}
+    Kos.frame:Hide()
+    for id in pairs(store) do store[id] = nil end
+    Kos.index, Kos.spotted, Kos.told, Kos.guids = nil, {}, {}, {}
+    Sync.index = nil
+    T.notes = {}
+    if T.frame then T.frame:Hide() end
+end
+
+-- 0.18.1: our map dots are the size and look of OneForAll's ---------------------------------------
+do
+    local GM, Sync = ns.GuildMap, ns.Sync
+    local G = ns.db.guild
+    local me = Sync:Me()
+    local mate
+    for name, p in pairs(G.players) do
+        if p.inGuild and name ~= me and p.class and (not mate or name < mate) then mate = name end
+    end
+    local canvas = CreateFrame("Frame", nil, UIParent)
+    canvas:SetSize(1000, 600)
+    canvas:SetPoint("TOPLEFT", 100, -50)
+    local shownMap = 1453
+    WorldMapFrame = CreateFrame("Frame", nil, UIParent)
+    WorldMapFrame.GetCanvas = function() return canvas end
+    WorldMapFrame.GetMapID = function() return shownMap end
+    WorldMapFrame:Show()
+    local realOnline = ns.Roster.online[mate]
+    ns.Roster.online[mate] = true
+    STUB.mapTypes = { [13] = 2, [947] = 1 }
+    STUB.world[947] = { cont = 0, ox = -50000, oy = -50000, size = 100000 }
+    GM.where, GM.theirs = {}, {}
+    STUB.Fire("CHAT_MSG_ADDON", "PogRaid", "G1:1453:5000:2500:0:2500:3250", "GUILD", mate)
+    local old = GM.pins
+    GM.pins = {}
+    GM:Refresh()
+    local pin = GM.pins[1]
+    check(pin:GetWidth() == 14 and pin:GetHeight() == 14 and pin.edge and pin.dot:GetTexture() == GM.DISC, "dots: 14 across on a zone map (our own disc where the game's blip is missing)")
+    shownMap = 13
+    GM:Refresh()
+    check(pin:IsShown() and pin:GetWidth() == 10 and pin:GetHeight() == 10, "dots: 10 across on a continent")
+    shownMap = 947
+    GM:Refresh()
+    check(pin:IsShown() and pin:GetWidth() == 10, "dots: and on the whole world")
+    shownMap = 1453
+    GM:Refresh()
+    check(pin:GetWidth() == 14, "dots: back to 14 on a zone")
+    -- the map's own zoom figure, as OneForAll reads it
+    local zoom = 2
+    WorldMapFrame.ScrollContainer = { GetCanvasScale = function() return zoom end }
+    GM:Refresh()
+    check(pin:GetScale() == 0.5, "dots: sized against the map's canvas scale")
+    zoom = 0
+    GM:Refresh()
+    check(pin:GetScale() == 10, "dots: (a nonsense scale is capped)")
+    WorldMapFrame.ScrollContainer = nil
+    -- with the game's party blip
+    local realTexture = C_Texture
+    C_Texture = { GetAtlasInfo = function(name) return name == "PlayerPartyBlip" and {} or nil end }
+    GM.pins = {}
+    GM:Refresh()
+    pin = GM.pins[1]
+    local c = RAID_CLASS_COLORS[G.players[mate].class]
+    check(pin.dot.__atlas == "PlayerPartyBlip" and pin.edge == nil and near(pin.dot.__vertex[1], c.r) and near(pin.dot.__vertex[2], c.g)
+        and pin.dot:GetWidth() == 14, "dots: the game's party blip in the class colour, filling the dot")
+    C_Texture = realTexture
+    GM.pins = old
+    ns.Roster.online[mate] = realOnline
+    STUB.mapTypes, STUB.world[947] = nil, nil
+    WorldMapFrame:Hide()
+    WorldMapFrame = nil
+    GM.where = {}
+end
+
 return results

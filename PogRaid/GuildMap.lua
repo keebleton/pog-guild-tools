@@ -27,7 +27,13 @@ GuildMap.BEAT = 120      -- seconds between two messages while standing still
 GuildMap.STALE = 300     -- a dot not heard from for this long is dropped
 GuildMap.OFFLINE = 45    -- the roster says they logged off: the dot goes after this
 GuildMap.MOVE = 0.004    -- of the zone map: less than this isn't "moved"
+-- The dots are OneForAll's dots (Jake has both addons and saw two sizes side by side): the game's
+-- own party blip, 14px on a zone map and 10px on a continent, tinted to the class, sized against
+-- the map's canvas scale exactly as OneForAll does. Our own disc is only for a client without it.
 GuildMap.SIZE = 14
+GuildMap.SIZE_FAR = 10
+GuildMap.BLIP = "PlayerPartyBlip"
+GuildMap.CONTINENT = (Enum and Enum.UIMapType and Enum.UIMapType.Continent) or 2
 GuildMap.DISC = "Interface\\AddOns\\PogRaid\\Media\\disc"
 GuildMap.where = {}      -- [name] = { map, x, y, cont, wx, wy, at = GetTime() }
 GuildMap.pins = {}
@@ -236,14 +242,19 @@ function GuildMap:Pin(i, canvas)
     if pin then return pin end
     pin = CreateFrame("Frame", nil, canvas)
     pin:SetSize(GuildMap.SIZE, GuildMap.SIZE)
-    pin.edge = pin:CreateTexture(nil, "BACKGROUND")
-    pin.edge:SetAllPoints()
-    pin.edge:SetTexture(GuildMap.DISC)
-    pin.edge:SetVertexColor(0, 0, 0, 0.9)
     pin.dot = pin:CreateTexture(nil, "ARTWORK")
-    pin.dot:SetPoint("TOPLEFT", 2, -2)
-    pin.dot:SetPoint("BOTTOMRIGHT", -2, 2)
-    pin.dot:SetTexture(GuildMap.DISC)
+    if pin.dot.SetAtlas and C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(GuildMap.BLIP) then
+        pin.dot:SetAllPoints()
+        pin.dot:SetAtlas(GuildMap.BLIP)
+    else
+        pin.edge = pin:CreateTexture(nil, "BACKGROUND")
+        pin.edge:SetAllPoints()
+        pin.edge:SetTexture(GuildMap.DISC)
+        pin.edge:SetVertexColor(0, 0, 0, 0.9)
+        pin.dot:SetPoint("TOPLEFT", 1, -1)
+        pin.dot:SetPoint("BOTTOMRIGHT", -1, 1)
+        pin.dot:SetTexture(GuildMap.DISC)
+    end
     pin:EnableMouse(true)
     pin:SetScript("OnEnter", function(p) self:Tip(p) end)
     pin:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
@@ -274,8 +285,17 @@ function GuildMap:Refresh()
     if not shown or not canvas then return 0 end
     local w, h = canvas:GetWidth(), canvas:GetHeight()
     -- the canvas grows when the map is zoomed: the dots stay the same size on screen
-    local scale = map:GetEffectiveScale() / canvas:GetEffectiveScale()
+    local scale
+    local sc = map.ScrollContainer
+    if type(sc) == "table" and sc.GetCanvasScale then
+        scale = 1 / math.max(0.1, sc:GetCanvasScale() or 1)
+    else
+        scale = map:GetEffectiveScale() / canvas:GetEffectiveScale()
+    end
     if not scale or scale <= 0 then scale = 1 end
+    -- smaller on a continent (or the whole world), where a zone is a thumbnail
+    local info = C_Map.GetMapInfo and C_Map.GetMapInfo(shown)
+    local size = (info and info.mapType and info.mapType <= GuildMap.CONTINENT) and GuildMap.SIZE_FAR or GuildMap.SIZE
     local level = math.min(9000, canvas:GetFrameLevel() + 2500)
     local now, used = GetTime(), 0
     local names = {}
@@ -292,6 +312,7 @@ function GuildMap:Refresh()
                 local p = ns.db.guild.players[name]
                 local c = p and p.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[p.class]
                 pin.dot:SetVertexColor(c and c.r or 0.8, c and c.g or 0.8, c and c.b or 0.8)
+                pin:SetSize(size, size)
                 pin:SetScale(scale)
                 pin:SetFrameLevel(level)
                 pin:ClearAllPoints()
