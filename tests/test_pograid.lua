@@ -2510,9 +2510,10 @@ do
     ns.UI.ShowMenu = function(_, e) menu = e end
     STUB.Script(b, "OnClick", "RightButton")
     ns.UI.ShowMenu = realShow
-    check(menu[2].text == "Settings" and menu[3].text == "Hide minimap button", "minimap: right-click menu")
+    check(menu[2].text == "Kill on sight list" and menu[3].text == "Guildies on the map: on" and menu[4].text == "Settings"
+        and menu[5].text == "Hide minimap button", "minimap: right-click menu")
     STUB.printed = {}
-    menu[3].func()
+    menu[5].func()
     check(not b:IsShown() and ns.db.settings.minimap.hide and printedContains("/pog minimap"), "minimap: hide, and how to bring it back")
     SlashCmdList.POGRAID("minimap")
     check(b:IsShown() and not ns.db.settings.minimap.hide, "minimap: /pog minimap brings it back")
@@ -6005,7 +6006,7 @@ do
     -- turned off here (Settings): the window goes, lines are turned away with a note back
     ns.Editor:ShowTab("settings")
     local checks = ns.Settings.checks
-    check(#checks == 10 and checks[7].label:GetText() == "Kudos pop-ups" and checks[8].label:GetText() == "Group chat"
+    check(#checks == 11 and checks[7].label:GetText() == "Kudos pop-ups" and checks[8].label:GetText() == "Group chat"
         and checks[9].label:GetText() == "Level-up pop-ups" and checks[7].checked and checks[8].checked and checks[9].checked,
         "settings: Kudos pop-ups, Group chat and Level-up pop-ups, on by default")
     check(checks[10].label:GetText() == "Open Games on flight paths" and not checks[10].checked and ns.db.settings.gamesOnFlight == false,
@@ -6018,10 +6019,12 @@ do
     local _, ot, _, oh = STUB.rect(ns.Settings.officers)
     local _, r9t = STUB.rect(ns.Settings.officers.ranks[9])
     local _, r10t, _, r10h = STUB.rect(ns.Settings.officers.ranks[10])
-    -- (0.16.9: ten checks; the rows of both cards sit 23px apart so ten officer ranks still fit)
-    check(gh2 == 322 and near(c8t - c9t, 23) and near(c9t - c10t, 23) and c10h <= 23 and tbt <= c10t - c10h
-        and near((tbt - tbh - 26) - (gtop - gh2), 12) and near(gtop - gh2 - ot, 8) and near(r9t - r10t, 23) and r10t - r10h >= ot - oh + 8,
-        "settings: ten checks, the theme and Reload fit the card, ten officer ranks under it")
+    -- (0.18.0: eleven checks; the rows of both cards sit 21px apart so ten officer ranks still fit)
+    local _, c11t, _, c11h = STUB.rect(checks[11])
+    check(gh2 == 323 and near(c8t - c9t, 21) and near(c9t - c10t, 21) and near(c10t - c11t, 21) and c10h == 21 and c11h == 21
+        and tbt <= c11t - c11h
+        and near((tbt - tbh - 26) - (gtop - gh2), 12) and near(gtop - gh2 - ot, 8) and near(r9t - r10t, 21) and r10t - r10h >= ot - oh + 8,
+        "settings: eleven checks, the theme and Reload fit the card, ten officer ranks under it")
     Chat:Open()
     STUB.Script(checks[8], "OnClick")
     check(ns.db.settings.chat == false and not Chat:Enabled() and not Chat.frame:IsShown() and #Chat:Buddies() == 0,
@@ -8721,6 +8724,569 @@ do
     G.players["Verylongname Withasurname"] = nil
     ns.Attendance.keyCache = nil
     Home:Refresh()
+end
+
+-- 0.18.0: the kill on sight list -----------------------------------------------------------------
+do
+    local Kos, Sync, T = ns.Kos, ns.Sync, ns.GroupToast
+    local G = ns.db.guild
+    local me = Sync:Me()
+    local mate
+    for name, p in pairs(G.players) do
+        if p.inGuild and name ~= me and (not mate or name < mate) then mate = name end
+    end
+    local now = ns.Now()
+    local store = Sync:Store("kos")
+    for id in pairs(store) do store[id] = nil end
+    Kos.index, Kos.spotted, Kos.told = nil, {}, {}
+    T.notes = {}
+    if T.frame then T.frame:Hide() end
+
+    check(Kos.Key("  Grom   Hellscream ") == "grom hellscream" and Kos.Key("   ") == nil, "kos: a name is filed in lower case with single spaces")
+    local n1, r1 = Kos.Parse("Grom Hellscream camping STV")
+    local n2, r2 = Kos.Parse("Grom, ganks lowbies")
+    local n3, r3 = Kos.Parse("  Grom Hellscream ")
+    check(n1 == "Grom Hellscream" and r1 == "camping STV" and n2 == "Grom" and r2 == "ganks lowbies" and n3 == "Grom Hellscream" and r3 == "",
+        "kos: the first two words are the name (or up to a comma), the rest is why")
+
+    check(ns.db.settings.kosAlerts == true, "kos: alerts are on by default")
+    STUB.printed = {}
+    SlashCmdList.POGRAID("kos Grom Hellscream camping STV")
+    local rec = store["grom hellscream"]
+    check(rec and rec.name == "Grom Hellscream" and rec.note == "camping STV" and rec.author == me and not rec.deleted
+        and printedContains("Kill on sight:|r Grom Hellscream (camping STV)"), "kos: /pog kos Name Surname reason marks them")
+    check(not (T.frame and T.frame:IsShown()), "kos: no pop-up for a mark of our own")
+    local again, why = Kos:Add("grom  hellscream", "")
+    check(again == nil and why:find("already on the list", 1, true), "kos: nobody is marked twice")
+    local guildie, whyNot = Kos:Add(mate, "")
+    local self_, whySelf = Kos:Add(ns.PlayerName(), "")
+    check(guildie == nil and whyNot:find("in the guild", 1, true) and self_ == nil and whySelf:find("in the guild", 1, true),
+        "kos: guildies can't be marked")
+    check(select(2, Kos:Add("   ", "")) == "Whose name?" and select(2, Kos:Add(("x"):rep(41), "")) == "That name is too long.", "kos: a mark needs a name that fits")
+    check(Kos:Find("Grom Hellscream") == rec and Kos:Find("grom") == rec and Kos:Find("Grommash") == nil and Kos:Find("Grom Other") == nil,
+        "kos: found by whole name or by first name alone")
+    local solo = Kos:Add("Zug", "")
+    check(solo and Kos:Find("Zug Zugson") == solo and Kos:Find("zug") == solo, "kos: a mark of a first name matches anyone with it")
+
+    -- what other addons would accept
+    local def = Sync.collections.kos
+    local realOfficer = Sync.IsOfficer
+    Sync.IsOfficer = function() return false end
+    check(not Sync:Apply(def, { id = "thrall", rev = now + 5, by = mate, author = me, t = now, name = "Thrall" }), "kos: only whoever marked them (or an officer) changes a mark")
+    Sync.IsOfficer = function(_, who) return who == mate end
+    check(Sync:Apply(def, { id = "thrall", rev = now + 5, by = mate, author = me, t = now - 9999, name = "Thrall" }), "kos: (an officer may)")
+    Sync.IsOfficer = realOfficer
+    check(not Sync:Apply(def, { id = "garrosh", rev = now + 5, by = mate, author = mate, t = now, name = "Someone Else" }), "kos: the id has to be the name")
+    check(not Sync:Apply(def, { id = "garrosh", rev = now + 5, by = mate, author = mate, t = now, name = "Garrosh", note = ("x"):rep(61) }),
+        "kos: a reason longer than the limit is refused")
+    store["thrall"] = nil
+    Kos.index = nil
+
+    -- a guildie marks someone: a pop-up, once, and only for a fresh one
+    T.notes = {}
+    if T.frame then T.frame:Hide() end
+    check(Sync:Apply(def, { id = "rend blackhand", rev = now + 1, by = mate, author = mate, t = now, name = "Rend Blackhand", note = "corpse camper" }),
+        "kos: a guildie's mark is taken")
+    local f = T.frame
+    check(f and f:IsShown() and f.note and f.text:GetText():find("marked", 1, true) and f.text:GetText():find("Rend Blackhand", 1, true)
+        and f.text:GetText():find("kill on sight", 1, true) and f.sub:GetText() == "corpse camper" and f.icon:GetTexture() == Kos.ICON,
+        "kos: a pop-up when a guildie marks someone")
+    f:Hide()
+    Sync:Apply(def, { id = "rend blackhand", rev = now + 2, by = mate, author = mate, t = now, name = "Rend Blackhand", note = "still at it" })
+    check(not f:IsShown() and #T.notes == 0 and store["rend blackhand"].note == "still at it", "kos: (once: a change to the reason doesn't pop up again)")
+    Sync:Apply(def, { id = "old one", rev = now + 1, by = mate, author = mate, t = now - Kos.FRESH - 5, name = "Old One" })
+    check(not f:IsShown() and #T.notes == 0 and Kos:Find("Old One"), "kos: a mark from a while ago arrives quietly")
+    ns.db.settings.kosAlerts = false
+    Sync:Apply(def, { id = "quiet one", rev = now + 1, by = mate, author = mate, t = now, name = "Quiet One" })
+    check(not f:IsShown() and #T.notes == 0, "kos: no pop-ups with alerts off")
+    ns.db.settings.kosAlerts = true
+
+    -- coming across one (an earlier test took UnitLevel away)
+    local realLevel = UnitLevel
+    UnitLevel = function(unit) local u = STUB.units[unit] return u and u.level end
+    STUB.printed, STUB.sounds = {}, {}
+    STUB.units.target = { first = "Grom", last = "Hellscream", level = 34, race = "Orc", class = "Warrior" }
+    STUB.Fire("PLAYER_TARGET_CHANGED")
+    check(printedContains("Kill on sight:|r Grom Hellscream (Level 34 Orc Warrior: camping STV)") and STUB.sounds[1] == SOUNDKIT.RAID_WARNING
+        and f:IsShown() and f.text:GetText():find("Grom Hellscream", 1, true) and f.sub:GetText() == "Level 34 Orc Warrior: camping STV",
+        "kos: targeting someone on the list calls them out")
+    f:Hide()
+    STUB.printed, STUB.sounds = {}, {}
+    STUB.Fire("PLAYER_TARGET_CHANGED")
+    STUB.units.mouseover = STUB.units.target
+    STUB.Fire("UPDATE_MOUSEOVER_UNIT")
+    check(#STUB.printed == 0 and #STUB.sounds == 0 and not f:IsShown(), "kos: the same player isn't called out again straight away")
+    Kos.spotted["grom hellscream"] = GetTime() - Kos.SPOT_EVERY
+    STUB.Fire("UPDATE_MOUSEOVER_UNIT")
+    check(#STUB.printed == 1 and f:IsShown(), "kos: but is a few minutes later (under the mouse counts too)")
+    f:Hide()
+    STUB.printed = {}
+    STUB.units.nameplate3 = { first = "Rend", level = -1 }
+    STUB.Fire("NAME_PLATE_UNIT_ADDED", "nameplate3")
+    check(printedContains("Kill on sight:|r Rend Blackhand (Level ??: still at it)"), "kos: a nameplate with only a first name is enough")
+    f:Hide()
+    STUB.printed = {}
+    STUB.units.nameplate4 = { first = "Zug", last = "Zugson", npc = true }
+    STUB.units.nameplate5 = { first = "Nobody", last = "Special" }
+    STUB.Fire("NAME_PLATE_UNIT_ADDED", "nameplate4")
+    STUB.Fire("NAME_PLATE_UNIT_ADDED", "nameplate5")
+    check(#STUB.printed == 0, "kos: creatures and players who aren't on the list are left alone")
+    ns.db.settings.kosAlerts = false
+    STUB.units.nameplate4.npc = nil
+    STUB.Fire("NAME_PLATE_UNIT_ADDED", "nameplate4")
+    check(#STUB.printed == 0 and not f:IsShown(), "kos: nothing is called out with alerts off")
+    ns.db.settings.kosAlerts = true
+    STUB.units = {}
+    UnitLevel = realLevel
+
+    -- the window
+    SlashCmdList.POGRAID("kos")
+    local w = Kos.frame
+    local rows = Kos.list.rows
+    check(w and w:IsShown() and w:GetFrameStrata() == "DIALOG" and rows[1].name:GetText() == "Grom Hellscream" and rows[1].note:GetText() == "camping STV"
+        and rows[2].name:GetText() == "Old One" and not Kos.list.empty:IsShown(), "kos: /pog kos opens the list, by name")
+    check(near(Kos.addButton:GetRight(), w:GetRight() - 12) and near(Kos.nameBox:GetLeft(), w:GetLeft() + 12)
+        and near(Kos.noteBox:GetLeft() - Kos.nameBox:GetRight(), 6) and near(Kos.addButton:GetLeft() - Kos.noteBox:GetRight(), 6)
+        and near(Kos.list:GetLeft(), w:GetLeft() + 12) and near(Kos.hunt:GetRight(), w:GetRight() - 12)
+        and near(Kos.hunt:GetLeft() - Kos.list:GetRight(), 8) and near(Kos.hunt:GetTop(), Kos.list:GetTop())
+        and near(Kos.hunt:GetBottom(), Kos.list:GetBottom()) and near(w:GetBottom(), Kos.targetButton:GetBottom() - 12),
+        "kos: the boxes, the board, the hunters and the buttons keep the window's margins")
+    check(near(rows[1]:GetLeft(), Kos.list:GetLeft() + 12) and near(rows[1]:GetTop(), Kos.list:GetTop() - 12)
+        and near(rows[2]:GetLeft() - rows[1]:GetRight(), 10) and near(rows[3]:GetRight(), Kos.list:GetRight() - 12)
+        and near(rows[1]:GetBottom() - rows[4]:GetTop(), 10) and near(rows[4]:GetLeft(), rows[1]:GetLeft())
+        and near(rows[6]:GetBottom(), Kos.list:GetBottom() + 12) and near(rows[6]:GetRight(), rows[3]:GetRight()),
+        "kos: six posters, three across and two down, evenly spaced on the board")
+    check(rows[1].head:GetText() == "Wanted" and rows[1].by:GetText() == "by " .. Ambiguate(me, "short") and rows[1].skull:GetTexture() == Kos.ICON
+        and rows[1].name.__textColor[1] == Kos.BLOOD[1] and rows[5]:IsShown() and not rows[6]:IsShown(), "kos: a poster says who's wanted, why, and who put it up")
+    Kos.nameBox:SetText("Nazgrel Farseer")
+    Kos.noteBox:SetText("stole my node")
+    STUB.Script(Kos.addButton, "OnClick")
+    check(store["nazgrel farseer"] and store["nazgrel farseer"].note == "stole my node" and Kos.nameBox:GetText() == ""
+        and Kos.status:GetText() == "Nazgrel Farseer is on the list." and rows[2].name:GetText() == "Nazgrel Farseer", "kos: Add marks whoever's in the boxes")
+    STUB.Script(Kos.addButton, "OnClick")
+    check(Kos.status:GetText() == "Whose name?", "kos: (and says what's missing)")
+    STUB.Script(Kos.targetButton, "OnClick")
+    check(Kos.status:GetText() == "Target a player first.", "kos: Add target needs a target")
+    STUB.units.target = { first = "Drek", last = "Thar" }
+    STUB.Script(Kos.targetButton, "OnClick")
+    check(store["drek thar"] and store["drek thar"].name == "Drek Thar", "kos: Add target marks the player we're targeting")
+    STUB.units = {}
+    local menu
+    local realShow = ns.UI.ShowMenu
+    ns.UI.ShowMenu = function(_, e) menu = e end
+    local realAm = Sync.AmOfficer
+    Sync.AmOfficer = function() return false end
+    local theirs
+    for _, row in ipairs(rows) do if row.item and row.item.id == "rend blackhand" then theirs = row end end
+    STUB.Script(theirs, "OnClick", "LeftButton")
+    check(#menu == 2 and menu[2].header and menu[2].func == nil and not Kos:Remove(theirs.item) and not store["rend blackhand"].deleted,
+        "kos: someone else's mark can't be taken off")
+    Sync.AmOfficer = function() return true end
+    check(Kos:CanRemove(theirs.item), "kos: (an officer can)")
+    Sync.AmOfficer = realAm
+    local ours
+    for _, row in ipairs(rows) do if row.item and row.item.id == "grom hellscream" then ours = row end end
+    STUB.Script(ours, "OnClick", "RightButton")
+    ns.UI.ShowMenu = realShow
+    check(menu[1].text == "Grom Hellscream" and menu[2].text == "Take off the list", "kos: clicking a mark of ours offers to take it off")
+    menu[2].func()
+    local still
+    for _, row in ipairs(rows) do if row:IsShown() and row.item.id == "grom hellscream" then still = true end end
+    check(store["grom hellscream"].deleted and Kos:Find("Grom") == nil and not still
+        and Kos.status:GetText() == "Grom Hellscream is off the list.", "kos: and does")
+    STUB.printed = {}
+    SlashCmdList.POGRAID("kos remove zug")
+    SlashCmdList.POGRAID("kos remove Nobody Here")
+    check(store["zug"].deleted and printedContains("Zug is off the kill on sight list") and printedContains("Nobody Here isn't on the kill on sight list"),
+        "kos: /pog kos remove Name")
+    STUB.Script(rows[1], "OnEnter")
+    check(GameTooltip.shown and GameTooltip.lines[1] == rows[1].item.name and GameTooltip.lines[#GameTooltip.lines]:find("Marked by", 1, true), "kos: hovering a mark says who marked them")
+    STUB.Script(rows[1], "OnLeave")
+    for i = 1, 12 do Sync:Apply(def, { id = "filler" .. ("%02d"):format(i), rev = now + 1, by = mate, author = mate, t = now - 9999, name = "Filler" .. ("%02d"):format(i) }, true) end
+    Kos:Refresh()
+    STUB.Script(Kos.list, "OnMouseWheel", -1)
+    check(Kos.list.offset == 3 and rows[1].name:GetText() == "Filler03", "kos: the wheel scrolls a long list")
+    for _ = 1, 8 do STUB.Script(Kos.list, "OnMouseWheel", -1) end
+    local total = #Kos:List()
+    check(total == 17 and Kos.list.offset == 12 and rows[5]:IsShown() and rows[5].name:GetText() == Kos:List()[17].name and not rows[6]:IsShown(),
+        "kos: (a row of posters at a time, stopping at the last row)")
+    for _ = 1, 8 do STUB.Script(Kos.list, "OnMouseWheel", 1) end
+    check(Kos.list.offset == 0, "kos: (and back to the top)")
+    local realMax = Kos.MAX
+    Kos.MAX = #Kos:List()
+    local more, full = Kos:Add("One More", "")
+    check(more == nil and full ~= nil and full:find("list is full", 1, true) ~= nil and store["one more"] == nil, "kos: the list has a limit")
+    Kos.MAX = realMax
+    w:Hide()
+    for id in pairs(store) do store[id] = nil end
+    Kos.index, Kos.spotted, Kos.told = nil, {}, {}
+    Sync.index = nil
+    T.notes = {}
+    f:Hide()
+end
+
+-- 0.18.0: guildies on the world map ---------------------------------------------------------------
+do
+    local GM, Sync = ns.GuildMap, ns.Sync
+    local G = ns.db.guild
+    local me = Sync:Me()
+    local mate
+    for name, p in pairs(G.players) do
+        if p.inGuild and name ~= me and p.class and (not mate or name < mate) then mate = name end
+    end
+    local out, idle = {}, true
+    local realSend, realIdle = ns.Comm.Send, ns.Comm.BulkIdle
+    ns.Comm.Send = function(text, channel, target, background)
+        out[#out + 1] = { text = text, channel = channel, target = target, background = background }
+    end
+    ns.Comm.BulkIdle = function() return idle end
+    local function sentG() return out end
+
+    local place = GM.Decode(GM.Encode({ map = 1453, x = 0.5, y = 0.25, cont = 0, wx = -2500.4, wy = 3250 }))
+    check(place and place.map == 1453 and near(place.x, 0.5) and near(place.y, 0.25) and place.cont == 0 and place.wx == -2500 and place.wy == 3250,
+        "map: a place survives the trip")
+    local bare = GM.Decode(GM.Encode({ map = 7, x = 1, y = 0 }))
+    check(bare and bare.map == 7 and bare.x == 1 and bare.cont == nil and GM.Encode({ map = 7, x = 1, y = 0 }) == "1:7:10000:0:::", "map: with or without the world spot")
+    check(GM.Decode("0") == false and GM.Decode("hello") == nil and GM.Decode("1:7:10001:0:::") == nil and GM.Decode("2:7:1:1:::") == nil
+        and GM.Decode(("1"):rep(90)) == nil, "map: anything else is ignored")
+
+    check(ns.db.settings.guildMap == true and GM:On(), "map: on by default")
+    STUB.currentMap, STUB.pos = 1453, { x = 0.5, y = 0.25 }
+    GM.sent, GM.sentAt, GM.last = nil, nil, nil
+    STUB.sent = {}
+    GM:Tick()
+    local g = sentG()
+    check(#g == 1 and g[1].channel == "GUILD" and g[1].target == nil and g[1].background == true
+        and g[1].text == "G1:1453:5000:2500:0:2500:3250", "map: we tell the guild where we are, behind everything else")
+    STUB.pos = { x = 0.6, y = 0.25 }
+    GM:Tick()
+    check(#sentG() == 1, "map: not again straight away, even on the move")
+    GM.sentAt = GetTime() - GM.MIN_GAP
+    GM:Tick()
+    g = sentG()
+    check(#g == 2 and g[2].text == "G1:1453:6000:2500:0:2600:3250", "map: again once we've moved and a little time has passed")
+    GM.sentAt = GetTime() - GM.MIN_GAP
+    STUB.pos = { x = 0.601, y = 0.25 }
+    GM:Tick()
+    check(#sentG() == 2, "map: standing still says nothing")
+    GM.sentAt = GetTime() - GM.BEAT
+    GM:Tick()
+    check(#sentG() == 3, "map: except once in a while, so newcomers find us")
+    idle = false
+    GM.sentAt = GetTime() - GM.BEAT
+    GM:Tick()
+    check(#sentG() == 3, "map: nothing joins a queue that's busy with sync")
+    idle = true
+    GM.sentAt = GetTime() - 1
+    local realInstance = STUB.instance
+    STUB.instance = { "The Deadmines", "party" }
+    GM:Tick()
+    GM:Tick()
+    g = sentG()
+    check(#g == 4 and g[4].text == "G0", "map: inside a dungeon we say we're gone, once")
+    STUB.instance = realInstance
+    GM.sentAt = GetTime() - GM.MIN_GAP
+    GM:Tick()
+    check(#sentG() == 5, "map: and where we are again when we're out")
+    STUB.printed = {}
+    SlashCmdList.POGRAID("map")
+    g = sentG()
+    check(not GM:On() and #g == 6 and g[6].text == "G0" and printedContains("Guildies on the map: off"), "map: /pog map turns it off and tells the guild we're gone")
+    GM.sentAt = GetTime() - GM.BEAT
+    GM:Tick()
+    check(#sentG() == 6, "map: off means nothing is sent")
+    GM.sentAt = GetTime()
+    SlashCmdList.POGRAID("map")
+    GM:Tick()
+    check(GM:On() and #sentG() == 7 and printedContains("Guildies on the map: on"), "map: on again, and we say where we are at once")
+    STUB.pos = nil
+    ns.Comm.Send, ns.Comm.BulkIdle = realSend, realIdle
+
+    -- hearing the others
+    GM.where = {}
+    local wire = "G1:1453:5000:2500:0:2500:3250"
+    STUB.Fire("CHAT_MSG_ADDON", "PogRaid", wire, "WHISPER", mate)
+    STUB.Fire("CHAT_MSG_ADDON", "PogRaid", wire, "GUILD", STUB.player)
+    STUB.Fire("CHAT_MSG_ADDON", "PogRaid", "Gnonsense", "GUILD", mate)
+    check(next(GM.where) == nil, "map: only a guild message from someone else, that makes sense, counts")
+    STUB.Fire("CHAT_MSG_ADDON", "PogRaid", wire, "GUILD", mate)
+    check(GM.where[mate] and GM.where[mate].map == 1453 and GM.where[mate].at == GetTime(), "map: a guildie's place is noted")
+
+    -- the dots
+    local canvas = CreateFrame("Frame", nil, UIParent)
+    canvas:SetSize(1000, 600)
+    canvas:SetPoint("TOPLEFT", 100, -50)
+    local shownMap = 1453
+    WorldMapFrame = CreateFrame("Frame", nil, UIParent)
+    WorldMapFrame.GetCanvas = function() return canvas end
+    WorldMapFrame.GetMapID = function() return shownMap end
+    WorldMapFrame:Show()
+    local realOnline = ns.Roster.online[mate]
+    ns.Roster.online[mate] = true
+    check(GM:Refresh() == 1, "map: one dot for the one guildie we've heard from")
+    local pin = GM.pins[1]
+    local px, py = pin:GetCenter()
+    local c = RAID_CLASS_COLORS[G.players[mate].class]
+    check(pin:IsShown() and near(px, canvas:GetLeft() + 500) and near(py, canvas:GetTop() - 150) and pin:GetScale() == 1
+        and near(pin.dot.__vertex[1], c.r) and near(pin.dot.__vertex[3], c.b) and pin:GetFrameLevel() > canvas:GetFrameLevel() + 2000,
+        "map: in their class colour, where they are on their own zone's map")
+    shownMap = 13
+    GM:Refresh()
+    px, py = pin:GetCenter()
+    check(pin:IsShown() and near(px, canvas:GetLeft() + 250) and near(py, canvas:GetTop() - 195), "map: and in the right place on the continent's map")
+    shownMap = 2001
+    check(GM:Refresh() == 0 and not pin:IsShown(), "map: no dot on a map they aren't on")
+    shownMap = 13
+    canvas.GetEffectiveScale = function() return 2 end
+    GM:Refresh()
+    check(pin:IsShown() and pin:GetScale() == 0.5, "map: dots keep their size when the map is zoomed")
+    canvas.GetEffectiveScale = nil
+    STUB.Script(pin, "OnEnter")
+    check(GameTooltip.shown and GameTooltip.lines[1] == Ambiguate(mate, "short") and GameTooltip.lines[#GameTooltip.lines] == "Stormwind City",
+        "map: hovering a dot says who and which zone")
+    GM.where[mate].at = GetTime() - 130
+    STUB.Script(pin, "OnEnter")
+    check(GameTooltip.lines[#GameTooltip.lines] == "2m ago", "map: and how old the news is, once it's a minute old")
+    STUB.Script(pin, "OnLeave")
+    GM.where[mate].at = GetTime()
+    STUB.party, STUB.inParty = { mate }, { [mate] = true }
+    check(GM:Refresh() == 0, "map: group members are left to the game's own dots")
+    STUB.party, STUB.inParty = nil, nil
+    ns.db.settings.guildMap = false
+    check(GM:Refresh() == 0, "map: no dots when it's off")
+    ns.db.settings.guildMap = true
+    ns.Roster.online[mate] = nil
+    GM.where[mate].at = GetTime() - GM.OFFLINE - 1
+    check(GM:Refresh() == 0 and GM.where[mate] == nil, "map: someone who logged off loses their dot soon after")
+    ns.Roster.online[mate] = true
+    STUB.Fire("CHAT_MSG_ADDON", "PogRaid", wire, "GUILD", mate)
+    GM.where[mate].at = GetTime() - GM.STALE + 1
+    check(GM:Refresh() == 1, "map: a quiet guildie keeps their dot for a while")
+    GM.where[mate].at = GetTime() - GM.STALE - 1
+    check(GM:Refresh() == 0 and GM.where[mate] == nil, "map: and loses it after that")
+    STUB.Fire("CHAT_MSG_ADDON", "PogRaid", wire, "GUILD", mate)
+    STUB.Fire("CHAT_MSG_ADDON", "PogRaid", "G0", "GUILD", mate)
+    check(GM.where[mate] == nil, "map: a guildie who says they're gone is taken off")
+    WorldMapFrame:Hide()
+    STUB.Fire("CHAT_MSG_ADDON", "PogRaid", wire, "GUILD", mate)
+    check(GM:Refresh() == 0, "map: nothing is drawn while the map is closed")
+    ns.Roster.online[mate] = realOnline
+    WorldMapFrame = nil
+    GM.where, GM.sent, GM.sentAt, GM.last = {}, nil, nil, nil
+    STUB.sent = {}
+end
+
+-- 0.18.0: updated and reloaded without a restart (the two new files aren't loaded yet) ---------------
+do
+    local realKos, realMap = ns.Kos, ns.GuildMap
+    ns.Kos, ns.GuildMap = nil, nil
+    local menu
+    local realShow = ns.UI.ShowMenu
+    ns.UI.ShowMenu = function(_, e) menu = e end
+    STUB.Script(ns.MinimapButton.button, "OnClick", "RightButton")
+    ns.UI.ShowMenu = realShow
+    check(menu and #menu == 3 and menu[2].text == "Settings" and menu[3].text == "Hide minimap button", "update: the minimap menu works before the restart")
+    STUB.printed = {}
+    SlashCmdList.POGRAID("kos Grom Hellscream")
+    SlashCmdList.POGRAID("map")
+    SlashCmdList.POGRAID("reset")
+    check(#STUB.printed == 3 and STUB.printed[1]:find("Restart the game", 1, true) and STUB.printed[2]:find("Restart the game", 1, true)
+        and STUB.printed[3]:find("window positions reset", 1, true), "update: /pog kos and /pog map say to restart, and /pog reset still works")
+    ns.Kos, ns.GuildMap = realKos, realMap
+    STUB.printed = {}
+    SlashCmdList.POGRAID("kos")
+    SlashCmdList.POGRAID("reset")
+    check(ns.Kos.frame:IsShown() and printedContains("window positions reset"), "kos: /pog reset puts its window back too")
+    ns.Kos.frame:Hide()
+end
+
+-- 0.18.0: kills of marked players, and the hunters list ------------------------------------------
+do
+    local Kos, Sync, T = ns.Kos, ns.Sync, ns.GroupToast
+    local G = ns.db.guild
+    local me = Sync:Me()
+    local mate, other
+    for name, p in pairs(G.players) do
+        if p.inGuild and name ~= me and (not mate or name < mate) then mate = name end
+    end
+    for name, p in pairs(G.players) do
+        if p.inGuild and name ~= me and name ~= mate and (not other or name < other) then other = name end
+    end
+    local now = ns.Now()
+    local store, kills = Sync:Store("kos"), Sync:Store("koskills")
+    for id in pairs(store) do store[id] = nil end
+    for id in pairs(kills) do kills[id] = nil end
+    Kos.index, Kos.spotted, Kos.told, Kos.guids, Kos.killed, Kos.seenKills = nil, {}, {}, {}, {}, {}
+    T.notes = {}
+    if T.frame then T.frame:Hide() end
+    local def, kdef = Sync.collections.kos, Sync.collections.koskills
+    Sync:Apply(def, { id = "rend blackhand", rev = now + 1, by = mate, author = mate, t = now - 9999, name = "Rend Blackhand" })
+    Sync:Apply(def, { id = "old one", rev = now + 1, by = mate, author = mate, t = now - 9999, name = "Old One" })
+    Kos:Add("Grom Hellscream", "")
+    local myGuid = UnitGUID("player")
+
+    -- we come across Rend (alerts off: still noted), then he dies to us
+    ns.db.settings.kosAlerts = false
+    STUB.units.target = { first = "Rend", last = "Blackhand", guid = "Player-1-REND" }
+    STUB.Fire("PLAYER_TARGET_CHANGED")
+    ns.db.settings.kosAlerts = true
+    check(Kos.guids["Player-1-REND"] == "rend blackhand", "kills: a marked player we come across is remembered, alerts or not")
+    STUB.printed, STUB.sounds = {}, {}
+    STUB.Fire("PARTY_KILL", myGuid, "Player-1-REND")
+    local mine = kills[me]
+    check(Kos:Kills() == 1 and mine and mine.n == 1 and mine.last == "Rend Blackhand" and mine.author == me
+        and printedContains("you got Rend Blackhand. That's 1.") and STUB.sounds[1] == SOUNDKIT.IG_QUEST_LIST_COMPLETE,
+        "kills: killing someone a guildie marked counts")
+    check(not (T.frame and T.frame:IsShown()), "kills: no pop-up for a kill of our own")
+    STUB.Fire("PARTY_KILL", myGuid, "Player-1-REND")
+    check(Kos:Kills() == 1, "kills: the same player doesn't count again straight away")
+    Kos.killed["rend blackhand"] = GetTime() - Kos.KILL_EVERY
+    STUB.Fire("PARTY_KILL", myGuid, "Player-1-REND")
+    check(Kos:Kills() == 2 and printedContains("That's 2."), "kills: but does a few minutes later")
+    -- one we never laid eyes on: the game says whose GUID it is
+    STUB.guids["Player-1-OLD"] = "Old One"
+    STUB.guids["Player-1-NOBODY"] = "Nobody Special"
+    STUB.Fire("PARTY_KILL", myGuid, "Player-1-OLD")
+    STUB.Fire("PARTY_KILL", myGuid, "Player-1-NOBODY")
+    STUB.Fire("PARTY_KILL", myGuid, "Creature-0-1-2-3")
+    check(Kos:Kills() == 3 and kills[me].last == "Old One", "kills: a kill is matched by name when we hadn't seen them, and nobody else counts")
+    -- our own marks don't count, nor ones taken off the list
+    STUB.guids["Player-1-GROM"] = "Grom Hellscream"
+    STUB.Fire("PARTY_KILL", myGuid, "Player-1-GROM")
+    check(Kos:Kills() == 3, "kills: someone we marked ourselves doesn't count")
+    Sync:Apply(def, { id = "rend blackhand", rev = now + 9, by = mate, author = mate, t = now - 9999, name = "Rend Blackhand", deleted = true })
+    Kos.killed = {}
+    STUB.Fire("PARTY_KILL", myGuid, "Player-1-REND")
+    check(Kos:Kills() == 3, "kills: nor someone who's been taken off the list")
+    STUB.units = {}
+
+    -- what other addons would accept
+    check(not Sync:Apply(kdef, { id = mate, rev = now + 1, by = me, author = mate, t = now, n = 99 }), "kills: nobody writes someone else's tally")
+    check(not Sync:Apply(kdef, { id = mate, rev = now + 1, by = mate, author = mate, t = now, n = -1 })
+        and not Sync:Apply(kdef, { id = mate, rev = now + 1, by = mate, author = mate, t = now, n = 1.5 })
+        and not Sync:Apply(kdef, { id = mate, rev = now + 1, by = mate, author = mate, t = now, n = 1, last = ("x"):rep(41) }), "kills: a tally is a whole number, with a name that fits")
+
+    -- a guildie's kill: a pop-up, once per kill, fresh ones only
+    T.notes = {}
+    if T.frame then T.frame:Hide() end
+    check(Sync:Apply(kdef, { id = mate, rev = now + 1, by = mate, author = mate, t = now, n = 5, last = "Old One" }), "kills: a guildie's tally is taken")
+    local f = T.frame
+    check(f and f:IsShown() and f.text:GetText():find(" got ", 1, true) and f.text:GetText():find("Old One", 1, true) and f.sub:GetText() == "Kill on sight",
+        "kills: a pop-up when a guildie kills someone on the list")
+    f:Hide()
+    Sync:Apply(kdef, { id = mate, rev = now + 2, by = mate, author = mate, t = now, n = 5, last = "Old One" })
+    check(not f:IsShown() and #T.notes == 0, "kills: (once per kill)")
+    Sync:Apply(kdef, { id = other, rev = now + 1, by = other, author = other, t = now - Kos.FRESH - 5, n = 3, last = "Old One" })
+    check(not f:IsShown() and #T.notes == 0, "kills: an old tally arrives quietly")
+    ns.db.settings.kosAlerts = false
+    Sync:Apply(kdef, { id = mate, rev = now + 3, by = mate, author = mate, t = now, n = 6, last = "Old One" })
+    check(not f:IsShown() and #T.notes == 0, "kills: no pop-up with alerts off")
+    ns.db.settings.kosAlerts = true
+
+    -- the hunters list
+    local h = Kos:Hunters()
+    check(#h == 3 and h[1].name == mate and h[1].n == 6 and h[2].n == 3 and h[3].n == 3 and h[2].name < h[3].name, "kills: hunters are listed most kills first")
+    Kos:Open()
+    local hr = Kos.hunt.rows
+    check(hr[1].name:GetText():find("1. ", 1, true) == 1 and hr[1].name:GetText():find(Ambiguate(mate, "short"), 1, true) and hr[1].n:GetText() == "6"
+        and hr[3]:IsShown() and not hr[4]:IsShown() and not Kos.hunt.empty:IsShown() and #hr == Kos.layout.HUNTERS, "kills: and shown beside the board")
+    kills[other].n = 0
+    check(#Kos:Hunters() == 2, "kills: a hunter with no kills isn't listed")
+    for id in pairs(kills) do kills[id] = nil end
+    Kos:Refresh()
+    check(not hr[1]:IsShown() and Kos.hunt.empty:IsShown(), "kills: with nobody on it the list says how to get there")
+    Kos.frame:Hide()
+    for id in pairs(store) do store[id] = nil end
+    Kos.index, Kos.spotted, Kos.told, Kos.guids, Kos.killed, Kos.seenKills = nil, {}, {}, {}, {}, {}
+    STUB.guids = {}
+    Sync.index = nil
+    T.notes = {}
+    f:Hide()
+end
+
+-- 0.18.0: OneForAll's guild map beside ours, and the Settings tick ---------------------------------
+do
+    local GM, Sync, Settings = ns.GuildMap, ns.Sync, ns.Settings
+    local G = ns.db.guild
+    local me = Sync:Me()
+    local mate
+    for name, p in pairs(G.players) do
+        if p.inGuild and name ~= me and p.class and (not mate or name < mate) then mate = name end
+    end
+    local canvas = CreateFrame("Frame", nil, UIParent)
+    canvas:SetSize(1000, 600)
+    canvas:SetPoint("TOPLEFT", 100, -50)
+    WorldMapFrame = CreateFrame("Frame", nil, UIParent)
+    WorldMapFrame.GetCanvas = function() return canvas end
+    WorldMapFrame.GetMapID = function() return 1453 end
+    WorldMapFrame:Show()
+    local realOnline = ns.Roster.online[mate]
+    ns.Roster.online[mate] = true
+    GM.where, GM.theirs = {}, {}
+    STUB.Fire("CHAT_MSG_ADDON", "PogRaid", "G1:1453:5000:2500:0:2500:3250", "GUILD", mate)
+    local ofa = "P\t1453\t5000\t2500\tMAGE\t60\tabc123"
+    STUB.Fire("CHAT_MSG_ADDON", "OFAGuildPos", ofa, "GUILD", mate)
+    check(GM.theirs[mate] == GetTime() and not GM:OtherOn() and GM:Refresh() == 1, "ofa: without OneForAll here our dot is drawn, whatever its messages say")
+    STUB.addons.OneForAll = true
+    check(GM:OtherOn() and GM:Refresh() == 0, "ofa: a guildie OneForAll is showing gets no second dot from us")
+    OneForAllDB = { qol = { guildMap = false } }
+    check(not GM:OtherOn() and GM:Refresh() == 1, "ofa: OneForAll's guild map switched off here: the dot is ours again")
+    OneForAllDB = { qol = {} }
+    check(GM:OtherOn() and GM:Refresh() == 0, "ofa: (its switch is on unless turned off)")
+    STUB.Fire("CHAT_MSG_ADDON", "OFAGuildPos", "X", "GUILD", mate)
+    check(GM.theirs[mate] == nil and GM:Refresh() == 1, "ofa: they stop sharing through OneForAll: our dot comes back")
+    STUB.Fire("CHAT_MSG_ADDON", "OFAGuildPos", ofa, "GUILD", mate)
+    STUB.Fire("CHAT_MSG_ADDON", "OFAGuildPos", "I\tdeadmines\tMAGE\t60\tabc123", "GUILD", mate)
+    check(GM.theirs[mate] == nil, "ofa: (or go into a dungeon)")
+    STUB.Fire("CHAT_MSG_ADDON", "OFAGuildPos", ofa, "WHISPER", mate)
+    STUB.Fire("CHAT_MSG_ADDON", "OFAGuildPos", "Q", "GUILD", mate)
+    STUB.Fire("CHAT_MSG_ADDON", "SomethingElse", ofa, "GUILD", mate)
+    check(GM.theirs[mate] == nil, "ofa: only its places on the guild channel count")
+    STUB.Fire("CHAT_MSG_ADDON", "OFAGuildPos", ofa, "GUILD", mate)
+    GM.theirs[mate] = GetTime() - GM.OTHER_FORGET - 1
+    check(GM:Refresh() == 1 and GM.theirs[mate] == nil, "ofa: OneForAll drops a quiet dot after three minutes, and then ours shows")
+    STUB.sent = {}
+    STUB.Fire("CHAT_MSG_ADDON", "OFAGuildPos", ofa, "GUILD", mate)
+    local onTheirs = 0
+    for _, m in ipairs(STUB.sent) do if m.prefix ~= "PogRaid" then onTheirs = onTheirs + 1 end end
+    check(onTheirs == 0, "ofa: we never send on OneForAll's channel")
+    STUB.addons.OneForAll, OneForAllDB = nil, nil
+    GM.theirs = {}
+
+    -- the tick in Settings
+    SlashCmdList.POGRAID("settings")
+    local tick
+    for _, c in ipairs(Settings.checks) do
+        if c.label:GetText() == "Share location on the guild map" then tick = c end
+    end
+    check(tick and tick.checked and #Settings.checks == 11, "settings: a tick for sharing your location, on by default")
+    local sent = {}
+    local realSend = ns.Comm.Send
+    ns.Comm.Send = function(text) sent[#sent + 1] = text end
+    GM.sent = "1:1453:5000:2500:0:2500:3250"
+    STUB.Script(tick, "OnClick")
+    check(not tick.checked and ns.db.settings.guildMap == false and not GM:On() and sent[1] == "G0" and GM:Refresh() == 0,
+        "settings: unticking stops the sharing, tells the guild we're gone and hides the dots")
+    STUB.printed = {}
+    SlashCmdList.POGRAID("map")
+    check(GM:On() and tick.checked, "settings: the tick follows /pog map")
+    ns.Comm.Send = realSend
+    STUB.Script(tick, "OnEnter")
+    check(GameTooltip.shown and GameTooltip.lines[1] == "Share location on the guild map" and GameTooltip.lines[2]:find("nobody sees you", 1, true),
+        "settings: hovering the tick says what it does")
+    STUB.Script(tick, "OnLeave")
+    local gen, off = Settings.general, Settings.officers
+    local last = Settings.checks[11]
+    check(near(Settings.checks[2]:GetTop(), Settings.checks[1]:GetTop() - 21) and near(last:GetTop(), Settings.checks[1]:GetTop() - 210)
+        and Settings.themeBtn:GetTop() <= last:GetBottom() + 1 and Settings.themeBtn:GetBottom() >= gen:GetBottom() + 12
+        and off.ranks[10]:GetBottom() >= off:GetBottom() + 8 and near(off:GetTop(), gen:GetBottom() - 8),
+        "settings: eleven ticks, the theme and ten officer ranks all fit their cards")
+    ns.Roster.online[mate] = realOnline
+    WorldMapFrame:Hide()
+    WorldMapFrame = nil
+    GM.where, GM.sent, GM.sentAt, GM.last = {}, nil, nil, nil
+    STUB.sent = {}
+    ns.Editor:ShowTab("home")
 end
 
 return results

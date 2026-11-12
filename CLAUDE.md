@@ -165,6 +165,50 @@ launchers and plain-English steps. Read this whole file before changing anything
   card: FLOOR in 30pt gold with the seam's ore icon, a 12px quota bar with "225 to go" / "Quota reached", bomb pips,
   upgrades (icon, name, count), a "Pegs" legend (what each kind does and is worth on this floor with these upgrades;
   it hides if more than 8 upgrades reach down to it) and the foot (best, New run).
+- 0.18.0 kill on sight (`Kos.lua`, `ns.Kos`; asked for by guildies: "a KOS list for horde", a pop-up when someone is
+  marked, "/pog kos [NAME]"). Sync collection `kos` (code "t"): id = `Kos.Key(name)` (lower case, single spaces), `name`
+  as typed, `note` (60). Anyone marks; only the marker (`by == author`) or an officer changes or deletes. `perRecord`:
+  `Kos:OnRecord` pops up once per mark (`Kos.told`, only one marked in the last `FRESH` 10 min, never our own). The
+  spotter: PLAYER_TARGET_CHANGED, UPDATE_MOUSEOVER_UNIT and NAME_PLATE_UNIT_ADDED -> `Kos:Check(unit)`: a player whose
+  `UnitName` (first, surname; secret values skipped) is on the list is called out (chat line, RAID_WARNING sound, pop-up
+  note; the note waits out combat like all notes, the chat line and sound don't), each player once per `SPOT_EVERY`
+  5 min. `Kos:Find` matches a whole name, or by first name when the mark or the sighting has only that. `/pog kos`
+  opens the window (`PogRaidKos`, DIALOG strata like chat: two boxes and Add, the list, Add target, an Alerts check =
+  `settings.kosAlerts`); `/pog kos Name Surname reason` (`Kos.Parse`: up to a comma, else the first two words are the
+  name); `/pog kos remove Name`. Guild members can't be marked; 100 marks at most. Same cost with older addons as the
+  hiscore collections. Seen in game by Jake (Nov 2026): targeting a marked Horde player gave the chat line with level,
+  race and class, so enemy names do come through `UnitName`.
+  The window (Jake, from his screenshot of the plain list: "a bulletin board of targets"): a wood-coloured board of
+  wanted posters, 3 across and 2 down (`poster()`: tan paper with the game's parchment over it, a pin, "Wanted", the
+  skull, the name in dark red, why, "by X"; dark ink with no text shadow), the wheel moves a row of posters at a time;
+  beside it the Hunters card. Kills (Jake: "people who have killed the most people marked as KoS by other people"):
+  Forever closes COMBAT_LOG_EVENT_* to addons (registering it gets the addon blocked), so kills come from PARTY_KILL
+  (killer GUID, victim GUID; ours and our group's). `Kos:Check` notes the GUID of every marked player we come across
+  (`Kos.guids`, alerts on or off), else `GetPlayerInfoByGUID` names the victim. A kill counts for a mark someone else
+  made, once per `KILL_EVERY` 5 min per target; `koskills` collection (code "j", id = author, `n`, `last` = the latest
+  victim's name, `perRecord`): `Kos:OnKills` pops up "X got Y" once per new count, fresh ones only. `Kos:Hunters`.
+  Not proven in game yet: that PARTY_KILL fires for player kills in the open world.
+- 0.18.0 guildies on the world map (`GuildMap.lua`, `ns.GuildMap`; asked for by guildies). An addon can't read where
+  anyone else is, so each one says where its own player is: Comm kind "G" on GUILD, one unchunked message in the
+  background lane, `G1:<map>:<x>:<y>:<continent>:<wx>:<wy>` (x, y in 1/10000 of the zone map; world yards from
+  `C_Map.GetWorldPosFromMapPos`) or `G0` (no position: an instance, or switched off). `GuildMap:Tick` every 5 s: sends
+  when moved (`MOVE`) at most every `MIN_GAP` 20 s, every `BEAT` 120 s standing still, and never while the sync queue
+  is busy (`Comm.BulkIdle`). Dots (`GuildMap:Refresh`) are frames on `WorldMapFrame:GetCanvas()`: class colour from the
+  guild roster, the sender's own x, y on their zone's map, `C_Map.GetMapPosFromWorldPos` on any other map, scaled by
+  map scale / canvas scale so zooming doesn't grow them; group members are skipped (the game draws them); a dot goes
+  `STALE` 300 s after its last message, or 45 s after the roster says they're offline. Hooks: the map's OnShow,
+  OnMapChanged, OnCanvasScaleChanged (all three exist on this client: another addon on Jake's PC uses them).
+  `settings.guildMap` (on by default) is one switch for sending and seeing; `/pog map` and the minimap button's menu
+  flip it, and so does Settings' "Share location on the guild map" (Jake asked for a tick there, default on).
+  Old versions ignore kind "G". Not seen in game yet.
+  OneForAll (another addon on Jake's PC, by Smoergi) draws guildies too, from its own prefix "OFAGuildPos" ("P<tab>..."
+  a place, "X" gone, "I..." in a dungeon). Different prefix, own frames: neither breaks the other. To avoid two dots on
+  one guildie who runs both, `GuildMap:OnOther` listens to that prefix (never sends on it) and `GuildMap:Doubled` skips
+  our dot while OneForAll is loaded here, its `OneForAllDB.qol.guildMap` isn't false, and it had a place for them in
+  the last 180 s (its own forget time).
+- 0.18.0 added two files to the .toc. A player who updates and only does /reload doesn't have them until the game
+  restarts, so everything outside them that touches `ns.Kos` or `ns.GuildMap` checks it exists first (the minimap
+  menu, /pog kos, /pog map, /pog reset, Comm's "G"). Do the same for any file added later.
 - 0.17.0 Siegebreaker (`Siege.lua`, `ns.Siege`; Jake: "roguelike BrickBreaker like the OG game", then "make it like 50"
   levels). Our own game in that genre: never the BlackBerry game's name or its levels. Games tab mode "siege" (tab
   label "Siege", `/pog siege`). Rules in `Siege.Run` (no UI, dice from `Lode.Rng`): the paddle is the mouse
@@ -196,8 +240,9 @@ launchers and plain-English steps. Read this whole file before changing anything
   `settings.levelToasts`; `/pog ding` previews the banner, `/pog ding 40` the small one.
 - 0.16.9 `settings.gamesOnFlight` (off by default): PLAYER_CONTROL_LOST, then a second later `UnitOnTaxi("player")`,
   opens the Games tab if the window is closed (`Games:OnControlLost`). Nothing closes on landing.
-- Settings' General card now has ten checks at `CHECK_PITCH` 23 (both cards), `GENERAL_H` 322: ten officer ranks
-  still fit under it with 9px to spare. An eleventh check needs a rethink of that column, not another squeeze.
+- Settings' General card has eleven checks at `CHECK_PITCH` 21 (both cards; each row is exactly that tall), `GENERAL_H`
+  323: ten officer ranks fit under it with room to spare. A check's 4th entry is a tooltip. 21 is as tight as rows of
+  12pt text should go: a twelfth check needs a second column or a rethink.
 - 0.16.9 pages refresh only when really on screen: every `X:Changed()` guard is `page:IsVisible()`, not `IsShown()`. A
   page of the closed window is still flagged shown, so background sync kept redrawing whichever tab was last open; on
   Profiles that restarted the profile song with the addon closed (Jake). `Profiles:Open` uses it too, so asking for a
@@ -254,10 +299,11 @@ launchers and plain-English steps. Read this whole file before changing anything
 
 ## Architecture
 - Comm prefix `PogRaid`, messages chunked at 240 bytes (max 64 chunks). Kinds: B raid plan, X close plan, Q/R raid
-  check, P self ping, Y guild sync, J/K join request/answer, D duels, V/W version, Z sync ping. Two send lanes: fast
+  check, P self ping, Y guild sync, J/K join request/answer, D duels, V/W version, Z sync ping, C chat,
+  G where a guildie is (GuildMap). Two send lanes: fast
   (plans, whispers, sync asks) and background (sync listings and records) keeping 3 sends in reserve.
 - Sync.lua: shared collections per guild in `PogRaidDB.sync[guild]` (posts, comments, lfg, scores, gems, wowdle, duels,
-  config, profs, recipes, profile, kudos, nights, notice, drops, wish, gear, lfd). Records have id/rev/by, newest wins, deletes are tombstones. Records hash into 32 buckets;
+  config, profs, recipes, profile, kudos, nights, notice, drops, wish, gear, lfd, lode, siege, kos, koskills). Records have id/rev/by, newest wins, deletes are tombstones. Records hash into 32 buckets;
   a fingerprint "F" (bucket sums + version) goes out 15 s after login, every 10 min, after loading screens and when a
   multi-part message arrives incomplete (at most once a minute). Receivers ask the sender to list differing buckets
   ("L"), only the sender lists ("H"), others send what's missing ("E" pages, compact format; old "P" still read) or

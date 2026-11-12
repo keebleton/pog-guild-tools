@@ -22,8 +22,8 @@ local RX = PAD + LEFT_W + PAD
 local RW = FRAME_W - RX - PAD
 local TOP = TITLE_H
 local ROW_H = 22
-local CHECK_PITCH = 23  -- a row of checks (26 while there were eight of them)
-local GENERAL_H = 32 + 10 * CHECK_PITCH + 26 + 22 + 12 -- ten checks, the theme and its reload button (ten officer ranks still fit under it)
+local CHECK_PITCH = 21  -- a row of checks (26 while there were eight of them, 23 with ten)
+local GENERAL_H = 32 + 11 * CHECK_PITCH + 26 + 22 + 12 -- eleven checks, the theme and its reload button (ten officer ranks still fit under it)
 
 local function S() return ns.db.settings end
 
@@ -104,11 +104,26 @@ function Settings:Build(page)
         { "Group chat", function() return S().chat end, function(v) ns.Chat:SetEnabled(v) end },
         { "Level-up pop-ups", function() return S().levelToasts end, function(v) S().levelToasts = v end },
         { "Open Games on flight paths", function() return S().gamesOnFlight end, function(v) S().gamesOnFlight = v and true or false end },
+        -- one switch for both ways (see GuildMap.lua); the file is new in 0.18 and
+        -- missing until the game restarts after an update
+        { "Share location on the guild map", function() return S().guildMap ~= false end, function(v)
+            if ns.GuildMap then ns.GuildMap:Set(v) else S().guildMap = v and true or false end
+        end, "Guildies with Pog Guild Tools see where you are on their world map, and you see them. Off: nobody sees you, and you don't see them." },
     }
     for i, it in ipairs(items) do
         local c = UI.Check(gen, it[1], it[2], it[3])
-        c:SetWidth(LEFT_W - 24)
+        c:SetSize(LEFT_W - 24, CHECK_PITCH) -- a row is its own height: no overlap with the next
         c:SetPoint("TOPLEFT", 12, -(32 + (i - 1) * CHECK_PITCH))
+        if it[4] then
+            c:HookScript("OnEnter", function(b)
+                if not GameTooltip then return end
+                GameTooltip:SetOwner(b, "ANCHOR_RIGHT")
+                GameTooltip:AddLine(it[1], 1, 1, 1)
+                GameTooltip:AddLine(it[4], nil, nil, nil, true)
+                GameTooltip:Show()
+            end)
+            c:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+        end
         self.checks[i] = c
     end
     -- the theme: a button with the current one, a menu of the rest. The look is
@@ -151,7 +166,7 @@ function Settings:Build(page)
         local idx = i - 1
         local c = UI.Check(off, "", function() return self:IsOfficerRank(idx) end,
             function(v) self:SetOfficerRank(idx, v) end)
-        c:SetWidth(LEFT_W - 24)
+        c:SetSize(LEFT_W - 24, CHECK_PITCH)
         c:SetPoint("TOPLEFT", 12, -(32 + (i - 1) * CHECK_PITCH))
         off.ranks[i] = c
     end

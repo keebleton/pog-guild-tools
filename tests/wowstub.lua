@@ -614,3 +614,55 @@ end
 Minimap = new("Frame")
 Minimap.__w, Minimap.__h = 140, 140
 Minimap.__anchor = { point = "TOPRIGHT", rel = UIParent, relPoint = "TOPRIGHT", x = -20, y = -20 }
+
+-- other units (mouseover, nameplates, a target with a surname): STUB.units[unit] =
+-- { first, last, level, race, class, npc } -------------------------------------
+STUB.units = {}
+do
+    local exists, isPlayer, name = UnitExists, UnitIsPlayer, UnitName
+    function UnitExists(unit) if STUB.units[unit] then return true end return exists(unit) end
+    function UnitIsPlayer(unit) local u = STUB.units[unit] if u then return u.npc ~= true end return isPlayer(unit) end
+    function UnitName(unit) local u = STUB.units[unit] if u then return u.first, u.last end return name(unit) end
+    local level, race, class = UnitLevel, UnitRace, UnitClass
+    function UnitLevel(unit) local u = STUB.units[unit] if u then return u.level end if level then return level(unit) end end
+    function UnitRace(unit) local u = STUB.units[unit] if u then return u.race end if race then return race(unit) end end
+    function UnitClass(unit) local u = STUB.units[unit] if u then return u.class end if class then return class(unit) end end
+end
+do
+    local guid = UnitGUID
+    function UnitGUID(unit) local u = STUB.units[unit] if u then return u.guid end return guid(unit) end
+end
+-- whose GUID is this? STUB.guids[guid] = name
+STUB.guids = {}
+function GetPlayerInfoByGUID(guid)
+    local name = STUB.guids[guid]
+    if name then return "Warrior", "WARRIOR", "Orc", "Orc", 2, name, "" end
+end
+function IsInInstance() return STUB.instance[2] ~= "none", STUB.instance[2] end
+function UnitInParty(name) return STUB.inParty ~= nil and STUB.inParty[name] == true end
+
+-- where the player is, and the world behind the maps: a map covers `size` world
+-- yards from (ox, oy) on its continent ----------------------------------------
+STUB.pos = nil -- { x, y } on STUB.currentMap, or nil where the game gives none
+STUB.world = { [1453] = { cont = 0, ox = 2000, oy = 3000, size = 1000 }, [13] = { cont = 0, ox = 0, oy = 0, size = 10000 },
+    [2001] = { cont = 0, ox = 8000, oy = 8000, size = 500 } }
+function CreateVector2D(x, y) return { x = x, y = y, GetXY = function(v) return v.x, v.y end } end
+function C_Map.GetPlayerMapPosition(map, unit)
+    if unit ~= "player" or not STUB.pos or map ~= STUB.currentMap then return nil end
+    return CreateVector2D(STUB.pos.x, STUB.pos.y)
+end
+function C_Map.GetWorldPosFromMapPos(map, pos)
+    local m = STUB.world[map]
+    if not m then return nil end
+    return m.cont, CreateVector2D(m.ox + pos.x * m.size, m.oy + pos.y * m.size)
+end
+function C_Map.GetMapPosFromWorldPos(cont, world, map)
+    local m = STUB.world[map]
+    if not m or m.cont ~= cont then return nil end
+    return map, CreateVector2D((world.x - m.ox) / m.size, (world.y - m.oy) / m.size)
+end
+
+-- other addons on this client: STUB.addons[name] = true
+STUB.addons = {}
+C_AddOns = C_AddOns or {}
+function C_AddOns.IsAddOnLoaded(name) return STUB.addons[name] == true end

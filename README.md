@@ -65,6 +65,16 @@ A page for every guildie running Pog Guild Tools, one per account.
 - **Siegebreaker.** A brick-breaker with fifty walls to knock down. Slide the paddle with your mouse, catch the pickups, and pick an upgrade after every wall. Three lives, guild hiscores.
 - **Ranked Duels.** Challenge a guildie, duel, and the result counts once both addons agree. Chess-style ratings and a win/loss leaderboard.
 
+## Kill on sight list
+
+A list of enemy players the whole guild shares. `/pog kos` opens it; `/pog kos Name Surname reason` marks someone and `/pog kos remove Name` takes them off (whoever marked them, or an officer). Everyone gets a pop-up when a guildie marks someone, and a pop-up, a sound and a chat line when they come across someone on the list. The Alerts tick at the top of the list turns those off.
+
+The list is a board of wanted posters. Beside it are the guild's hunters: who has killed the most players that someone else marked. A kill counts when you or your group land it (marking someone yourself and killing them doesn't), and the guild gets a pop-up.
+
+## Guildies on the map
+
+Guildies with Pog Guild Tools show on your world map as dots in their class colour, even when you aren't in a group with them. Hover a dot to see who it is. It doesn't work inside dungeons and raids. Untick "Share location on the guild map" in Settings (or type `/pog map`) to turn it off: nobody sees where you are, and you don't see them. It gets along with OneForAll's guild map: a guildie OneForAll already shows doesn't get a second dot.
+
 ## Level-up pop-ups
 
 When a guildie reaches level 20, 30, 40 or 50 you get a small pop-up, and level 60 gets a banner across the top of your screen. They don't need the addon for you to see it. Settings turns them off.
@@ -77,7 +87,7 @@ When a guildie reaches level 20, 30, 40 or 50 you get a small pop-up, and level 
 ## Commands
 
 - `/pog` opens and closes the window.
-- `/pog home`, `/pog roster`, `/pog attendance`, `/pog loot`, `/pog plans`, `/pog crafting`, `/pog games`, `/pog settings` open a tab. `/pog wowdle`, `/pog gems`, `/pog motherlode`, `/pog siege` and `/pog duels` open a game. `/pog chat` opens group chat.
+- `/pog home`, `/pog roster`, `/pog attendance`, `/pog loot`, `/pog plans`, `/pog crafting`, `/pog games`, `/pog settings` open a tab. `/pog wowdle`, `/pog gems`, `/pog motherlode`, `/pog siege` and `/pog duels` open a game. `/pog chat` opens group chat. `/pog kos` opens the kill on sight list, and `/pog map` turns guildies on the map on or off.
 - `/pog profile` opens your profile; `/pog profile Name` opens someone else's.
 - `/pog late`, `/pog early` and `/pog ontime` tell the raid leaders about tonight.
 - `/pog minimap` shows or hides the minimap button. `/pog reset` puts the windows back in the middle of the screen.

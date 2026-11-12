@@ -624,6 +624,35 @@ pump(clients, 3)
 check(jake.run("local ns = ...; for _, e in ipairs(ns.Home:RecentLoot()) do if e.itemID == 23001 then return e.player end end", jake.ns)
       == "Mira-Realm", "drops: a guildie's drop shows in everyone's recent loot")
 
+# 0.18.0 kill on sight: a mark reaches everyone (with a pop-up), and only its marker takes it off;
+# where a guildie is reaches everyone's map
+others = [c for c in everyone if c is not anna]
+for c in clients:
+    c.run("local ns = ...; ns.GroupToast.notes = {}; if ns.GroupToast.frame then ns.GroupToast.frame:Hide() end", c.ns)
+anna.run("local ns = ...; ns.Kos:Slash('Grom Hellscream camping STV')", anna.ns)
+pump(clients, 3)
+check(all(c.run("local ns = ...; local r = ns.Kos:Find('Grom'); return r and r.name .. '/' .. r.note .. '/' .. r.author", c.ns)
+          == "Grom Hellscream/camping STV/Anna-Realm" for c in everyone), "kos: a mark reaches everyone")
+check(all(c.run("local ns = ...; local f = ns.GroupToast.frame; return f and f:IsShown() and f.note and f.text:GetText():find('Grom Hellscream', 1, true) ~= nil", c.ns)
+          for c in others)
+      and not anna.run("local ns = ...; local f = ns.GroupToast.frame; return f and f:IsShown()", anna.ns),
+      "kos: with a pop-up for everyone but the one who marked them")
+check(not mira.run("local ns = ...; return ns.Kos:Remove(ns.Kos:Find('Grom'))", mira.ns), "kos: a member can't take someone else's mark off")
+anna.run("local ns = ...; ns.Kos:Slash('remove Grom')", anna.ns)
+pump(clients, 3)
+check(all(c.run("local ns = ...; return ns.Kos:Find('Grom') == nil", c.ns) for c in everyone), "kos: taken off for everyone by whoever marked them")
+anna.run("""local ns = ...
+    STUB.currentMap, STUB.pos = 1453, { x = 0.5, y = 0.25 }
+    ns.GuildMap.sentAt = nil
+    ns.GuildMap:Tick()""", anna.ns)
+pump(clients, 3)
+check(all(c.run("local ns = ...; local w = ns.GuildMap.where['Anna-Realm']; return w and w.map .. '/' .. w.x .. '/' .. w.y", c.ns) == "1453/0.5/0.25"
+          for c in others) and not anna.run("local ns = ...; return ns.GuildMap.where['Anna-Realm'] ~= nil", anna.ns),
+      "map: where a guildie is reaches everyone else")
+anna.run("local ns = ...; STUB.pos = nil; ns.GuildMap:Set(false)", anna.ns)
+pump(clients, 3)
+check(all(c.run("local ns = ...; return ns.GuildMap.where['Anna-Realm'] == nil", c.ns) for c in others), "map: and is gone when they turn it off")
+
 # another guild's data stays separate
 bob.stub.guildName = "Other Guild"
 check(posts(bob) == "", "sync: data is kept per guild")

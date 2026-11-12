@@ -1,7 +1,7 @@
 -- PogRaid core: saved data, event dispatch, slash commands, API probe.
 local ADDON, ns = ...
 
-ns.VERSION = "0.17.0"
+ns.VERSION = "0.18.0"
 
 -- Running from the project folder, not a packaged release (the packager and
 -- tools/package.py delete this block). A dev build tells other addons it is
@@ -431,6 +431,8 @@ ns.On("ADDON_LOADED", function(name)
     if st.chatEcho == nil then st.chatEcho = false end
     if st.levelToasts == nil then st.levelToasts = true end
     if st.gamesOnFlight == nil then st.gamesOnFlight = false end
+    if st.kosAlerts == nil then st.kosAlerts = true end
+    if st.guildMap == nil then st.guildMap = true end
     if st.kudosToasts == nil then st.kudosToasts = true end
     if st.theme == nil then st.theme = st.classic == false and "plain" or ns.UI.DEFAULT_THEME end
     st.classic = nil
@@ -543,6 +545,16 @@ SlashCmdList.POGRAID = function(msg)
         -- a look at the level pop-ups: "/pog ding" is the level 60 banner, "/pog ding 40" the small one
         local level = tonumber((msg or ""):match("(%d+)")) or ns.Milestone.TOP
         ns.Milestone:Celebrate(ns.Sync:Me(), ns.Milestone.Crossed(level - 1, level) or ns.Milestone.TOP)
+    elseif (cmd == "kos" and not ns.Kos) or (cmd == "map" and not ns.GuildMap) then
+        -- new files in 0.18: the game only loads them when it starts, not on /reload
+        ns.Print("Restart the game to finish updating Pog Guild Tools, then try again.")
+    elseif cmd == "kos" then
+        -- "/pog kos" opens the list; "/pog kos Name Surname reason" marks someone; "/pog kos remove Name"
+        ns.Kos:Slash((msg or ""):match("^%s*%S+%s*(.*)$"))
+    elseif cmd == "map" then
+        ns.GuildMap:Set(not ns.GuildMap:On())
+        ns.Print(ns.GuildMap:On() and "Guildies on the map: on. Guildies with Pog Guild Tools see where you are, and you see them."
+            or "Guildies on the map: off. Nobody sees where you are, and you don't see them.")
     elseif cmd == "chat" then
         -- "/pog chat test": a practice chat that answers back (nothing is sent to anyone)
         if (msg or ""):lower():match("test") then ns.Chat:Test() else ns.Chat:Toggle() end
@@ -593,8 +605,9 @@ SlashCmdList.POGRAID = function(msg)
         ns.Editor:ResetPosition()
         ns.Viewer:ResetPosition()
         if ns.Chat.frame then ns.UI.RestorePosition(ns.Chat.frame, "chat", 40) end
+        if ns.Kos and ns.Kos.frame then ns.UI.RestorePosition(ns.Kos.frame, "kos", 40) end
         ns.Print("window positions reset")
     else
-        ns.Print("/pog opens the window. Also: home, roster, attendance, loot, crafting, games, gems, wowdle, motherlode, siege, duels, plans, chat, settings, minimap, probe, art, bug, sync, check, test, reset")
+        ns.Print("/pog opens the window. Also: home, roster, attendance, loot, crafting, games, gems, wowdle, motherlode, siege, duels, plans, chat, kos, map, settings, minimap, probe, art, bug, sync, check, test, reset")
     end
 end

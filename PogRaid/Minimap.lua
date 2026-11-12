@@ -41,11 +41,20 @@ function MinimapButton:Build()
 
     b:SetScript("OnClick", function(btn, button)
         if button == "RightButton" then
-            UI.ShowMenu(btn, {
-                { text = "Pog Guild Tools", header = true },
-                { text = "Settings", func = function() ns.Editor:Toggle("settings") end },
-                { text = "Hide minimap button", func = function() self:SetHidden(true) end },
-            })
+            -- Kos.lua and GuildMap.lua are new in 0.18: after an update and a /reload
+            -- (not a restart) the game hasn't loaded them yet, so they may be missing
+            local entries = { { text = "Pog Guild Tools", header = true } }
+            if ns.Kos then
+                entries[#entries + 1] = { text = "Kill on sight list", func = function() ns.Kos:Open() end }
+            end
+            if ns.GuildMap then
+                entries[#entries + 1] = { text = "Guildies on the map: " .. (ns.GuildMap:On() and "on" or "off"), func = function()
+                    ns.GuildMap:Set(not ns.GuildMap:On())
+                end }
+            end
+            entries[#entries + 1] = { text = "Settings", func = function() ns.Editor:Toggle("settings") end }
+            entries[#entries + 1] = { text = "Hide minimap button", func = function() self:SetHidden(true) end }
+            UI.ShowMenu(btn, entries)
         else
             ns.Editor:Toggle()
         end
@@ -59,7 +68,7 @@ function MinimapButton:Build()
         GameTooltip:SetOwner(btn, "ANCHOR_LEFT")
         GameTooltip:AddLine("Pog Guild Tools", 1, 1, 1)
         GameTooltip:AddLine("Left-click: open", 0.8, 0.8, 0.85)
-        GameTooltip:AddLine("Right-click: settings or hide", 0.8, 0.8, 0.85)
+        GameTooltip:AddLine("Right-click: more", 0.8, 0.8, 0.85)
         GameTooltip:AddLine("Drag: move around the minimap", 0.8, 0.8, 0.85)
         GameTooltip:Show()
     end)

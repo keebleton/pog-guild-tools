@@ -406,6 +406,10 @@ ns.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
         if fromSelf or channel ~= "WHISPER" or not ns.Chat then return end
         local payload = receiveChunk(text, sender)
         if payload then ns.Chat:OnMessage(sender, payload) end
+    elseif kind == "G" then
+        -- where a guildie is, for the world map (GuildMap.lua)
+        if fromSelf or channel ~= "GUILD" or not ns.GuildMap then return end
+        ns.GuildMap:OnMessage(shortName(sender), text:sub(2))
     elseif kind == "D" then
         -- ranked duel challenges, addon to addon over whisper
         if fromSelf or channel ~= "WHISPER" or not ns.Duels then return end
