@@ -955,9 +955,25 @@ function Home:Build(page)
     self.feedCard = card(page, "Activity", LEFT_X, BODY_Y + HALF_H + GAP, LEFT_W, HALF_H)
     rowList(self.feedCard, LINE_H, false, function(row)
         local e = row.item
-        if e and e.kind == "ach" and GameTooltip then
+        if not e or not GameTooltip then return end
+        -- a line too long for the card ends in "...", often just before the level:
+        -- hovering it shows the whole line (Jake, 0.17.0)
+        local cut = row.text.IsTruncated and row.text:IsTruncated()
+        if e.kind == "ach" then
             GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
             pcall(GameTooltip.SetHyperlink, GameTooltip, e.value)
+            if cut then
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine(self:FeedText(e), 1, 1, 1, true)
+            end
+            GameTooltip:Show()
+        elseif cut then
+            GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(self:FeedText(e), 1, 1, 1, true)
+            if not e.away then
+                local ago = Home.Ago(e.t)
+                GameTooltip:AddLine(ago == "now" and "just now" or ago .. " ago", 0.6, 0.6, 0.65)
+            end
             GameTooltip:Show()
         end
     end, nil, true)

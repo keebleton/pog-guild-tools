@@ -62,6 +62,7 @@ A page for every guildie running Pog Guild Tools, one per account.
 - **Sapper Sweeper.** Minesweeper with Goblin Sapper Charges, in Apprentice, Journeyman and Expert, with a guild leaderboard.
 - **Gem Cutter.** Slide and merge gems up to a Large Opal, with a guild best-score board.
 - **Motherlode.** Bomb your way down a mine: drop bombs through a board of ore pegs, land them in the right pocket, hit each floor's quota and pick an upgrade on the way down. Guild hiscores for the deepest run.
+- **Siegebreaker.** A brick-breaker with fifty walls to knock down. Slide the paddle with your mouse, catch the pickups, and pick an upgrade after every wall. Three lives, guild hiscores.
 - **Ranked Duels.** Challenge a guildie, duel, and the result counts once both addons agree. Chess-style ratings and a win/loss leaderboard.
 
 ## Level-up pop-ups
@@ -76,7 +77,7 @@ When a guildie reaches level 20, 30, 40 or 50 you get a small pop-up, and level 
 ## Commands
 
 - `/pog` opens and closes the window.
-- `/pog home`, `/pog roster`, `/pog attendance`, `/pog loot`, `/pog plans`, `/pog crafting`, `/pog games`, `/pog settings` open a tab. `/pog wowdle`, `/pog gems`, `/pog motherlode` and `/pog duels` open a game. `/pog chat` opens group chat.
+- `/pog home`, `/pog roster`, `/pog attendance`, `/pog loot`, `/pog plans`, `/pog crafting`, `/pog games`, `/pog settings` open a tab. `/pog wowdle`, `/pog gems`, `/pog motherlode`, `/pog siege` and `/pog duels` open a game. `/pog chat` opens group chat.
 - `/pog profile` opens your profile; `/pog profile Name` opens someone else's.
 - `/pog late`, `/pog early` and `/pog ontime` tell the raid leaders about tonight.
 - `/pog minimap` shows or hides the minimap button. `/pog reset` puts the windows back in the middle of the screen.

@@ -1,4 +1,10 @@
-# Pog Guild Tools 0.16.10
+# Pog Guild Tools 0.17.0
+
+- **New game: Siegebreaker.** A brick-breaker on the Games tab (the Siege tab, or /pog siege). Slide your paddle with the mouse, click to fire the ball, and knock down the wall. Fifty walls in ten tiers, a different one each run: pictures to break apart, bricks that take two or three hits, steel that never breaks, powder that blows up its neighbours, and gold. Catch falling pickups for more balls, a wider paddle or an extra life, and pick an upgrade after every wall. Three lives. Your best run goes on the guild hiscores.
+
+- **Activity:** hover a line that's cut off with "..." to read the whole thing.
+
+New in 0.16.10:
 
 - **Level-up pop-ups show up on time.** They used to wait until you opened Pog Guild Tools. The addon now checks the guild roster quietly in the background, so a pop-up appears within about half a minute of the level-up. Activity and who's online stay fresher too.
 - **No more level-up sound on the pop-ups.** It sounded like you had levelled yourself. The small pop-ups are silent and the level 60 banner has its own chime.

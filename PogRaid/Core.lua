@@ -1,7 +1,7 @@
 -- PogRaid core: saved data, event dispatch, slash commands, API probe.
 local ADDON, ns = ...
 
-ns.VERSION = "0.16.10"
+ns.VERSION = "0.17.0"
 
 -- Running from the project folder, not a packaged release (the packager and
 -- tools/package.py delete this block). A dev build tells other addons it is
@@ -546,9 +546,11 @@ SlashCmdList.POGRAID = function(msg)
     elseif cmd == "chat" then
         -- "/pog chat test": a practice chat that answers back (nothing is sent to anyone)
         if (msg or ""):lower():match("test") then ns.Chat:Test() else ns.Chat:Toggle() end
-    elseif cmd == "duels" or cmd == "wowdle" or cmd == "gems" or cmd == "lode" or cmd == "motherlode" then
+    elseif cmd == "duels" or cmd == "wowdle" or cmd == "gems" or cmd == "lode" or cmd == "motherlode" or cmd == "siege"
+        or cmd == "siegebreaker" then
         ns.Editor:Toggle("games")
         if cmd == "motherlode" then cmd = "lode" end
+        if cmd == "siegebreaker" then cmd = "siege" end
         if ns.Games.page then ns.Games:SetMode(cmd) end
         -- asked for by name: ready to type (opening the tab alone doesn't take the keyboard)
         if cmd == "wowdle" and ns.Games.page and ns.Games.page:IsVisible() then ns.Wowdle:Focus() end
@@ -593,6 +595,6 @@ SlashCmdList.POGRAID = function(msg)
         if ns.Chat.frame then ns.UI.RestorePosition(ns.Chat.frame, "chat", 40) end
         ns.Print("window positions reset")
     else
-        ns.Print("/pog opens the window. Also: home, roster, attendance, loot, crafting, games, gems, wowdle, motherlode, duels, plans, chat, settings, minimap, probe, art, bug, sync, check, test, reset")
+        ns.Print("/pog opens the window. Also: home, roster, attendance, loot, crafting, games, gems, wowdle, motherlode, siege, duels, plans, chat, settings, minimap, probe, art, bug, sync, check, test, reset")
     end
 end

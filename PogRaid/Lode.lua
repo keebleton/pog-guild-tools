@@ -540,6 +540,9 @@ local function place(tex, parent, x, y)
     tex:SetPoint("CENTER", parent, "TOPLEFT", x, -y)
 end
 
+-- (Siegebreaker draws with the same pieces)
+Lode.util = { commas = commas, itemIcon = itemIcon, disc = disc, additive = additive, roundIcon = roundIcon, place = place }
+
 function Lode:Build(view, top, height)
     self.view = view
     local board = CreateFrame("Button", nil, view)

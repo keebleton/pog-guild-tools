@@ -204,6 +204,8 @@ function M:Undress() self.__tried = {} end
 function M:ClearModel() self.__unit, self.__race, self.__tried = nil, nil, {} end
 function M:SetTextColor(r, g, b, a) self.__textColor = { r, g, b, a } end
 function M:SetJustifyH(j) self.__justifyH = j end
+-- a line too long for its width ends in "..." (the tests say when: fs.__truncated)
+function M:IsTruncated() return self.__truncated == true end
 function M:GetStringWidth() return #(self.__text or "") * 6 end
 function M:SetTexture(t) self.__texture = t; self.__color = nil end
 function M:GetTexture() return self.__texture end

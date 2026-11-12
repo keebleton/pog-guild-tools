@@ -165,6 +165,24 @@ launchers and plain-English steps. Read this whole file before changing anything
   card: FLOOR in 30pt gold with the seam's ore icon, a 12px quota bar with "225 to go" / "Quota reached", bomb pips,
   upgrades (icon, name, count), a "Pegs" legend (what each kind does and is worth on this floor with these upgrades;
   it hides if more than 8 upgrades reach down to it) and the foot (best, New run).
+- 0.17.0 Siegebreaker (`Siege.lua`, `ns.Siege`; Jake: "roguelike BrickBreaker like the OG game", then "make it like 50"
+  levels). Our own game in that genre: never the BlackBerry game's name or its levels. Games tab mode "siege" (tab
+  label "Siege", `/pog siege`). Rules in `Siege.Run` (no UI, dice from `Lode.Rng`): the paddle is the mouse
+  (`Run:Step(dt, mouseX)`), a click fires what's on the paddle (`Run:Launch`); fixed 1/240 s ticks; a ball leaves the
+  paddle at an angle set by where it landed (62 degrees at the ends, never dead straight), keeps at least `MIN_RISE`
+  of its speed vertical, and quickens 2% a paddle hit up to 1.5x until one is lost (`pace`: at a flat speed a bot took
+  three minutes over the first wall). Three lives; a wall is down when everything but steel is. Walls are rows of 13
+  characters (`Siege.LEVELS`, 50 = 10 tiers x 5; `pic` drawn by hand, `gen` by a rule per cell): lowercase colour
+  letters 1 hit, uppercase 2, `%` stone 3, `#` steel, `*` powder (destroys the 8 round it, chaining), `$` gold. Stage
+  n draws one of tier n's five (past tier 10, any of the harder half), 4% faster a stage up to 1.6x. Pickups drop
+  from 8% of broken bricks (multi, wide for 15 s, life); ten upgrades (`Siege.UPGRADES`). `Run.events` drives the
+  effects, as in Motherlode, whose drawing helpers it shares (`Lode.util`). A scratch script had a bot (paddle
+  follows the lowest ball) clear all 50; every wall is also checked for reachability (no brick walled in by steel):
+  keep both true when adding walls. Hiscores: Sync collection `siege` (code "b", id = author, stage and score), same
+  cost with pre-0.17 addons as Motherlode's. Six game tabs now, so Sapper Sweeper's difficulty buttons are 78 wide
+  (`LEVEL_W`). The catcher (clicks off the board) is up while a ball waits on the paddle, including a Tar Paddle catch.
+- 0.17.0: Home's Activity rows show the whole line (and how long ago) in a tooltip when the row's text is cut off
+  (`row.text:IsTruncated()`; an achievement row keeps its achievement tooltip, with the line added under it).
 - 0.16.10: `Roster:Poll` asks the game for the guild roster every `Roster.POLL` (30) seconds from login (not in combat).
   Before, it was only asked for when the Home or Roster tab showed, so level-ups (and their pop-ups) were noticed only
   when the window opened (Jake). The milestone pop-ups no longer play the game's level-up sound (it read as our own

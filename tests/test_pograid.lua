@@ -7230,7 +7230,8 @@ do
             and not Games.board:IsShown() and not Games.views.gems:IsShown(), "lode: /pog motherlode opens its tab on Games")
         local found
         for i, m in ipairs(Games.MODES) do if m.key == "lode" then found = i end end
-        check(found == 4 and Games.MODES[3].key == "gems" and Games.MODES[5].key == "duels" and Games.MODES[found].label == "Motherlode", "lode: between Gem Cutter and Ranked Duels")
+        check(found == 4 and Games.MODES[3].key == "gems" and Games.MODES[5].key == "siege" and Games.MODES[6].key == "duels"
+            and Games.MODES[found].label == "Motherlode", "lode: after Gem Cutter, before Siege and Ranked Duels")
         local board, side, o = Lode.board, Lode.side, Lode.overlay
         -- before a run: how to play, and Start run
         check(o:IsShown() and o.title:GetText() == "Motherlode" and o.start:IsShown() and o.start.label:GetText() == "Start run"
@@ -8016,6 +8017,710 @@ do
     ns.Attendance.keyCache = nil
     STUB.timers = {}
     ns.Editor:ShowTab("home")
+end
+
+-- 0.17.0: Siegebreaker, the brick-breaker roguelike (Siege.lua) ---------------------------------------
+do
+    local Siege, Sync = ns.Siege, ns.Sync
+    local Run = Siege.Run
+    local W, H, STEP = Siege.W, Siege.H, Siege.STEP
+    local BW, BH, GX, GY = Siege.BRICK_W, Siege.BRICK_H, Siege.GRID_X, Siege.GRID_Y
+    local function count(t) local n = 0 for _ in pairs(t or {}) do n = n + 1 end return n end
+    -- a run on a wall of our own: rows of 13 characters
+    local function wall(...)
+        local saved = Siege.LEVELS[1]
+        Siege.LEVELS[1] = { name = "Test", rows = { ... } }
+        local run = Run.New(7)
+        run.stage = 0
+        run:NextStage(1)
+        Siege.LEVELS[1] = saved
+        return run
+    end
+    local function ball(run, x, y, vx, vy)
+        run.balls = { { x = x, y = y, vx = vx, vy = vy } }
+        run.state = "play"
+        return run.balls[1]
+    end
+    local function ticks(run, n) for _ = 1, n do if run.state ~= "play" then break end run:Tick(STEP) end end
+    local function speedOf(b) return math.sqrt(b.vx * b.vx + b.vy * b.vy) end
+    local function kinds(run)
+        local k = {}
+        for _, e in ipairs(run.events) do k[e.kind] = (k[e.kind] or 0) + 1 end
+        return k
+    end
+
+    -- the fifty walls: ten tiers of five, each well formed, each brick reachable without going through steel
+    do
+        local names, shapes, ok, why = {}, {}, true, ""
+        for i, lv in ipairs(Siege.LEVELS) do
+            local key = table.concat(lv.rows, "/")
+            if names[lv.name] or shapes[key] then ok, why = false, why .. " twice:" .. lv.name end
+            names[lv.name], shapes[key] = true, true
+            if #lv.rows > Siege.ROWS or #lv.rows < 3 then ok, why = false, why .. " rows:" .. lv.name end
+            local cell, breakable = {}, 0
+            for r = 1, Siege.ROWS + 1 do cell[r] = {} end
+            for r, row in ipairs(lv.rows) do
+                if #row ~= Siege.COLS then ok, why = false, why .. " width:" .. lv.name end
+                for c = 1, #row do
+                    local ch = row:sub(c, c)
+                    if ch ~= "." then
+                        local k = Siege.Brick(ch)
+                        if not k then ok, why = false, why .. " char:" .. lv.name else
+                            cell[r][c] = k.steel and "#" or "b"
+                            if not k.steel then breakable = breakable + 1 end
+                        end
+                    end
+                end
+            end
+            if breakable < 12 then ok, why = false, why .. " few:" .. lv.name end
+            local seen, stack, reached = {}, {}, 0
+            for c = 1, Siege.COLS do stack[#stack + 1] = { c, Siege.ROWS + 1 } end
+            while #stack > 0 do
+                local at = table.remove(stack)
+                local c, r = at[1], at[2]
+                if c >= 1 and c <= Siege.COLS and r >= 1 and r <= Siege.ROWS + 1 and not seen[r * 100 + c] and cell[r][c] ~= "#" then
+                    seen[r * 100 + c] = true
+                    if cell[r][c] == "b" then reached = reached + 1 end
+                    stack[#stack + 1] = { c + 1, r }
+                    stack[#stack + 1] = { c - 1, r }
+                    stack[#stack + 1] = { c, r + 1 }
+                    stack[#stack + 1] = { c, r - 1 }
+                end
+            end
+            if reached ~= breakable then ok, why = false, why .. " walled in:" .. lv.name end
+        end
+        check(#Siege.LEVELS == 50 and Siege.TIERS * Siege.PER_TIER == 50, "siege: fifty walls, ten tiers of five")
+        check(ok, "siege: every wall has its own name and shape, fits the grid, and every brick can be reached" .. why)
+        check(Siege.LEVELS[1].name == "First Wall" and Siege.LEVELS[50].name == "The Throne", "siege: from the First Wall to The Throne")
+    end
+
+    -- what a wall is made of
+    do
+        local a, two, stone, steel, powder, gold = Siege.Brick("r"), Siege.Brick("R"), Siege.Brick("%"), Siege.Brick("#"), Siege.Brick("*"), Siege.Brick("$")
+        check(a.hp == 1 and two.hp == 2 and two.max == 2 and two.color == a.color and stone.hp == 3 and steel.steel and powder.boom and gold.gold
+            and Siege.Brick(".") == nil and Siege.Brick("?") == nil, "siege: bricks of one, two and three hits, steel, powder and gold")
+        local bricks, grid, left = Siege.Wall(1)
+        check(#bricks == 39 and left == 39 and grid[1][1] == bricks[1] and bricks[1].x == GX and bricks[1].y == GY and grid[3][13].x == GX + 12 * BW
+            and grid[3][13].y == GY + 2 * BH and grid[4][1] == nil, "siege: a wall is its bricks, each in its place on the board")
+    end
+
+    -- a run: wall 1 from the first tier, three lives, a ball waiting on the paddle
+    local run = Run.New(11)
+    check(run.stage == 1 and run.level >= 1 and run.level <= 5 and run.name == Siege.LEVELS[run.level].name and run.lives == 3 and run.score == 0
+        and run.state == "serve" and #run.balls == 1 and run.balls[1].stuck == 0 and run.balls[1].x == run.paddleX
+        and run.balls[1].y == Siege.PADDLE_Y - Siege.BALL_R and run.speed == Siege.SPEED and run:PaddleW() == Siege.PADDLE_W,
+        "siege: a run starts on a first-tier wall with three lives and a ball on the paddle")
+    do
+        local tiers, far = true, true
+        local seen = {}
+        for seed = 1, 300 do
+            local r = Run.New(seed)
+            for stage = 1, 14 do
+                local level = r:PickLevel(stage)
+                seen[level] = true
+                if stage <= 10 and (level < (stage - 1) * 5 + 1 or level > stage * 5) then tiers = false end
+                if stage > 10 and (level < 26 or level > 50) then far = false end
+            end
+        end
+        check(tiers and far and count(seen) == 50, "siege: each stage draws a wall from its tier (the harder half after the tenth), and all fifty turn up")
+    end
+
+    -- the paddle goes where the mouse is, inside the walls, and a waiting ball rides it
+    run:Step(0.016, 100)
+    check(run.paddleX == 100 and run.balls[1].x == 100, "siege: the paddle follows the mouse, a waiting ball with it")
+    run:Step(0.016, -500)
+    local half = run:PaddleW() / 2
+    check(run.paddleX == half and run.balls[1].x == half, "siege: not past the left wall")
+    run:Step(0.016, 9999)
+    check(run.paddleX == W - half and run.state == "serve", "siege: nor the right; nothing moves until it's fired")
+    run:Step(0.016, W / 2)
+    -- click: off it goes, upward, at the stage's speed, a little to one side
+    check(run:Launch() == true and run.state == "play" and run.balls[1].stuck == nil and run.balls[1].vy < 0 and run.balls[1].vx ~= 0
+        and near(speedOf(run.balls[1]), run.speed, 1e-6) and run:Launch() == false, "siege: a click fires the ball up off the paddle")
+
+    -- walls and the ceiling turn a ball back
+    do
+        local r = wall(".............", "......r......")
+        local b = ball(r, 12, 400, -200, -100)
+        ticks(r, 30)
+        check(b.vx > 0 and b.x >= Siege.BALL_R, "siege: the left wall turns a ball back")
+        b = ball(r, W - 12, 400, 200, -100)
+        ticks(r, 30)
+        check(b.vx < 0 and b.x <= W - Siege.BALL_R, "siege: and the right")
+        b = ball(r, 300, 10, 50, -250)
+        ticks(r, 30)
+        check(b.vy > 0 and b.y >= Siege.BALL_R, "siege: and the ceiling")
+    end
+
+    -- a brick: hit from below it breaks, the ball comes back down, ten points
+    do
+        local r = wall(".............", ".............", "......r.....y")
+        local k = r.grid[3][7]
+        local b = ball(r, k.x + BW / 2, k.y + BH + 30, 0, -300)
+        ticks(r, 60)
+        check(k.gone and r.grid[3][7] == nil and b.vy > 0 and r.score == 10 and r.left == 1 and kinds(r)["break"] == 1 and r.state == "play",
+            "siege: a ball breaks a brick and bounces off it")
+        -- from the side it goes back the way it came
+        local y = r.grid[3][13]
+        b = ball(r, y.x - 30, y.y + BH / 2, 300, 0.001)
+        r.left = 5 -- (so breaking it doesn't end the wall)
+        ticks(r, 60)
+        check(y.gone and b.vx < 0, "siege: hit from the side, the ball goes back sideways")
+    end
+    -- two hits, three hits, and Heavy Shot
+    do
+        local r = wall(".............", "......R.....%", "y............")
+        local k = r.grid[2][7]
+        local b = ball(r, k.x + BW / 2, k.y + BH + 20, 0, -300)
+        ticks(r, 40)
+        check(not k.gone and k.hp == 1 and kinds(r).hit == 1 and r.score == 0 and b.vy > 0, "siege: a framed brick takes the first hit")
+        b = ball(r, k.x + BW / 2, k.y + BH + 20, 0, -300)
+        ticks(r, 40)
+        check(k.gone and r.score == 20, "siege: and breaks on the second, for twice the points")
+        local st = r.grid[2][13]
+        for _ = 1, 3 do
+            b = ball(r, st.x + BW / 2, st.y + BH + 20, 0, -300)
+            ticks(r, 40)
+        end
+        check(st.gone and r.score == 50, "siege: stone takes three")
+        local h = wall(".............", "......R......", "y............")
+        h.upgrades.power = 1
+        ball(h, h.grid[2][7].x + BW / 2, h.grid[2][7].y + BH + 20, 0, -300)
+        ticks(h, 40)
+        check(h.left == 1 and h.score == 20, "siege: Heavy Shot breaks a framed brick in one")
+    end
+    -- steel never breaks, and doesn't have to
+    do
+        local r = wall(".............", "......#......", "y............")
+        local k = r.grid[2][7]
+        local b = ball(r, k.x + BW / 2, k.y + BH + 20, 0, -300)
+        ticks(r, 40)
+        check(not k.gone and r.left == 1 and b.vy > 0 and kinds(r).clank == 1 and near(speedOf(b), 300, 1e-6), "siege: steel turns the ball and stays")
+        local last = r.grid[3][1]
+        r:Destroy(last)
+        r:Tick(STEP)
+        check(r.state == "choose" and not k.gone, "siege: the wall is down when everything but the steel is")
+    end
+    -- powder takes its neighbours with it, and the next powder along; steel stands
+    do
+        local r = wall("rrr#r........", "r**rr........", "rrrrr........", "............y")
+        local steel = r.grid[1][4]
+        r:Destroy(r.grid[2][2])
+        local gone = 0
+        for _, k in ipairs(r.bricks) do if k.gone then gone = gone + 1 end end
+        check(gone == 11 and not steel.gone and r.grid[1][4] == steel and r.left == 4 and kinds(r).boom == 2 and r.score == 110,
+            "siege: powder blows up the bricks round it, other powder in turn, never steel")
+        local wide = wall("rrrrr", "rrrrr", "rr*rr", "rrrrr", "rrrrr", "............y")
+        wide.upgrades.blast = 1
+        wide:Destroy(wide.grid[3][3])
+        check(wide.left == 1, "siege: Bigger Booms reaches two bricks out")
+        local small = wall("rrrrr", "rrrrr", "rr*rr", "rrrrr", "rrrrr", "............y")
+        small:Destroy(small.grid[3][3])
+        check(small.left == 17, "siege: (one, without it)")
+    end
+    -- gold, and War Chest
+    do
+        local r = wall("$r...........", "y............")
+        r:Destroy(r.grid[1][1])
+        check(r.score == 50, "siege: gold is worth five bricks")
+        r.upgrades.gold = 2
+        r:Destroy(r.grid[1][2])
+        check(r.score == 50 + 20, "siege: War Chest adds half again, each")
+    end
+
+    -- the paddle: where the ball lands sets the angle it leaves at, and each hit quickens it a little
+    do
+        local r = wall("y............")
+        r.paddleX = 280
+        local hw = r:PaddleW() / 2
+        local b = ball(r, 280 + hw * 0.5, Siege.PADDLE_Y - 20, 0, 300)
+        ticks(r, 40)
+        check(b.vy < 0 and b.vx > 0 and near(math.atan2(b.vx, -b.vy), 0.5 * Siege.MAX_ANGLE, 0.02) and r.pace > 1
+            and near(speedOf(b), r.speed * r.pace, 1e-6), "siege: off the right half of the paddle the ball goes right, a little faster")
+        b = ball(r, 280 - hw, Siege.PADDLE_Y - 20, 0, 300)
+        ticks(r, 40)
+        check(b.vx < 0 and near(math.atan2(-b.vx, -b.vy), Siege.MAX_ANGLE, 0.02), "siege: off the left end, hard left")
+        b = ball(r, 280, Siege.PADDLE_Y - 20, 0, 300)
+        ticks(r, 40)
+        check(b.vy < 0 and math.abs(b.vx) > 20, "siege: dead centre still goes a little to one side (never straight up and down for ever)")
+        r.pace = Siege.MAX_PACE
+        b = ball(r, 300, Siege.PADDLE_Y - 20, 0, 300)
+        ticks(r, 40)
+        check(r.pace == Siege.MAX_PACE and near(speedOf(b), r.speed * Siege.MAX_PACE, 1e-6), "siege: the pace tops out")
+        -- a ball that would go nearly flat is given some rise
+        local flat = { vx = 300, vy = 1 }
+        r:Steady(flat)
+        check(math.abs(flat.vy) >= Siege.MIN_RISE * 300 - 1e-6 and near(speedOf(flat), math.sqrt(300 * 300 + 1), 1e-6), "siege: a ball always keeps some up-and-down")
+    end
+
+    -- missing the ball costs a life; the last one ends the run
+    do
+        local r = wall("y............")
+        r.paddleX = 100
+        r.pace = 1.3 -- (it had been speeding up)
+        ball(r, 400, H - 30, 0, 300)
+        ticks(r, 200)
+        check(r.lives == 2 and r.state == "serve" and #r.balls == 1 and r.balls[1].stuck == 0 and r.pace == 1 and kinds(r).lost == 1,
+            "siege: a ball past the paddle costs a life, and a new one waits")
+        -- with two in the air, losing one costs nothing
+        r.balls = { { x = 400, y = H - 30, vx = 0, vy = 300 }, { x = 100, y = 300, vx = 0, vy = -100 } }
+        r.state = "play"
+        ticks(r, 200)
+        check(r.lives == 2 and #r.balls == 1 and r.state == "play", "siege: with another ball still up, losing one costs nothing")
+        r.lives = 1
+        ball(r, 400, H - 30, 0, 300)
+        ticks(r, 200)
+        check(r.lives == 0 and r.state == "over" and r:Launch() == false, "siege: the last life ends the run")
+        r:Step(1, 300)
+        check(r.state == "over", "siege: (and it stays over)")
+    end
+
+    -- a wall down: a bonus, three upgrades to pick from, then the next tier
+    do
+        local r = wall("y............")
+        r:Destroy(r.grid[1][1])
+        r.state = "play"
+        r:Tick(STEP)
+        local o = r.offers
+        check(r.state == "choose" and r.cleared == 1 and r.score == 10 + 100 and #o == 3 and o[1] ~= o[2] and o[2] ~= o[3] and o[1] ~= o[3]
+            and Siege.UPGRADE[o[1]] and #r.balls == 0, "siege: a wall down pays a bonus and offers three different upgrades")
+        check(r:Launch() == false and r:Choose(0) == false and r:Choose(4) == false, "siege: nothing else until one is picked")
+        local key = o[1]
+        local lives = r.lives
+        check(r:Choose(1) == true and r:Has(key) == 1 and r.stage == 2 and r.level >= 6 and r.level <= 10 and r.state == "serve"
+            and r.lives == lives + (key == "life" and 1 or 0) and near(r.speed, Siege.SPEED * 1.04 * 0.92 ^ r:Has("slow"), 1e-6),
+            "siege: picking one moves on to a second-tier wall, a little faster")
+        local distinct = true
+        for seed = 1, 60 do
+            local x = Run.New(seed):Offers()
+            if #x ~= 3 or x[1] == x[2] or x[2] == x[3] or x[1] == x[3] then distinct = false end
+        end
+        check(distinct, "siege: the three offered are never the same one twice")
+        local m = Run.New(3)
+        for _, u in ipairs(Siege.UPGRADES) do m.upgrades[u[1]] = u[4] end
+        m.upgrades.gold = 1
+        local left = m:Offers()
+        check(#left == 1 and left[1] == "gold", "siege: an upgrade taken as often as it can be isn't offered")
+        local fast = Run.New(3)
+        fast.stage = 59
+        fast:NextStage(1)
+        check(near(fast.speed, Siege.SPEED * Siege.MAX_SPEED_UP, 1e-6), "siege: the speed-up stops somewhere")
+    end
+
+    -- the upgrades
+    do
+        local r = Run.New(5)
+        r.upgrades.wide = 2
+        check(near(r:PaddleW(), Siege.PADDLE_W * 1.3), "siege: Longer Ram widens the paddle")
+        r.upgrades.wide = 99
+        check(r:PaddleW() == Siege.MAX_PADDLE, "siege: (up to a point)")
+        local t = Run.New(5)
+        t.upgrades.twin = 2
+        t:Serve()
+        check(#t.balls == 3 and t.balls[2].stuck ~= t.balls[3].stuck and t.balls[2].stuck ~= 0, "siege: Second Shot starts a wall with more balls on the paddle")
+        t:Launch()
+        check(t.balls[1].vy < 0 and t.balls[2].vy < 0 and t.balls[3].vy < 0 and t.balls[2].vx ~= t.balls[3].vx, "siege: which all fire, each at its own angle")
+        local l = Run.New(5)
+        l.offers, l.state = { "life" }, "choose"
+        l:Choose(1)
+        check(l.lives == Siege.LIVES + 1, "siege: Field Medic is a life right away")
+        local sl = Run.New(5)
+        sl.upgrades.slow = 2
+        sl.stage = 0
+        sl:NextStage(1)
+        check(near(sl.speed, Siege.SPEED * 0.92 * 0.92, 1e-6), "siege: Steady Hands slows the balls")
+        -- Safety Net: one save a wall
+        local n = wall("y............")
+        n.upgrades.net = 1
+        n.stage = 0
+        n:NextStage(n.level)
+        n.paddleX = 100
+        local b = ball(n, 400, H - 30, 0, 300)
+        ticks(n, 100)
+        check(n.net == 0 and b.vy < 0 and n.lives == 3 and kinds(n).net == 1 and #n.balls == 1, "siege: the Safety Net sends one lost ball back")
+        b = ball(n, 400, H - 30, 0, 300)
+        ticks(n, 200)
+        check(n.lives == 2, "siege: once a wall")
+        -- Tar Paddle: the ball sticks where it lands until it's fired
+        local s = wall("y............")
+        s.upgrades.sticky = 1
+        s.paddleX = 280
+        b = ball(s, 300, Siege.PADDLE_Y - 20, 0, 300)
+        ticks(s, 40)
+        check(b.stuck and near(b.stuck, 20, 0.01) and b.vy == 0 and s.state == "play", "siege: Tar Paddle catches the ball where it lands")
+        s:Step(0.016, 200)
+        check(near(b.x, 220, 0.01), "siege: it rides the paddle")
+        check(s:Launch() == true and b.stuck == nil and b.vy < 0 and b.vx > 0, "siege: and fires again on a click, from where it sat")
+    end
+
+    -- pickups: sometimes a broken brick drops one, and the paddle catches it
+    do
+        local r = wall("rrrrrrrrrrrrr", "............y")
+        r.rand = function() return 0 end
+        r:Destroy(r.grid[1][1])
+        check(#r.pickups == 1 and r.pickups[1].kind == "multi" and r.pickups[1].x == GX + BW / 2, "siege: a broken brick can drop a pickup")
+        r.rand = function() return 0.99 end
+        r:Destroy(r.grid[1][2])
+        check(#r.pickups == 1, "siege: (most don't)")
+        r.upgrades.lucky = 3
+        check(Siege.DROP * (1 + 0.5 * 3) > Siege.DROP * 2, "siege: Scavenger makes them commoner")
+        -- it falls; under the paddle it's caught: three balls where there was one
+        local b = ball(r, 300, 200, 100, -200)
+        r.paddleX = r.pickups[1].x
+        local y0 = r.pickups[1].y
+        ticks(r, 60)
+        check(r.pickups[1].y > y0, "siege: it falls")
+        r.pickups[1].y = Siege.PADDLE_Y - 9
+        ticks(r, 4)
+        check(#r.pickups == 0 and #r.balls == 3 and kinds(r).catch == 1 and near(speedOf(r.balls[2]), speedOf(b), 1e-6), "siege: caught, More balls makes three of one")
+        r.pickups = { { kind = "wide", x = r.paddleX, y = Siege.PADDLE_Y } }
+        ticks(r, 2)
+        check(near(r:PaddleW(), Siege.PADDLE_W * Siege.WIDE_MULT) and r.wide > 0, "siege: Wide paddle widens it for a while")
+        r.wide = 0.001
+        ticks(r, 2)
+        check(r:PaddleW() == Siege.PADDLE_W, "siege: then it's back")
+        r.pickups = { { kind = "life", x = r.paddleX, y = Siege.PADDLE_Y } }
+        ticks(r, 2)
+        check(r.lives == Siege.LIVES + 1, "siege: Extra life is one")
+        r.pickups = { { kind = "life", x = r.paddleX + 200, y = Siege.PADDLE_Y } }
+        ticks(r, 400)
+        check(#r.pickups == 0 and r.lives == Siege.LIVES + 1, "siege: one that's missed is gone")
+        for i = 1, 6 do r.pickups = { { kind = "multi", x = r.paddleX, y = Siege.PADDLE_Y } } ticks(r, 2) end
+        check(#r.balls <= Siege.MAX_BALLS and #r.balls >= 5, "siege: only so many balls at once")
+    end
+
+    -- the same seed and the same hands play the same run; a hand that follows the ball brings a wall down
+    do
+        local function play(seed, level, limit)
+            local r = Run.New(seed)
+            r.stage = 0
+            r:NextStage(level)
+            local t = 0
+            while r.state ~= "choose" and r.state ~= "over" and t < limit do
+                if r.state == "serve" then r:Launch() end
+                local low
+                for _, b in ipairs(r.balls) do
+                    if not b.stuck and (not low or b.y > low.y) then low = b end
+                end
+                r:Step(0.02, (low and low.x or W / 2) + 25 * math.sin(t * 0.9))
+                t = t + 0.02
+            end
+            return r, t
+        end
+        local a, ta = play(9, 4, 400)
+        local b, tb = play(9, 4, 400)
+        check(a.state == "choose" and a.left == 0 and ta < 400, "siege: following the ball brings the Checkerboard down")
+        check(a.score == b.score and ta == tb and a.lives == b.lives, "siege: the same seed and the same hands play out the same")
+        local steel = play(9, 26, 600)
+        check(steel.state == "choose", "siege: and a wall with steel in it")
+    end
+
+    -- our best, and the guild's hiscores
+    do
+        local me = Sync:Me()
+        local def = Sync.collections.siege
+        local store = Sync:Store("siege")
+        for id in pairs(store) do store[id] = nil end
+        ns.db.games.siege = nil
+        check(def ~= nil and def.code == "b" and Siege:Finish({ cleared = 0, score = 0 }) == false and Siege.Saved().runs == 1 and count(store) == 0,
+            "siege: a run that broke nothing is counted, not a best")
+        check(Siege:Finish({ cleared = 4, score = 900 }) == true and Siege:Finish({ cleared = 4, score = 800 }) == false
+            and Siege:Finish({ cleared = 4, score = 1200 }) == true and Siege:Finish({ cleared = 3, score = 99999 }) == false
+            and Siege.Saved().stage == 4 and Siege.Saved().score == 1200 and store[me].stage == 4 and store[me].score == 1200 and Siege:Publish() == false,
+            "siege: the furthest run is kept (points break a tie) and shared with the guild")
+        local now = ns.Now()
+        local function rec(who, stage, score, extra)
+            local r = { id = who, rev = now, by = who, author = who, t = now, stage = stage, score = score }
+            for k, v in pairs(extra or {}) do r[k] = v end
+            return r
+        end
+        check(Sync:Apply(def, rec("Raider03-Realm", 6, 4000)) and Sync:Apply(def, rec("Raider04-Realm", 6, 5200)) and Sync:Apply(def, rec("Raider05-Realm", 9, 100)),
+            "siege: other addons' scores are taken")
+        check(not Sync:Apply(def, rec("Raider06-Realm", 2, 5, { by = "Raider07-Realm" })) and not Sync:Apply(def, rec("Raider06-Realm", -1, 5))
+            and not Sync:Apply(def, rec("Raider06-Realm", 2.5, 5)) and not Sync:Apply(def, rec("Raider06-Realm", 2, -1))
+            and not Sync:Apply(def, rec("Raider06-Realm", 2, 5, { id = "x" })), "siege: someone else's, or one that makes no sense, is refused")
+        local board = Siege:Leaderboard()
+        check(#board == 4 and board[1].author == "Raider05-Realm" and board[2].author == "Raider04-Realm" and board[3].author == "Raider03-Realm"
+            and board[4].author == me, "siege: furthest first, then most points")
+        for id in pairs(store) do store[id] = nil end
+        Sync.index = nil
+        ns.db.games.siege = nil
+        STUB.sent = {}
+    end
+
+    -- on screen
+    do
+        local Games, UI, Lode = ns.Games, ns.UI, ns.Lode
+        ns.Editor:ShowTab("home")
+        Siege.run = nil
+        SlashCmdList.POGRAID("siege")
+        local view = Games.views.siege
+        check(ns.Editor.currentTab == "games" and Games.mode == "siege" and view and view:IsVisible() and Games.modeTabs.siege.selected
+            and not Games.views.lode:IsShown() and not Games.board:IsShown(), "siege: /pog siege opens its tab on Games")
+        SlashCmdList.POGRAID("home")
+        SlashCmdList.POGRAID("siegebreaker")
+        check(Games.mode == "siege" and view:IsVisible(), "siege: (/pog siegebreaker too)")
+        local board, side, o = Siege.board, Siege.side, Siege.overlay
+        local L = Siege.layout
+        check(o:IsShown() and o.title:GetText() == "Siegebreaker" and o.start.label:GetText() == "Start run" and o.sub:GetText():find("three lives", 1, true)
+            and o.scoreTitle:IsShown() and o.noScores:IsShown() and side.best:GetText() == "No runs yet" and not side.scoresBtn:IsEnabled(),
+            "siege: before a run it says how to play, with the guild's hiscores")
+        local pl, pt = STUB.rect(Games.page)
+        local bl, bt, bw, bh = STUB.rect(board)
+        local sl, st, sw, sh = STUB.rect(side)
+        check(near(bl - pl, 12) and bw == W and bh == H and near(sl - (bl + bw), 8) and near(sl + sw, pl + 890) and near(st, bt) and near(sh, bh)
+            and near(pt - (bt - bh), ns.PAGE_H - 12), "siege layout: the board and the run card fill the page side by side")
+        -- the game tabs fit, and Sapper Sweeper's difficulty buttons still clear them
+        local lastTab = Games.modeTabs.duels
+        local tl, _, tw = STUB.rect(lastTab)
+        local al = STUB.rect(Games.levelButtons.apprentice)
+        local el, _, ew = STUB.rect(Games.levelButtons.expert)
+        check(Games.MODES[5].key == "siege" and near(el + ew, pl + 890) and ew == Games.layout.LEVEL_W, "siege layout: six game tabs; the difficulty buttons end at the margin")
+        check(al >= tl + tw + 6, "siege layout: Sapper Sweeper's difficulty buttons still clear the tabs: " .. tostring(al - pl) .. " vs " .. tostring(tl + tw - pl))
+
+        -- Start run: the wall is drawn, the paddle waits under the mouse
+        STUB.cursorX, STUB.cursorY = bl + 200, bt - 300
+        STUB.Script(o.start, "OnClick")
+        local r = Siege.run
+        STUB.Script(board, "OnUpdate", 0.016)
+        check(r and r.state == "serve" and not o:IsShown() and side.stage:GetText() == "1" and side.wallName:GetText() == r.name
+            and side.score:GetText() == "0" and side.left:GetText() == r.left .. " left" and Siege.banner:IsShown()
+            and Siege.banner:GetText() == "Wall 1: " .. r.name and Siege.hint:GetText() == "Click to fire", "siege: Start run puts up wall 1 and says what to do")
+        local shown, placed = 0, true
+        for i, k in ipairs(r.bricks) do
+            local a = Siege.brickArt[i]
+            if a.face:IsShown() then
+                shown = shown + 1
+                local l, t, w, h = STUB.rect(a.face)
+                if not near(l + w / 2 - bl, k.x + BW / 2, 0.01) or not near(bt - (t - h / 2), k.y + BH / 2, 0.01) or w > BW - 2 or h > BH - 2 then placed = false end
+            end
+        end
+        check(shown == #r.bricks and placed, "siege: every brick is drawn in its place, inside its cell")
+        local pips = 0
+        for _, pip in ipairs(side.pips) do if pip:IsShown() then pips = pips + 1 end end
+        local xl, _, xw = STUB.rect(Siege.paddle.bar)
+        local gl, gt, gw, gh = STUB.rect(Siege.ballArt[1])
+        check(pips == 3 and near(r.paddleX, 200) and near(xl + xw / 2 - bl, 200, 0.01) and Siege.ballArt[1]:IsShown()
+            and near(gl + gw / 2 - bl, 200, 0.01) and near(bt - (gt - gh / 2), Siege.PADDLE_Y - Siege.BALL_R, 0.01) and Siege.ballArt[1].glow:IsShown(),
+            "siege: three lives, the paddle under the mouse, the ball glowing on it")
+        STUB.cursorX = bl - 400
+        STUB.Script(board, "OnUpdate", 0.016)
+        local hw = r:PaddleW() / 2
+        xl = STUB.rect(Siege.paddle.bar)
+        local ll = STUB.rect(Siege.paddle.left)
+        check(near(r.paddleX, hw) and ll >= bl - 0.01, "siege: the paddle stops at the board's edge when the mouse goes past it")
+        -- a click off the board still fires while the ball waits
+        local c = Siege.catcher
+        local cl, ct, cw, ch = STUB.rect(c)
+        check(c:IsShown() and near(bl - cl, L.CATCH.side) and near(ct, bt) and near((cl + cw) - (sl + sw), L.CATCH.side)
+            and c:GetFrameLevel() < board:GetFrameLevel(), "siege: while the ball waits, a click well off the board still counts")
+        STUB.Script(c, "OnClick")
+        check(r.state == "play" and not c:IsShown() and not Siege.banner:IsShown() and r.balls[1].vy < 0, "siege: which fires it")
+        STUB.Script(c, "OnClick")
+        STUB.cursorX = bl + 280
+        for _ = 1, 4 do STUB.Script(board, "OnUpdate", 0.016) end
+        local art = Siege.ballArt[1]
+        gl, gt, gw, gh = STUB.rect(art)
+        check(near(gl + gw / 2 - bl, r.balls[1].x, 0.01) and near(bt - (gt - gh / 2), r.balls[1].y, 0.01) and art.trail[1]:IsShown()
+            and art.trail[2]:IsShown(), "siege: the ball is drawn where it is, sparks behind it")
+        -- a brick breaking: it flashes out, and the card keeps count
+        local k = r.bricks[1]
+        local before = r.left
+        r:Destroy(k)
+        STUB.Script(board, "OnUpdate", 0.01)
+        local a = Siege.artOf[k]
+        check(a.breaking ~= nil and a.face:IsShown() and side.left:GetText() == (before - 1) .. " left" and side.score:GetText() == Lode.Commas(r.score)
+            and side.bar.fill:GetWidth() > 1, "siege: a broken brick flashes, and the card keeps count")
+        STUB.Script(board, "OnUpdate", L.BREAK + 0.05)
+        check(not a.face:IsShown() and not a.flash:IsShown() and a.breaking == nil, "siege: then it's gone")
+        -- framed bricks, steel, powder and gold each look their part
+        local saved = Siege.LEVELS[1]
+        Siege.LEVELS[1] = { name = "Looks", rows = { "rR%#*$.......", "............y" } }
+        r.stage = 0
+        r:NextStage(1)
+        Siege.LEVELS[1] = saved
+        STUB.Script(board, "OnUpdate", 0.016)
+        local arts = Siege.brickArt
+        check(arts[1].face:GetWidth() == BW - 2 and arts[2].face:GetWidth() < arts[1].face:GetWidth() and arts[3].face:GetWidth() < arts[2].face:GetWidth()
+            and arts[2].frame.__color[1] < arts[2].face.__color[1], "siege: a brick that takes more hits has a darker frame round a smaller face")
+        check(not arts[1].glow:IsShown() and not arts[4].glow:IsShown() and arts[5].glow:IsShown() and arts[6].glow:IsShown()
+            and arts[6].face.__color[2] == Siege.GOLD[2], "siege: powder and gold glow; plain bricks and steel don't")
+        r.grid[1][2].hp = 1
+        r.dirty = true
+        STUB.Script(board, "OnUpdate", 0.016)
+        check(arts[2].face:GetWidth() == BW - 2, "siege: a framed brick down to its last hit looks plain")
+        -- a pickup falls and is caught: a word floats up off the paddle
+        STUB.Script(board, "OnClick")
+        r.pickups = { { kind = "wide", x = 300, y = 200 } }
+        STUB.Script(board, "OnUpdate", 0.016)
+        local pa = Siege.pickupArt[1]
+        local pkl, pkt, pkw, pkh = STUB.rect(pa)
+        check(pa:IsShown() and pa.mark:GetText() == "<>" and near(pkl + pkw / 2 - bl, 300, 0.01) and near(bt - (pkt - pkh / 2), r.pickups[1].y, 0.01)
+            and not Siege.pickupArt[2]:IsShown(), "siege: a pickup is drawn where it falls, with its mark")
+        STUB.cursorX = bl + 300
+        r.pickups[1].y = Siege.PADDLE_Y - 4
+        STUB.sounds = {}
+        STUB.Script(board, "OnUpdate", 0.016)
+        local word
+        for _, f in ipairs(Siege.floats) do if f:IsShown() and f:GetText() == "Wide paddle!" then word = f end end
+        xl, _, xw = STUB.rect(Siege.paddle.bar)
+        check(word and r.wide > 0 and not pa:IsShown() and xw > Siege.PADDLE_W and Siege.paddle.bar.__color[3] == 1, "siege: caught, it says so and the paddle changes")
+        -- losing the ball: a life off the card
+        r.balls = { { x = 30, y = H - 2, vx = 0, vy = 300 } }
+        STUB.cursorX = bl + 400
+        for _ = 1, 20 do STUB.Script(board, "OnUpdate", 0.02) end
+        pips = 0
+        for _, pip in ipairs(side.pips) do if pip:IsShown() then pips = pips + 1 end end
+        check(r.lives == 2 and pips == 2 and r.state == "serve" and Siege.banner:IsShown(), "siege: a lost ball takes a life off the card, and the next one waits")
+        -- New run in the middle of one asks twice
+        r.score = 50
+        STUB.Script(side.newRun, "OnClick")
+        check(Siege.run == r and side.newRun.armed, "siege: New run in the middle of a run wants a second click")
+        STUB.Script(side.newRun, "OnClick")
+        check(Siege.run ~= r and Siege.run.stage == 1, "siege: which starts over")
+        r = Siege.run
+
+        -- a wall down: three tiles, pick one, the next wall
+        for _, x in ipairs(r.bricks) do r:Destroy(x) end
+        STUB.Script(board, "OnClick")
+        STUB.sounds = {}
+        STUB.Script(board, "OnUpdate", 0.016)
+        check(r.state == "choose" and o:IsShown() and o.title:GetText() == "Wall 1 is down" and o.tiles[1]:IsShown() and o.tiles[3]:IsShown()
+            and o.tiles[2].name:GetText() == Siege.UPGRADE[r.offers[2]][2] and o.tiles[2].icon:GetTexture() == Siege.UpgradeIcon(r.offers[2])
+            and not o.start:IsShown() and not o.scoreTitle:IsShown() and not c:IsShown(), "siege: a wall down shows three upgrades to pick from")
+        local picked = r.offers[2]
+        STUB.Script(o.tiles[2], "OnClick")
+        check(r.stage == 2 and r:Has(picked) == 1 and not o:IsShown() and side.stage:GetText() == "2" and side.ups[1]:IsShown()
+            and side.ups[1].name:GetText() == Siege.UPGRADE[picked][2] and not side.noUps:IsShown() and Siege.banner:GetText() == "Wall 2: " .. r.name,
+            "siege: picking one puts up the next wall and lists it")
+        STUB.Script(side.ups[1], "OnEnter")
+        check(GameTooltip.shown and GameTooltip.lines[1] == Siege.UPGRADE[picked][2], "siege: hovering an upgrade says what it does")
+        STUB.Script(side.ups[1], "OnLeave")
+        -- the legend, and it gives way to a long list of upgrades
+        check(#side.legend == 5 and side.legend[1]:IsShown() and side.legend[2].name:GetText() == "Steel" and side.legend[2].what:GetText() == "never breaks",
+            "siege: the card says what the bricks and pickups are")
+        for _, u in ipairs(Siege.UPGRADES) do r.upgrades[u[1]] = 1 end
+        r.dirty = true
+        STUB.Script(board, "OnUpdate", 0.016)
+        check(side.ups[10]:IsShown() and not side.legend[1]:IsShown(), "siege: (it gives way if the upgrades reach it)")
+        r.upgrades = {}
+
+        -- Tar Paddle: a caught ball waits for a click, and one off the board counts
+        r.upgrades.sticky = 1
+        STUB.cursorX = bl + 280
+        STUB.Script(board, "OnClick")
+        r.balls = { { x = 290, y = Siege.PADDLE_Y - 12, vx = 0, vy = 300 } }
+        for _ = 1, 6 do STUB.Script(board, "OnUpdate", 0.016) end
+        check(r.state == "play" and r.balls[1].stuck and c:IsShown(), "siege: with Tar Paddle a caught ball waits, and clicks off the board count again")
+        STUB.Script(c, "OnClick")
+        check(r.balls[1].stuck == nil and not c:IsShown(), "siege: (and fire it)")
+        r.upgrades = {}
+        -- the Safety Net shows along the bottom while there is one
+        r.net = 1
+        r.dirty = true
+        STUB.Script(board, "OnUpdate", 0.016)
+        check(Siege.netLine:IsShown(), "siege: the Safety Net shows along the bottom")
+        r.net = 0
+        r.dirty = true
+        STUB.Script(board, "OnUpdate", 0.016)
+        check(not Siege.netLine:IsShown(), "siege: until it's used")
+
+        -- Hiscores in the middle of a run: only while a ball waits; no ball fires while they're up
+        r.balls = {}
+        r.lives = 3
+        r:Serve()
+        r.dirty = true
+        STUB.Script(board, "OnUpdate", 0.016)
+        check(side.scoresBtn:IsEnabled(), "siege: (a ball waiting)")
+        STUB.Script(side.scoresBtn, "OnClick")
+        check(o:IsShown() and o.title:GetText() == "Hiscores" and o.start.label:GetText() == "Back" and not c:IsShown(), "siege: the Hiscores button shows them over the wall")
+        STUB.Script(board, "OnClick")
+        check(r.state == "serve", "siege: no ball fires while they're up")
+        STUB.Script(o.start, "OnClick")
+        check(Siege.run == r and not o:IsShown() and c:IsShown(), "siege: Back returns to the same run")
+        STUB.Script(board, "OnClick")
+        check(r.state == "play" and not side.scoresBtn:IsEnabled(), "siege: the button waits while the ball is in play")
+
+        -- the run ending: how it went, our best, on the guild's hiscores
+        local me = Sync:Me()
+        r.cleared, r.score, r.lives = 1, 430, 1
+        r.balls = { { x = 30, y = H - 2, vx = 0, vy = 300 } }
+        STUB.cursorX = bl + 400
+        for _ = 1, 20 do STUB.Script(board, "OnUpdate", 0.02) end
+        check(r.state == "over" and o:IsShown() and o.title:GetText() == "New best!" and o.start.label:GetText() == "New run"
+            and o.sub:GetText() == ("Broke 1 wall for 430 points. %s held."):format(r.name) and side.best:GetText() == "Best: wall 1, 430 pts"
+            and not Siege.paddle.bar:IsShown() and not Siege.ballArt[1]:IsShown() and not Siege.brickArt[1].face:IsShown(),
+            "siege: the run over: how it went, our best, the board cleared away")
+        local sc = o.scores
+        check(Sync:Store("siege")[me] and Sync:Store("siege")[me].stage == 1 and sc[1]:IsShown() and sc[1].name:GetText() == "Jake"
+            and sc[1].stage:GetText() == "wall 1" and sc[1].score:GetText() == "430 pts" and sc[1].mine:IsShown() and not o.noScores:IsShown(),
+            "siege: and it's on the guild's hiscores, marked as ours")
+        local now = ns.Now()
+        for i = 1, 9 do
+            local who = ("Deep%02d-Realm"):format(i)
+            Sync:Apply(Sync.collections.siege, { id = who, rev = now, by = who, author = who, t = now, stage = 20 + i, score = 10 })
+        end
+        check(sc[1].name:GetText() == "Deep09" and sc[1].stage:GetText() == "wall 29" and sc[8].name:GetText() == "Jake" and sc[8].rank:GetText() == "10."
+            and sc[8].mine:IsShown() and not sc[7].mine:IsShown(), "siege: off the bottom of the list ours still shows, with its real place")
+        STUB.Script(o.start, "OnClick")
+        check(Siege.run ~= r and Siege.run.state == "serve" and not o:IsShown(), "siege: New run from there starts again")
+        -- a run that isn't our best says so
+        r = Siege.run
+        r.lives = 1
+        STUB.Script(board, "OnClick")
+        r.balls = { { x = 30, y = H - 2, vx = 0, vy = 300 } }
+        for _ = 1, 20 do STUB.Script(board, "OnUpdate", 0.02) end
+        check(r.state == "over" and o.title:GetText() == "Out of lives" and o.sub:GetText():find("Broke 0 walls", 1, true) and Siege.Saved().runs == 2
+            and Siege.Saved().stage == 1, "siege: a run that isn't our best says so")
+
+        local store = Sync:Store("siege")
+        for id in pairs(store) do store[id] = nil end
+        Sync.index = nil
+        STUB.sent, STUB.sounds = {}, {}
+        Siege.run = nil
+        ns.db.games.siege = nil
+        Siege:Refresh()
+        STUB.cursorX, STUB.cursorY = 0, 0
+        Games:SetMode("wowdle")
+        ns.Editor:ShowTab("home")
+    end
+end
+
+-- 0.17.0: Activity lines that are cut off show whole on hover ---------------------------------------
+do
+    local Home = ns.Home
+    local G = ns.db.guild
+    ns.Editor:ShowTab("home")
+    G.players["Verylongname Withasurname"] = { inGuild = true, class = "MAGE", level = 23 }
+    table.insert(G.feed, 1, { t = ns.Now() - 300, kind = "level", name = "Verylongname Withasurname", value = 23 })
+    table.insert(G.feed, 1, { t = ns.Now(), kind = "join", name = "Verylongname Withasurname" })
+    table.insert(G.feed, 1, { t = ns.Now() - 7200, kind = "level", name = "Verylongname Withasurname", value = 24, away = true })
+    Home.feedCard.offset = 0
+    Home:Refresh()
+    local rows = Home.feedCard.rows
+    local away, join, level = rows[1], rows[2], rows[3]
+    GameTooltip:Hide()
+    STUB.Script(level, "OnEnter")
+    check(not GameTooltip.shown, "activity: a line that fits has no tooltip")
+    level.text.__truncated = true
+    STUB.Script(level, "OnEnter")
+    check(GameTooltip.shown and GameTooltip.lines[1]:find("Withasurname", 1, true) and GameTooltip.lines[1]:find("reached level 23", 1, true)
+        and GameTooltip.lines[2] == "5m ago", "activity: hovering a line that's cut off shows all of it, and when")
+    STUB.Script(level, "OnLeave")
+    check(not GameTooltip.shown, "activity: (and it goes when the mouse does)")
+    join.text.__truncated = true
+    STUB.Script(join, "OnEnter")
+    check(GameTooltip.lines[1]:find("joined the guild", 1, true) and GameTooltip.lines[2] == "just now", "activity: one from this minute says just now")
+    STUB.Script(join, "OnLeave")
+    away.text.__truncated = true
+    STUB.Script(away, "OnEnter")
+    check(GameTooltip.shown and GameTooltip.lines[1]:find("reached level 24", 1, true) and GameTooltip.lines[2] == nil, "activity: one from while we were away has no time to give")
+    STUB.Script(away, "OnLeave")
+    level.text.__truncated, join.text.__truncated, away.text.__truncated = nil, nil, nil
+    for _ = 1, 3 do table.remove(G.feed, 1) end
+    G.players["Verylongname Withasurname"] = nil
+    ns.Attendance.keyCache = nil
+    Home:Refresh()
 end
 
 return results

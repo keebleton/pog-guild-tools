@@ -27,7 +27,8 @@ local MAX_CELL = 40
 -- floats (UI experiment). LB_W is its narrowest (Expert).
 local LB_W = 240
 local GAME_W = INNER_W - LB_W - GAP
-Games.layout = { LB_W = LB_W, GAME_W = GAME_W, STATUS_Y = STATUS_Y }
+local LEVEL_W = 78 -- a difficulty button (96 until a sixth game's tab needed the room)
+Games.layout = { LB_W = LB_W, GAME_W = GAME_W, STATUS_Y = STATUS_Y, LEVEL_W = LEVEL_W }
 
 local SAPPER_ICON = "Interface\\Icons\\Spell_Fire_SelfDestruct"
 local SAPPER_ITEM = 10646 -- Goblin Sapper Charge
@@ -41,6 +42,7 @@ Games.MODES = {
     { key = "sweeper", label = "Sapper Sweeper", w = 128 },
     { key = "gems", label = "Gem Cutter", w = 100 },
     { key = "lode", label = "Motherlode", w = 100 },
+    { key = "siege", label = "Siege", w = 60 },
     { key = "duels", label = "Ranked Duels", w = 112 },
 }
 
@@ -277,12 +279,12 @@ function Games:Build(page)
         tx = tx + t:GetWidth() + (UI.classic and UI.SUBTAB_GAP or 4)
     end
     self.levelButtons = {}
-    local x = FRAME_W - PAD - (3 * 96 + 2 * 4)
+    local x = FRAME_W - PAD - (3 * LEVEL_W + 2 * 4)
     for _, lv in ipairs(Games.LEVELS) do
-        local b = UI.Button(page, lv.label, 96, BAR_H, function() self:NewGame(lv.key) end)
+        local b = UI.Button(page, lv.label, LEVEL_W, BAR_H, function() self:NewGame(lv.key) end)
         b:SetPoint("TOPLEFT", x, -ROW1_Y)
         self.levelButtons[lv.key] = b
-        x = x + 96 + 4
+        x = x + LEVEL_W + 4
     end
 
     -- status bar: sappers left | new game | timer
@@ -338,7 +340,7 @@ function Games:Build(page)
     self:BuildScores(page)
     -- the other games each get a full-page view under the tabs
     self.views = {}
-    for key, mod in pairs({ duels = ns.Duels, gems = ns.Gems, wowdle = ns.Wowdle, lode = ns.Lode }) do
+    for key, mod in pairs({ duels = ns.Duels, gems = ns.Gems, wowdle = ns.Wowdle, lode = ns.Lode, siege = ns.Siege }) do
         local v = CreateFrame("Frame", nil, page)
         v:SetAllPoints()
         v:Hide()
@@ -370,7 +372,7 @@ function Games:SetMode(mode)
         self.bar:Hide()
         self.board:Hide()
         self.bar.message:Hide()
-        local mod = ({ duels = ns.Duels, gems = ns.Gems, wowdle = ns.Wowdle, lode = ns.Lode })[mode]
+        local mod = ({ duels = ns.Duels, gems = ns.Gems, wowdle = ns.Wowdle, lode = ns.Lode, siege = ns.Siege })[mode]
         mod:Refresh()
     end
 end
