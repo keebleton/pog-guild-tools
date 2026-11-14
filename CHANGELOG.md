@@ -1,5 +1,16 @@
-# Pog Guild Tools 0.18.1
+# Pog Guild Tools 0.19.0
 
+Motherlode is now called **Poggle**, and it got a big update from your feedback:
+
+- **Classes.** Pick Warrior, Mage, Rogue or Hunter when you start a run. Each has a perk for the whole run and two upgrades only it is offered.
+- **The mine cart replaces the x1 x2 x5 pockets.** Ore now counts exactly as you mine it, with no luck at the bottom. A cart rides along the bottom instead: land your bomb in it and you get the bomb back, up to three times a floor.
+- **No more dead ends.** When the pegs left on the board can't make the quota and half the board is mined, fresh rock caves in. You only lose by running out of bombs.
+- **The top corners can be hit.** The mortar now swings almost flat, and no peg sits where a shot can't reach it.
+- **Twice the upgrades.** 23 in all, with new ones like Powder Store, Geodes, Hot Streak, Lodestone, Last Gasp and Wide Cart.
+
+Also:
+
+- **Siegebreaker:** the Tar Paddle upgrade is gone.
 - **Kill on sight:** a name typed with angle brackets, like <Kraken Skulls>, now shows without them.
 - **Guildies on the map:** the dots are now the same size and style as OneForAll's, for those who use both.
 - **Kill on sight:** you can mark a whole guild. Type the guild's name, and anyone in that guild is called out when you come across them.

@@ -41,7 +41,7 @@ Games.MODES = {
     { key = "wowdle", label = "Wowdle", w = 76 },
     { key = "sweeper", label = "Sapper Sweeper", w = 128 },
     { key = "gems", label = "Gem Cutter", w = 100 },
-    { key = "lode", label = "Motherlode", w = 100 },
+    { key = "lode", label = "Poggle", w = 70 },
     { key = "siege", label = "Siege", w = 60 },
     { key = "duels", label = "Ranked Duels", w = 112 },
 }

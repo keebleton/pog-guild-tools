@@ -188,6 +188,36 @@ launchers and plain-English steps. Read this whole file before changing anything
   made, once per `KILL_EVERY` 5 min per target; `koskills` collection (code "j", id = author, `n`, `last` = the latest
   victim's name, `perRecord`): `Kos:OnKills` pops up "X got Y" once per new count, fresh ones only. `Kos:Hunters`.
   Not proven in game yet: that PARTY_KILL fires for player kills in the open world.
+- 0.19.0: Motherlode is called **Poggle** wherever a player sees it (the guild's name for it; Jake: "let's change the
+  name to Poggle"): the Games tab, the card title, the start screen, `/pog poggle`, README, CHANGELOG. Everything
+  inside keeps "lode" (`Lode.lua`, `ns.Lode`, the tab key, `db.games.lode`, the `lode` collection), and
+  `/pog motherlode` and `/pog lode` still work. These notes say Motherlode for the same reason.
+- 0.19.0 Motherlode 2 (Jake: "people are really loving motherlode ... make it a really good game", with the guild's
+  feedback). What changed in `Lode.Run`, and why:
+  * Pockets are gone (guildies: "too much RNG", missing the x5 "can feel pretty bad"). Ore banks as mined
+    (`Run:Land`). A mine cart (`run.cart`, `Lode.CART_W` 80, `CART_SPEED` 150, moved by `Run:MoveCart` only while a
+    bomb flies) gives the bomb back when it lands in it: `Lode.CATCHES` 3 a floor (`Run:CatchesLeft`, shown on the cart).
+  * No dead ends ("you will never be able to go to the next stage even if you have pegs left"): after a shot,
+    `Run:Spent()` (ore + `Potential()` < quota AND half the pegs or fewer left, `CAVE_AT`) brings `Run:CaveIn()`, a
+    fresh board with ore and bombs kept. Deep floors need several boards by design. The run ends only on 0 bombs.
+  * Aim ("I cannot aim at the pegs in the top right / left corner"): `MAX_AIM` 88 degrees, and `Lode.Board` never
+    puts a peg above `Lode.Ceiling(x)`, the flattest shot's path.
+  * Classes (`Lode.CLASSES`, `Run.New(seed, class)`): Warrior +2 bombs a floor; Mage Twin Fuse built in; Rogue gold x2
+    and 10% luck; Hunter cart 1.5x wide with Lodestone built in. `Lode.UPGRADES[i][5]` = the class an upgrade belongs
+    to; `Run:Offers` gives a class its own, never another's, never what it has `built` in. A run without a class is
+    still legal (the old tests use it). The screen asks for the class: `Lode:NewRun()` with no seed opens the picker
+    (`Lode.picking`, four tiles, the last class marked from `db.games.lode.class`); `NewRun(seed)` or
+    `NewRun(nil, false)` starts without one.
+  * 23 upgrades. Anything that gives a bomb back goes through `Run:GiveBomb`: ONE a shot whatever the source
+    (`run.given`), upgrades' ones `Lode.GIFTS` 2 a floor. Keep it that way: the balance script found three ways to
+    play for ever before those limits (two halves of a split bomb both caught; Bloodthirst refunding every Cleave
+    shot, so it now pays +50% instead; Lodestone catching every shot).
+  * Balance (scratch script `lode_sim3.py`: per class, a random clicker and one that tries 4 aims): random clears 0-3
+    floors, careful play 9-10, every class ends. `QUOTA` 450 x 1.5 unchanged. Rogue looks strongest. Retune from play.
+  * Tests: the 0.16.9 block switches the cart and cave-ins off (`Lode.CART_W = -1`, `Lode.CAVE_IN = false`) because it
+    watches one peg at a time; the 0.19.0 block covers the new rules and the picker.
+  Not seen in game yet: the cart's look, the class tiles (class pictures come from the character-creation sheet with
+  `CLASS_ICON_TCOORDS`), the upgrade icons' item IDs (`Lode.UPGRADE_ITEMS`), and how the cave-in reads on screen.
 - 0.18.1 (Jake, from a poster a guildie made reading "<Kraken Skulls>"): `Kos.Show(name)` drops angle brackets wherever
   a mark is shown; `Kos:Add` stores new marks without them; old ones keep them in the record (the id must equal
   `Kos.Key(name)`), so `Find`, `Add` and the spotter also look under "<key>". A mark can be a guild: `Kos:Check` falls
@@ -226,7 +256,8 @@ launchers and plain-English steps. Read this whole file before changing anything
   characters (`Siege.LEVELS`, 50 = 10 tiers x 5; `pic` drawn by hand, `gen` by a rule per cell): lowercase colour
   letters 1 hit, uppercase 2, `%` stone 3, `#` steel, `*` powder (destroys the 8 round it, chaining), `$` gold. Stage
   n draws one of tier n's five (past tier 10, any of the harder half), 4% faster a stage up to 1.6x. Pickups drop
-  from 8% of broken bricks (multi, wide for 15 s, life); ten upgrades (`Siege.UPGRADES`). `Run.events` drives the
+  from 8% of broken bricks (multi, wide for 15 s, life); nine upgrades (`Siege.UPGRADES`; Tar Paddle was
+  removed in 0.19.0, Jake's call). `Run.events` drives the
   effects, as in Motherlode, whose drawing helpers it shares (`Lode.util`). A scratch script had a bot (paddle
   follows the lowest ball) clear all 50; every wall is also checked for reachability (no brick walled in by steel):
   keep both true when adding walls. Hiscores: Sync collection `siege` (code "b", id = author, stage and score), same
@@ -495,6 +526,34 @@ Item hovers use `UI.ItemTip(owner, link)`: the game's "Currently equipped" compa
 fields on GameTooltip (taint, secret values).
 Window 902x658 with a 36 px title band; pages are 902 x `ns.PAGE_H` (642); the Raid group's pages are 902 x
 `ns.RAID_H` (608) under their sub-tab row (`ns.SUB_H` = 34).
+
+## Handover (Nov 14, 2026): where things stand, for whoever picks this up
+Jake is switching models, so this is the state of play and what to do next.
+- Released: 0.18.0 (kill on sight board, hunters, guildies on the map). Pushed to main but NOT released: 0.18.1 (no
+  angle brackets on marks, guild marks, map dots matching OneForAll). In the working tree, NOT committed: 0.19.0
+  (Motherlode 2, above). "push" means commit and push to main; a release (pushing the `v<version>` tag) is a
+  separate ask, and Jake answers "Release 0.x.y".
+- Jake tests by playing and sends screenshots (they land in the game's `Screenshots` folder, newest first; read the
+  image, don't ask him to describe it). Expect a round of look-and-feel fixes on Motherlode 2 first: the cart is drawn
+  from flat colours and may want real art; the class tiles and the upgrade icons have never been seen.
+- Motherlode ideas not built, in the order I'd offer them (ask before building, one at a time):
+  1. Feedback on the classes once guildies have played them: each has only two upgrades of its own. More per class
+     (a third and fourth), and the missing classes (Priest, Paladin, Warlock, Druid, Shaman) are the obvious growth.
+  2. Hiscores per class, or the class shown beside a score (needs a field on the `lode` record: old addons ignore
+     unknown fields, but check `Sync:DecodeRecord` before adding one).
+  3. Floor variety: a boss floor every fifth (one big multi-hit peg), moving pegs, a different layout per seam.
+  4. A daily seed everyone plays (like Wowdle), with its own board.
+- Things only the game can prove, still open from 0.18: that PARTY_KILL fires for player kills in the open world (the
+  hunters list depends on it), that an enemy's guild name comes through `GetGuildInfo(unit)` (guild marks), and the
+  map dots with a second guildie on 0.18+.
+- Working habits that kept this codebase healthy (all above in more detail): write edit scripts as files, never as
+  shell heredocs with quotes; run `python tests/run_tests.py` after every change; mutation-check new logic on a copy
+  of the .lua files; simulate game balance headless before trusting it (every runaway in Motherlode 2 was found that
+  way, not by reading the code); guard anything that touches a file added in the same release (`ns.X and ...`),
+  because players update and /reload without restarting.
+- With Jake: short, plain English, recommendation first, no em dashes, never suggest stopping. He decides scope with
+  one-line asks; when a request has a hidden cost (a new shared list, a default-on setting) say so in a sentence and
+  go with the sensible default rather than asking.
 
 ## How Jake likes to work
 - Plain English, short, recommendation first. He isn't a terminal person: give him buttons, double-click files and

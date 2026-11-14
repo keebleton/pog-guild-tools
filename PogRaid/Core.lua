@@ -1,7 +1,7 @@
 -- PogRaid core: saved data, event dispatch, slash commands, API probe.
 local ADDON, ns = ...
 
-ns.VERSION = "0.18.1"
+ns.VERSION = "0.19.0"
 
 -- Running from the project folder, not a packaged release (the packager and
 -- tools/package.py delete this block). A dev build tells other addons it is
@@ -558,10 +558,10 @@ SlashCmdList.POGRAID = function(msg)
     elseif cmd == "chat" then
         -- "/pog chat test": a practice chat that answers back (nothing is sent to anyone)
         if (msg or ""):lower():match("test") then ns.Chat:Test() else ns.Chat:Toggle() end
-    elseif cmd == "duels" or cmd == "wowdle" or cmd == "gems" or cmd == "lode" or cmd == "motherlode" or cmd == "siege"
+    elseif cmd == "duels" or cmd == "wowdle" or cmd == "gems" or cmd == "lode" or cmd == "motherlode" or cmd == "poggle" or cmd == "siege"
         or cmd == "siegebreaker" then
         ns.Editor:Toggle("games")
-        if cmd == "motherlode" then cmd = "lode" end
+        if cmd == "motherlode" or cmd == "poggle" then cmd = "lode" end -- (Poggle was Motherlode until 0.19.0)
         if cmd == "siegebreaker" then cmd = "siege" end
         if ns.Games.page then ns.Games:SetMode(cmd) end
         -- asked for by name: ready to type (opening the tab alone doesn't take the keyboard)
@@ -608,6 +608,6 @@ SlashCmdList.POGRAID = function(msg)
         if ns.Kos and ns.Kos.frame then ns.UI.RestorePosition(ns.Kos.frame, "kos", 40) end
         ns.Print("window positions reset")
     else
-        ns.Print("/pog opens the window. Also: home, roster, attendance, loot, crafting, games, gems, wowdle, motherlode, siege, duels, plans, chat, kos, map, settings, minimap, probe, art, bug, sync, check, test, reset")
+        ns.Print("/pog opens the window. Also: home, roster, attendance, loot, crafting, games, gems, wowdle, poggle, siege, duels, plans, chat, kos, map, settings, minimap, probe, art, bug, sync, check, test, reset")
     end
 end

@@ -6865,6 +6865,15 @@ end
 -- 0.16.9: Motherlode, the peg-drop roguelike (Lode.lua) --------------------------------------------
 do
     local Lode, Sync = ns.Lode, ns.Sync
+    -- (0.19.0: these watch one peg or one bomb at a time, so no cart to catch it and no cave-ins;
+    --  the block after this one is about those)
+    local realCartW, realCaveIn = Lode.CART_W, Lode.CAVE_IN
+    Lode.CART_W, Lode.CAVE_IN = -1, false
+    -- Start run now asks for a class first: these runs have none
+    local function startRun(o)
+        STUB.Script(o.start, "OnClick")
+        if Lode.picking then Lode:NewRun(nil, false) end
+    end
     local Run = Lode.Run
     local W, H, STEP = Lode.W, Lode.H, Lode.STEP
     local function count(t) local n = 0 for _ in pairs(t or {}) do n = n + 1 end return n end
@@ -6963,9 +6972,9 @@ do
         local speedIn = Lode.SPEED -- (it left the mortar at this, and gravity only adds)
         check(math.abs(b.vy) < (speedIn ^ 2 + 2 * Lode.GRAVITY * 300) ^ 0.5 * Lode.BOUNCE + 1, "lode: it loses speed on the bounce")
         local t = fly(r)
-        check(p.hits == Lode.MAX_HITS and p.gone and r.state == "aim" and r.ore == 50 and r.total == 50 and r.last.gain == 50
-            and r.last.landed[1].pocket == 3 and r.last.landed[1].mult == 5 and r.last.landed[1].ore == 10 and t < 8,
-            "lode: bounced on three times a peg crumbles; its ore is counted once, times the pocket the bomb lands in")
+        check(p.hits == Lode.MAX_HITS and p.gone and r.state == "aim" and r.ore == 10 and r.total == 10 and r.last.gain == 10
+            and r.last.landed[1].caught == false and r.last.landed[1].ore == 10 and t < 8,
+            "lode: bounced on three times a peg crumbles; its ore is counted once, as mined")
     end
 
     -- a peg glanced once is still cleared away when the shot ends
@@ -6975,20 +6984,18 @@ do
         r.pegs = { p }
         r:Fire(0)
         fly(r)
-        check(p.lit and p.hits == 1 and p.gone and r.last.landed[1].ore == 10 and r.last.landed[1].pocket < 3 and r.ore == 10 * r.last.landed[1].mult,
+        check(p.lit and p.hits == 1 and p.gone and r.last.landed[1].ore == 10 and r.ore == 10,
             "lode: a peg hit once is mined and cleared away when the bomb lands")
     end
 
-    -- pockets, left to right
+    -- what a bomb mined is banked as it lands, wherever that is
     do
         local r = Run.New(11)
         r.landed = {}
         local function land(x) local b = { x = x, y = H, ore = 7 } r:Land(b) return r.landed[#r.landed] end
-        local a, m, z, o = land(30), land(W / 2), land(W - 30), land(-5)
-        check(a.pocket == 1 and a.mult == 1 and a.gain == 7 and m.pocket == 3 and m.gain == 35 and z.pocket == 5 and o.pocket == 1
-            and land(W / 5 + 1).mult == 2 and r.ore == 7 + 35 + 7 + 7 + 14, "lode: the pockets multiply 1, 2, 5, 2, 1")
-        r.upgrades.loaded = 2
-        check(r:PocketMult(1) == 3 and r:PocketMult(3) == 7, "lode: Loaded Pockets adds to every pocket")
+        local a, m, z = land(30), land(W / 2), land(W - 30)
+        check(a.gain == 7 and m.gain == 7 and z.gain == 7 and r.ore == 21 and r.total == 21 and not a.caught and not m.caught,
+            "lode: ore counts as mined wherever the bomb lands (no pockets)")
     end
 
     -- a powder keg takes its neighbours with it, and the next keg along
@@ -7001,7 +7008,7 @@ do
         check(keg.gone and a.gone and keg2.gone and b.gone and not far.gone and not far.lit and r.balls[1].ore == 40 and #r.blasts == 2,
             "lode: a keg blows up nearby pegs, other kegs in turn, and the bomb gets the ore")
         fly(r)
-        check(r.ore == 200 and not far.gone, "lode: (and lands with it)")
+        check(r.ore == 40 and not far.gone, "lode: (and lands with it)")
         r.upgrades.big = 2
         check(near(r:KegRadius(), Lode.KEG_R * 1.6), "lode: Big Kegs widens the blast")
     end
@@ -7015,7 +7022,7 @@ do
         while r.state == "flying" and not c.lit do r:Tick(STEP) end
         check(c.gone and #r.balls == 2 and r.balls[2].vx ~= 0 and r.balls[2].ore == 0 and r.balls[1].ore == 10, "lode: a crystal splits your bomb")
         fly(r)
-        check(#r.last.landed == 2 and r.ore == 50, "lode: both land, each with what it mined")
+        check(#r.last.landed == 2 and r.ore == 10, "lode: both land, each with what it mined")
         local t = Run.New(11)
         local p = peg(W / 2, 300)
         t.upgrades.twin = 1
@@ -7070,7 +7077,7 @@ do
     do
         local r = Run.New(21)
         r.pegs = { peg(W / 2, 300) }
-        r.quota = 40
+        r.quota = 10
         r:Fire(0)
         fly(r)
         local o = r.offers
@@ -7084,14 +7091,14 @@ do
         end
         check(distinct, "lode: the three offered are never the same one twice")
         local key = o[2]
-        check(r:Choose(2) == true and r:Has(key) == 1 and r.floor == 2 and r.quota == Lode.Quota(2) and r.ore == 0 and r.total == 50
+        check(r:Choose(2) == true and r:Has(key) == 1 and r.floor == 2 and r.quota == Lode.Quota(2) and r.ore == 0 and r.total == 10
             and r.state == "aim" and #r.pegs == Lode.PEGS and r.bombs == Lode.BOMBS + r:Has("spare") and r.offers == nil,
             "lode: picking one goes down a floor, with a fresh board and bombs")
         -- Spare Bomb, Deep Pockets, Prospector
         local d = Run.New(21)
         d.upgrades.deep, d.upgrades.spare, d.upgrades.prospector = 1, 2, 1
         d.pegs = { peg(W / 2, 300) }
-        d.quota = 40
+        d.quota = 10
         d:Fire(0)
         fly(d)
         local left = d.bombs
@@ -7102,14 +7109,14 @@ do
             "lode: Spare Bomb, Deep Pockets and Prospector do what they say on the next floor")
         -- upgrades taken as often as they can be aren't offered; with none left the run just goes on
         local m = Run.New(21)
-        for _, u in ipairs(Lode.UPGRADES) do m.upgrades[u[1]] = u[4] end
+        for _, u in ipairs(Lode.UPGRADES) do if not u[5] then m.upgrades[u[1]] = u[4] end end
         m.upgrades.rich, m.upgrades.lucky = 1, 0
         local offers = m:Offers()
         table.sort(offers)
         check(#offers == 2 and offers[1] == "lucky" and offers[2] == "rich", "lode: an upgrade taken as often as it can be isn't offered")
         m.upgrades.rich, m.upgrades.lucky = Lode.UPGRADE.rich[4], Lode.UPGRADE.lucky[4]
         m.pegs = { peg(W / 2, 300) }
-        m.quota = 40
+        m.quota = 10
         m:Fire(0)
         fly(m)
         check(m.state == "aim" and m.floor == 2 and m.cleared == 1, "lode: with nothing left to offer the run goes straight down")
@@ -7198,7 +7205,7 @@ do
         end
         local a, b, c = play(5), play(5), play(6)
         check(a.total == b.total and a.cleared == b.cleared and a.floor == b.floor and a.shots == b.shots
-            and (a.total ~= c.total or a.shots ~= c.shots), "lode: the same seed, aims and picks play out the same")
+            and (a.total ~= c.total or a.shots ~= c.shots or a.pegs[1].x ~= c.pegs[1].x), "lode: the same seed, aims and picks play out the same")
     end
 
     -- the aiming dots follow the bomb's path until its first peg
@@ -7227,18 +7234,18 @@ do
         ns.Editor:ShowTab("home")
         ns.db.games.lode = nil
         Lode.run = nil
-        SlashCmdList.POGRAID("motherlode")
+        SlashCmdList.POGRAID("poggle")
         local view = Games.views.lode
         check(ns.Editor.currentTab == "games" and Games.mode == "lode" and view and view:IsVisible() and Games.modeTabs.lode.selected
-            and not Games.board:IsShown() and not Games.views.gems:IsShown(), "lode: /pog motherlode opens its tab on Games")
+            and not Games.board:IsShown() and not Games.views.gems:IsShown(), "lode: /pog poggle opens its tab on Games")
         local found
         for i, m in ipairs(Games.MODES) do if m.key == "lode" then found = i end end
         check(found == 4 and Games.MODES[3].key == "gems" and Games.MODES[5].key == "siege" and Games.MODES[6].key == "duels"
-            and Games.MODES[found].label == "Motherlode", "lode: after Gem Cutter, before Siege and Ranked Duels")
+            and Games.MODES[found].label == "Poggle", "lode: after Gem Cutter, before Siege and Ranked Duels")
         local board, side, o = Lode.board, Lode.side, Lode.overlay
         -- before a run: how to play, and Start run
-        check(o:IsShown() and o.title:GetText() == "Motherlode" and o.start:IsShown() and o.start.label:GetText() == "Start run"
-            and o.sub:GetText():find("pocket it lands in", 1, true) and not o.tiles[1]:IsShown() and side.best:GetText() == "No runs yet"
+        check(o:IsShown() and o.title:GetText() == "Poggle" and side.title:GetText() == "Poggle" and o.start:IsShown() and o.start.label:GetText() == "Start run"
+            and o.sub:GetText():find("mine cart", 1, true) and not o.tiles[1]:IsShown() and not o.classes[1]:IsShown() and side.best:GetText() == "No runs yet"
             and side.newRun.label:GetText() == "Start run", "lode: before a run it says how to play")
         -- layout: the board from the page's left edge, the run beside it, both to the bottom margin
         local pl, pt = STUB.rect(Games.page)
@@ -7246,19 +7253,19 @@ do
         local sl, st, sw, sh = STUB.rect(side)
         check(near(bl - pl, 12) and bw == Lode.W and bh == Lode.H and near(sl - (bl + bw), 8) and near(sl + sw, pl + 890) and near(st, bt)
             and near(sh, bh) and near(pt - (bt - bh), ns.PAGE_H - 12), "lode layout: the board and the run card fill the page side by side")
-        local okPockets = #Lode.pockets == #Lode.POCKETS
-        for i, p in ipairs(Lode.pockets) do
+        local okPockets = Lode.pockets == nil and Lode.cart ~= nil and not Lode.cart:IsShown()
+        for i, p in ipairs({}) do
             local l, t, w, h = STUB.rect(p)
             if not near(l - bl, (i - 1) * Lode.W / 5) or not near(w, Lode.W / 5) or not near(t - h, bt - bh) or h ~= Lode.POCKET_H then okPockets = false end
         end
-        check(okPockets and Lode.pockets[3].text:GetText() == "x5" and Lode.pockets[1].text:GetText() == "x1", "lode layout: five pockets along the bottom")
+        check(okPockets, "lode layout: no pockets any more, and no cart before a run")
         local t1l, t1t, tw, th = STUB.rect(o.tiles[1])
         local t3l = STUB.rect(o.tiles[3])
         check(near(t1l - bl, (bl + bw) - (t3l + tw)) and near(STUB.rect(o.tiles[2]) - (t1l + tw), Lode.layout.TILE_GAP) and t1l > bl
             and t1t - th > bt - bh + Lode.POCKET_H, "lode layout: the three upgrade tiles are centred on the board")
 
         -- Start run
-        STUB.Script(o.start, "OnClick")
+        startRun(o)
         local run = Lode.run
         check(run and run.state == "aim" and not o:IsShown() and side.floor:GetText() == "1" and side.ore:GetText() == "0 / 450"
             and side.bombs:GetText() == "5" and side.seam:GetText() == "Copper seam" and side.noUps:IsShown() and Lode.mortar:IsShown(),
@@ -7318,12 +7325,12 @@ do
         STUB.Script(side.newRun, "OnClick")
         check(Lode.run == run and side.newRun.armed, "lode: New run in the middle of a run wants a second click")
         STUB.Script(side.newRun, "OnClick")
-        check(Lode.run ~= run and Lode.run.floor == 1 and Lode.run.shots == 0, "lode: which starts over")
+        check(Lode.run == run and Lode.picking and o:IsShown() and o.title:GetText() == "Pick a class" and o.classes[4]:IsShown(), "lode: which asks for a class")         if Lode.picking then Lode:NewRun(nil, false) end         check(Lode.run ~= run and Lode.run.floor == 1 and Lode.run.shots == 0 and not Lode.picking, "lode: and starts over")
 
         -- clearing a floor: three tiles; picking one goes down
         run = Lode.run
         run.pegs = { peg(W / 2, 300) }
-        run.quota = 40
+        run.quota = 10
         run.dirty = true
         STUB.cursorX, STUB.cursorY = bl + W / 2, bt - 400
         STUB.Script(board, "OnUpdate", 0.016)
@@ -7337,8 +7344,8 @@ do
             and o.tiles[1]:IsShown() and o.tiles[2]:IsShown() and o.tiles[3]:IsShown()
             and o.tiles[1].name:GetText() == Lode.UPGRADE[run.offers[1]][2] and o.tiles[3].desc:GetText() == Lode.UPGRADE[run.offers[3]][3]
             and STUB.sounds[#STUB.sounds] == SOUNDKIT.IG_QUEST_LIST_COMPLETE, "lode: a cleared floor shows three upgrades to pick from")
-        check(Lode.message:GetText() == "10 ore x5: +50" and Lode.pockets[3].flash:IsShown() and not Lode.pockets[1].flash:IsShown(),
-            "lode: the message and the pocket say what the bomb did")
+        check(Lode.message:GetText() == "+10 ore." and Lode.cart:IsShown() and not Lode.cart.flash:IsShown(),
+            "lode: the message says what the bomb did")
         STUB.Script(board, "OnClick")
         check(run.state == "choose", "lode: (the board doesn't take shots under the tiles)")
         local picked = run.offers[2]
@@ -7363,10 +7370,10 @@ do
             STUB.Script(board, "OnUpdate", 0.02)
         end
         check(run.state == "over" and o:IsShown() and o.title:GetText() == "New best!" and o.start:IsShown() and o.start.label:GetText() == "New run"
-            and o.sub:GetText() == "Cleared 1 floor, 50 ore mined. Floor 2 needed 680." and not o.tiles[1]:IsShown()
-            and Lode.Saved().runs == 1 and Lode.Saved().depth == 1 and side.best:GetText() == "Best: floor 1, 50 ore",
+            and o.sub:GetText() == "Cleared 1 floor, 10 ore mined. Floor 2 needed 680." and not o.tiles[1]:IsShown()
+            and Lode.Saved().runs == 1 and Lode.Saved().depth == 1 and side.best:GetText() == "Best: floor 1, 10 ore",
             "lode: the run over, how it went, and our best kept")
-        STUB.Script(o.start, "OnClick")
+        startRun(o)
         check(Lode.run ~= run and Lode.run.state == "aim" and not o:IsShown() and Lode.message:GetText() == "", "lode: New run from there starts again")
         -- a worse run doesn't call itself a best
         run = Lode.run
@@ -7386,8 +7393,8 @@ do
         do
             check(Lode.boardArt ~= nil and Lode.depth.__gradient ~= nil and board.artAlpha == Lode.ART_ALPHA,
                 "lode looks: a faint picture of the mine behind the board, darker toward the bottom")
-            check(Lode.pockets[3].text.__fontSize > Lode.pockets[1].text.__fontSize and Lode.pockets[3].fill.__color[4] > Lode.pockets[2].fill.__color[4]
-                and Lode.pockets[2].fill.__color[4] > Lode.pockets[1].fill.__color[4], "lode looks: the richer the pocket, the brighter it is")
+            check(Lode.cart.rim ~= nil and #Lode.cart.wheels == 2
+                and Lode.cart.flash ~= nil, "lode looks: a mine cart with a gold rim and two wheels")
             Lode:NewRun(77)
             local r = Lode.run
             -- a keg with five pegs round it, straight under the mortar
@@ -7450,12 +7457,12 @@ do
                 STUB.Script(board, "OnUpdate", 0.02)
             end
             local payout
-            for _, f in ipairs(Lode.floats) do if f:IsShown() and f:GetText() == "x5  +500" then payout = f end end
+            for _, f in ipairs(Lode.floats) do if f:IsShown() and f:GetText() == "+100" then payout = f end end
             local coin = false
             for _, id in ipairs(STUB.sounds) do if id == SOUNDKIT.LOOT_WINDOW_COIN_SOUND then coin = true end end
-            check(r.state == "aim" and r.ore == 500 and payout and payout.__fontSize >= 16 and Lode.pockets[3].flash:IsShown() and coin
+            check(r.state == "aim" and r.ore == 100 and payout and payout.__fontSize >= 16 and coin
                 and not Lode.combo:IsShown() and not art:IsShown() and not art.glow:IsShown() and not art.trail[1]:IsShown() and c:IsShown(),
-                "lode looks: the pocket pays out in a big number and a coin sound; the bomb and its sparks are gone")
+                "lode looks: the haul is banked in a big number and a coin sound; the bomb and its sparks are gone")
             for _ = 1, 30 do STUB.Script(board, "OnUpdate", 0.1) end
             local lingering = false
             for _, f in ipairs(Lode.floats) do if f:IsShown() then lingering = true end end
@@ -7627,8 +7634,8 @@ do
                     if q.state ~= "flying" then break end
                     STUB.Script(board, "OnUpdate", 0.02)
                 end
-                check(Lode.walls[1].__gradient ~= nil and Lode.walls[2].__gradient ~= nil and Lode.pockets[3].shine.__gradient ~= nil,
-                    "lode polish: the walls fall into shadow and the pockets are lit from below")
+                check(Lode.walls[1].__gradient ~= nil and Lode.walls[2].__gradient ~= nil,
+                    "lode polish: the walls fall into shadow")
             end
 
             -- what the rules report for the screen to show
@@ -7642,7 +7649,7 @@ do
             check(kinds.mine == 2 and kinds.blast == 1 and kinds.land == nil and pr.pegsHit == 2 and pr.events[1].ref == k2 and pr.events[1].v == 10,
                 "lode: the rules note what happened: pegs mined, a keg gone up")
             fly(pr)
-            check(pr.events[#pr.events].kind == "land" and pr.events[#pr.events].gain == 100 and pr.events[#pr.events].pocket == 3, "lode: and where each bomb landed")
+            check(pr.events[#pr.events].kind == "land" and pr.events[#pr.events].gain == 20 and near(pr.events[#pr.events].x, W / 2, 40) and pr.events[#pr.events].caught == false, "lode: and where each bomb landed")
             local one = Run.New(11)
             local op = peg(W / 2, 300)
             one.pegs = { op }
@@ -7708,7 +7715,7 @@ do
             local nrl, nrt, nrw = STUB.rect(side.newRun)
             check(near(nrl - (bsl + bsw), 8) and near(bst, nrt) and bsw == nrw and near((bsl + nrl + nrw) / 2, sl + sw / 2)
                 and near((bst - bsh) - (st - sh), 12) and not side.scoresBtn.red, "hiscores: a Hiscores button beside New run, centred at the card's foot")
-            STUB.Script(o.start, "OnClick")
+            startRun(o)
             local hr = Lode.run
             check(hr and hr.state == "aim" and not o:IsShown() and side.scoresBtn:IsEnabled() and not side.scoresBtn.selected, "hiscores: (a run under way)")
             STUB.Script(side.scoresBtn, "OnClick")
@@ -7717,7 +7724,7 @@ do
             STUB.Script(Lode.catcher, "OnClick")
             STUB.Script(board, "OnClick")
             check(hr.state == "aim" and hr.bombs == Lode.BOMBS, "hiscores: no bombs drop while they're up")
-            STUB.Script(o.start, "OnClick")
+            startRun(o)
             check(Lode.run == hr and not o:IsShown() and not side.scoresBtn.selected and hr.shots == 0, "hiscores: Back returns to the same run")
             STUB.Script(side.scoresBtn, "OnClick")
             STUB.Script(side.scoresBtn, "OnClick")
@@ -7757,6 +7764,7 @@ do
         Games:SetMode("wowdle")
         ns.Editor:ShowTab("home")
     end
+    Lode.CART_W, Lode.CAVE_IN = realCartW, realCaveIn
 end
 
 -- 0.16.9: level milestones: a pop-up at 20, 30, 40 and 50, a banner at 60 ---------------------------
@@ -8344,16 +8352,14 @@ do
         b = ball(n, 400, H - 30, 0, 300)
         ticks(n, 200)
         check(n.lives == 2, "siege: once a wall")
-        -- Tar Paddle: the ball sticks where it lands until it's fired
+        -- Tar Paddle is gone (0.19.0): a ball always comes straight back off the paddle
         local s = wall("y............")
         s.upgrades.sticky = 1
         s.paddleX = 280
         b = ball(s, 300, Siege.PADDLE_Y - 20, 0, 300)
         ticks(s, 40)
-        check(b.stuck and near(b.stuck, 20, 0.01) and b.vy == 0 and s.state == "play", "siege: Tar Paddle catches the ball where it lands")
-        s:Step(0.016, 200)
-        check(near(b.x, 220, 0.01), "siege: it rides the paddle")
-        check(s:Launch() == true and b.stuck == nil and b.vy < 0 and b.vx > 0, "siege: and fires again on a click, from where it sat")
+        check(b.stuck == nil and b.vy < 0 and b.vx > 0 and Siege.UPGRADE.sticky == nil and #Siege.UPGRADES == 9 and Siege.UPGRADE_ITEMS.sticky == nil,
+            "siege: no Tar Paddle: the ball bounces off the paddle and isn't an upgrade any more")
     end
 
     -- pickups: sometimes a broken brick drops one, and the paddle catches it
@@ -8605,18 +8611,8 @@ do
         for _, u in ipairs(Siege.UPGRADES) do r.upgrades[u[1]] = 1 end
         r.dirty = true
         STUB.Script(board, "OnUpdate", 0.016)
-        check(side.ups[10]:IsShown() and not side.legend[1]:IsShown(), "siege: (it gives way if the upgrades reach it)")
-        r.upgrades = {}
-
-        -- Tar Paddle: a caught ball waits for a click, and one off the board counts
-        r.upgrades.sticky = 1
-        STUB.cursorX = bl + 280
-        STUB.Script(board, "OnClick")
-        r.balls = { { x = 290, y = Siege.PADDLE_Y - 12, vx = 0, vy = 300 } }
-        for _ = 1, 6 do STUB.Script(board, "OnUpdate", 0.016) end
-        check(r.state == "play" and r.balls[1].stuck and c:IsShown(), "siege: with Tar Paddle a caught ball waits, and clicks off the board count again")
-        STUB.Script(c, "OnClick")
-        check(r.balls[1].stuck == nil and not c:IsShown(), "siege: (and fire it)")
+        check(side.ups[#Siege.UPGRADES]:IsShown() and side.ups[#Siege.UPGRADES + 1] == nil and not side.legend[1]:IsShown(),
+            "siege: (it gives way if the upgrades reach it)")
         r.upgrades = {}
         -- the Safety Net shows along the bottom while there is one
         r.net = 1
@@ -9403,6 +9399,481 @@ do
     WorldMapFrame:Hide()
     WorldMapFrame = nil
     GM.where = {}
+end
+
+-- 0.19.0: Motherlode's cart, cave-ins, classes, more upgrades and flatter aim -----------------------
+do
+    local Lode, Games = ns.Lode, ns.Games
+    local Run = Lode.Run
+    local W, H, STEP = Lode.W, Lode.H, Lode.STEP
+    local function peg(x, y, kind) return { x = x, y = y, kind = kind or "ore", hits = 0 } end
+    local function fly(r)
+        local n = 0
+        while r.state == "flying" and n < 20000 do r:Tick(STEP) n = n + 1 end
+    end
+    local function has(events, kind, why)
+        for _, e in ipairs(events) do
+            if e.kind == kind and (why == nil or e.why == why) then return e end
+        end
+    end
+
+    -- aiming: nearly flat, and no peg above the flattest shot
+    check(near(Lode.MAX_AIM, math.rad(88)), "lode aim: the mortar swings to 88 degrees")
+    local low = true
+    for seed = 1, 40 do
+        for _, q in ipairs(Lode.Board(Lode.Rng(seed))) do
+            if q.y < Lode.Ceiling(q.x) - 1e-6 then low = false end
+        end
+    end
+    check(low and Lode.Ceiling(36) > 101 and Lode.Ceiling(W - 36) > 101 and Lode.Ceiling(W / 2) < 60,
+        "lode aim: no peg sits higher than the flattest shot reaches (the top corners come down)")
+    do
+        -- a peg in the very corner of the top row, as low as the rule puts it, is hit by a flat shot
+        local r = Run.New(11)
+        local corner = peg(36, Lode.Ceiling(36))
+        r.pegs = { corner }
+        local hit = false
+        for i = 0, 40 do
+            local t = Run.New(11)
+            local c = peg(36, Lode.Ceiling(36))
+            t.pegs = { c }
+            t:Fire(-Lode.MAX_AIM + i * math.rad(0.25))
+            while t.state == "flying" and not c.lit and t.shotTime < 0.7 do t:Tick(STEP) end
+            if c.lit then hit = true end
+        end
+        check(hit, "lode aim: a peg in the top corner can be hit straight from the mortar")
+    end
+
+    -- the cart
+    do
+        local r = Run.New(11)
+        check(r.cart.x == W / 2 and r:CartWidth() == Lode.CART_W, "lode cart: starts in the middle of the bottom")
+        r.landed = {}
+        local bombs = r.bombs
+        r:Land({ x = W / 2 + Lode.CART_W / 2 - 1, y = H, ore = 7 })
+        check(r.bombs == bombs + 1 and r.landed[1].caught == true and r.ore == 7 and has(r.events, "bomb", "cart")
+            and has(r.events, "land").caught == true, "lode cart: a bomb that lands in the cart comes back, and its ore still counts")
+        r:Land({ x = W / 2 + Lode.CART_W / 2 + 1, y = H, ore = 7 })
+        check(r.bombs == bombs + 1 and r.landed[2].caught == false and r.ore == 14, "lode cart: one that misses it doesn't")
+        r:Land({ x = W / 2, y = 200, ore = 0 }, true)
+        check(r.bombs == bombs + 1 and r.landed[3].caught == false, "lode cart: nor one that never came down")
+        r:Land({ x = W / 2, y = H, ore = 5 })
+        check(r.bombs == bombs + 1 and r.landed[4].caught == false and r.ore == 19, "lode cart: one bomb back a shot: a second in the cart only banks its ore")
+        r.pegs = {}
+        r:Fire(0)
+        check(r.given == nil, "lode cart: (the next shot can be caught again)")
+        r.state, r.balls = "aim", {}
+        r.cart = { x = W / 2, dir = 1 }
+        r.bombs = bombs + 1
+        -- three a floor
+        check(r.catches == 1 and r:CatchesLeft() == Lode.CATCHES - 1, "lode cart: it counts what it has given back")
+        for _ = 1, 4 do
+            r.given = nil
+            r:Land({ x = W / 2, y = H, ore = 0 })
+        end
+        check(r.catches == Lode.CATCHES and r:CatchesLeft() == 0 and r.bombs == bombs + Lode.CATCHES and r.landed[#r.landed].caught == false,
+            "lode cart: three bombs back a floor, then it only banks the ore")
+        r:NextFloor()
+        check(r:CatchesLeft() == Lode.CATCHES, "lode cart: (three more on the next floor)")
+        r.landed = {}
+        -- it rides back and forth while a bomb is in the air
+        r.balls = {}
+        r:MoveCart(1)
+        check(near(r.cart.x, W / 2 + Lode.CART_SPEED), "lode cart: it moves at its speed")
+        for _ = 1, 100 do r:MoveCart(0.01) end
+        check(r.cart.x <= W - Lode.CART_W / 2 + 1e-6 and r.cart.dir == -1, "lode cart: turns round at the wall")
+        for _ = 1, 300 do r:MoveCart(0.01) end
+        check(r.cart.x >= Lode.CART_W / 2 - 1e-6 and r.cart.dir == 1, "lode cart: and at the other")
+        local still = Run.New(11)
+        still.pegs = {}
+        local x0 = still.cart.x
+        still:Fire(0)
+        still:Tick(STEP)
+        check(still.cart.x ~= x0, "lode cart: (a shot sets it moving)")
+        r.upgrades.cart = 2
+        check(r:CartWidth() == Lode.CART_W * 1.5, "lode cart: Wide Cart makes it wider")
+        -- a Lodestone: it goes after the lowest bomb
+        local m = Run.New(11)
+        m.upgrades.magnet = 1
+        m.balls = { { x = 100, y = 300 }, { x = 500, y = 200 }, { x = 20, y = 400, done = true } }
+        m:MoveCart(0.5)
+        check(m.cart.x < W / 2 and near(m.cart.x, W / 2 - Lode.CART_SPEED * 1.2 * 0.5), "lode cart: with a Lodestone it follows the lowest bomb")
+        m.balls = { { x = W / 2 - Lode.CART_SPEED * 1.2 * 0.5 + 3, y = 300 } }
+        m:MoveCart(0.5)
+        check(near(m.cart.x, m.balls[1].x), "lode cart: (and stops under it)")
+        check(Run.New(11).PocketMult == nil and Lode.POCKETS == nil and Lode.UPGRADE.loaded == nil, "lode cart: the pockets and Loaded Pockets are gone")
+    end
+
+    -- cave-ins: never a floor that can't be finished with bombs in hand
+    do
+        local r = Run.New(11)
+        local only = peg(W / 2, 300)
+        r.pegs = { only }
+        check(r:Potential() == 10, "lode cave-in: what's left on the board is added up")
+        r.pegs[2] = peg(100, 300, "gold")
+        check(r:Potential() == 60, "lode cave-in: (gold at its own worth)")
+        r.pegs[2] = nil
+        r:Fire(0)
+        fly(r)
+        check(r.state == "aim" and r.ore == 10 and r.bombs == Lode.BOMBS - 1 and #r.pegs == Lode.PEGS and r.caveins == 1 and not r.pegs[1].gone
+            and has(r.events, "cavein"), "lode cave-in: a board that can't make the quota is replaced; ore and bombs stay")
+        -- half the board still standing: not yet, even if it can't make the quota
+        local half = Run.New(11)
+        half.pegs = { peg(W / 2, 300) }
+        for i = 1, 30 do half.pegs[#half.pegs + 1] = peg(20 + i * 5, 500) end
+        half.quota = 100000
+        half:Fire(0)
+        fly(half)
+        check(half.state == "aim" and half.caveins == nil and half:PegsLeft() == 30 and not half:Spent(), "lode cave-in: not while more than half the board stands")
+        for i = 2, 9 do half.pegs[i].gone = true end
+        check(half:PegsLeft() == 22 and half:Spent(), "lode cave-in: (half or less, and it is spent)")
+        local enough = Run.New(11)
+        enough.pegs = { peg(W / 2, 300), peg(60, 400), peg(500, 400) }
+        enough.quota = 30
+        enough:Fire(0)
+        fly(enough)
+        check(enough.state == "aim" and #enough.pegs == 3 and enough.caveins == nil, "lode cave-in: not while what's left still makes the quota")
+        local out = Run.New(11)
+        out.pegs = { peg(W / 2, 300) }
+        out.bombs = 1
+        out:Fire(0)
+        fly(out)
+        check(out.state == "over" and #out.pegs == 1 and out.caveins == nil, "lode cave-in: out of bombs is still out of bombs")
+        local off = Run.New(11)
+        off.pegs = { peg(W / 2, 300) }
+        Lode.CAVE_IN = false
+        off:Fire(0)
+        fly(off)
+        Lode.CAVE_IN = true
+        check(#off.pegs == 1, "lode cave-in: (the switch the tests use)")
+    end
+
+    -- classes
+    do
+        check(#Lode.CLASSES == 4 and Lode.CLASS.warrior and Lode.CLASS.mage and Lode.CLASS.rogue and Lode.CLASS.hunter, "lode classes: Warrior, Mage, Rogue, Hunter")
+        local none, odd = Run.New(11), Run.New(11, "paladin")
+        check(none.class == nil and odd.class == nil and none.bombs == Lode.BOMBS and not none:Twin() and not none:Magnet(), "lode classes: a run without one has no perk")
+        local w = Run.New(11, "warrior")
+        check(w.class == "warrior" and w.bombs == Lode.BOMBS + 2 and w:BombsAFloor() == Lode.BOMBS + 2, "lode classes: a Warrior has two more bombs a floor")
+        local mg = Run.New(11, "mage")
+        local c = peg(W / 2, 300)
+        mg.pegs = { c }
+        mg:Fire(0)
+        while mg.state == "flying" and not c.lit do mg:Tick(STEP) end
+        check(mg:Twin() and #mg.balls == 2, "lode classes: a Mage's bomb splits on its first hit")
+        local rg = Run.New(11, "rogue")
+        check(rg:GoldValue() == 100 and near(rg:Luck(), 0.1) and near(none:Luck(), 0) and none:GoldValue() == 50, "lode classes: a Rogue's gold pays double, with a little luck")
+        local h = Run.New(11, "hunter")
+        check(h:Magnet() and h:CartWidth() == Lode.CART_W * 1.5, "lode classes: a Hunter's cart is wider and follows the bomb")
+        -- who is offered what
+        local seen = { none = {}, warrior = {}, mage = {}, hunter = {} }
+        for seed = 1, 150 do
+            for class, got in pairs(seen) do
+                for _, key in ipairs(Run.New(seed, class ~= "none" and class or nil):Offers()) do got[key] = true end
+            end
+        end
+        local classless = true
+        for key in pairs(seen.none) do if Lode.UPGRADE[key][5] then classless = false end end
+        check(classless and seen.none.twin and seen.none.magnet and seen.none.cart, "lode classes: a run without a class is never offered a class's upgrades")
+        check(seen.warrior.cleave and seen.warrior.blood and not seen.warrior.nova and not seen.warrior.multi and not seen.warrior.ambush,
+            "lode classes: a class is offered its own upgrades and nobody else's")
+        check(seen.mage.nova and seen.mage.evoc and not seen.mage.twin and seen.hunter.multi and seen.hunter.aimed and not seen.hunter.magnet,
+            "lode classes: and never what it already has built in")
+        local owned = 0
+        for _, u in ipairs(Lode.UPGRADES) do if u[5] then owned = owned + 1 check(Lode.CLASS[u[5]] ~= nil, "lode classes: " .. u[1] .. " belongs to a real class") end end
+        check(owned == 8 and #Lode.UPGRADES == 23, "lode classes: two upgrades each, 23 upgrades in all")
+        for _, u in ipairs(Lode.UPGRADES) do
+            check(Lode.UPGRADE_ITEMS[u[1]] ~= nil and #u[3] <= 60, "lode upgrades: " .. u[1] .. " has a picture and a short line")
+        end
+    end
+
+    -- the new upgrades
+    do
+        Lode.CAVE_IN = false
+        local realCart = Lode.CART_W
+        Lode.CART_W = -1
+        -- Powder Store, Geodes
+        local r = Run.New(21)
+        r.upgrades.kegs, r.upgrades.geode = 2, 1
+        r:NextFloor()
+        local kegs, crystals = 0, 0
+        for _, q in ipairs(r.pegs) do
+            if q.kind == "keg" then kegs = kegs + 1 elseif q.kind == "crystal" then crystals = crystals + 1 end
+        end
+        check(kegs == Lode.KEGS + 2 and crystals == Lode.CRYSTALS + 1 and #r.pegs == Lode.PEGS, "lode upgrades: Powder Store and Geodes add kegs and crystals")
+        -- Ambush: the first peg of a shot
+        local a = Run.New(11)
+        a.upgrades.ambush = 1
+        a.pegs = { peg(W / 2, 300), peg(W / 2 - 5, 380) }
+        a.pegsHit = 0
+        local ball = { ore = 0 }
+        a:Mine(a.pegs[1], ball)
+        a:Mine(a.pegs[2], ball)
+        check(ball.ore == 50 + 10, "lode upgrades: Ambush pays the first peg of a shot five times over")
+        a.upgrades.ambush = 2
+        a.pegsHit = 0
+        a.pegs[1].lit = nil
+        ball.ore = 0
+        a:Mine(a.pegs[1], ball)
+        check(ball.ore == 100, "lode upgrades: (ten times, taken twice)")
+        -- Hot Streak: from the 8th peg on
+        local hs = Run.New(11)
+        hs.upgrades.streak = 1
+        hs.pegs = {}
+        local b2 = { ore = 0 }
+        for i = 1, 9 do
+            hs.pegs[i] = peg(20 * i, 300)
+            hs:Mine(hs.pegs[i], b2)
+        end
+        check(b2.ore == 7 * 10 + 2 * 20, "lode upgrades: Hot Streak doubles the 8th peg of a shot and after")
+        -- Last Gasp
+        local lg = Run.New(11)
+        lg.upgrades.last = 1
+        lg.pegs = { peg(10, 300), peg(40, 300) }
+        local b3 = { ore = 0 }
+        lg:Mine(lg.pegs[1], b3)
+        lg.bombs = 0
+        lg:Mine(lg.pegs[2], b3)
+        check(b3.ore == 10 + 30, "lode upgrades: Last Gasp triples what the floor's last bomb mines")
+        -- Pick Pocket
+        local pp = Run.New(11)
+        pp.upgrades.pick = 1
+        pp.pegs = { peg(10, 300, "gold"), peg(40, 300, "gold"), peg(70, 300) }
+        local bombs = pp.bombs
+        pp.rand = function() return 0.2 end
+        pp:Mine(pp.pegs[1], { ore = 0 })
+        pp:Mine(pp.pegs[3], { ore = 0 })
+        check(pp.bombs == bombs + 1 and has(pp.events, "bomb", "pick"), "lode upgrades: Pick Pocket: a gold vein can give a bomb back")
+        pp.rand = function() return 0.5 end
+        pp.given = nil
+        pp:Mine(pp.pegs[2], { ore = 0 })
+        check(pp.bombs == bombs + 1 and pp.given == nil, "lode upgrades: (one time in three)")
+        -- Cleave
+        local cl = Run.New(11)
+        cl.upgrades.cleave = 1
+        local hitMe, near1, far1 = peg(W / 2, 300), peg(W / 2 + 30, 320), peg(W / 2 - 50, 300)
+        cl.pegs = { hitMe, near1, far1 }
+        cl:Fire(0)
+        while cl.state == "flying" and not hitMe.lit do cl:Tick(STEP) end
+        check(hitMe.lit and near1.lit and not far1.lit and cl.balls[1].ore == 20, "lode upgrades: Cleave mines the nearest peg next to the one hit")
+        local cl2 = Run.New(11)
+        cl2.upgrades.cleave = 2
+        local h2, f2 = peg(W / 2, 300), peg(W / 2 - 50, 300)
+        cl2.pegs = { h2, f2 }
+        cl2:Fire(0)
+        while cl2.state == "flying" and not h2.lit do cl2:Tick(STEP) end
+        check(f2.lit, "lode upgrades: (further, taken twice)")
+        -- Bloodthirst
+        local bt = Run.New(11)
+        bt.upgrades.blood = 1
+        bt.pegs = { peg(W / 2, 300) }
+        bt:Fire(0)
+        while bt.state == "flying" and not bt.pegs[1].lit do bt:Tick(STEP) end
+        bt.pegsHit = 10
+        local before = bt.bombs
+        fly(bt)
+        check(bt.bombs == before and bt.ore == 15 and bt.total == 15 and bt.last.gain == 15 and has(bt.events, "bonus", "blood").gain == 5,
+            "lode upgrades: Bloodthirst pays half again for a ten-peg shot")
+        local bt2 = Run.New(11)
+        bt2.upgrades.blood = 1
+        bt2.pegs = { peg(W / 2, 300) }
+        bt2:Fire(0)
+        fly(bt2)
+        check(bt2.ore == 10 and not has(bt2.events, "bonus"), "lode upgrades: (not for a smaller one)")
+        -- Arcane Explosion, Evocation
+        local ae = Run.New(11)
+        ae.upgrades.nova, ae.upgrades.evoc = 1, 1
+        local cr, by, beyond = peg(W / 2, 300, "crystal"), peg(W / 2 + 30, 320), peg(W / 2 + 60, 300)
+        ae.pegs = { cr, by, beyond }
+        ae:Fire(0)
+        while ae.state == "flying" and not cr.lit do ae:Tick(STEP) end
+        check(cr.gone and by.gone and by.lit and not beyond.lit and #ae.balls == 2 and has(ae.events, "blast").r == Lode.KEG_R * Lode.NOVA,
+            "lode upgrades: Arcane Explosion: a crystal blows up like a small keg (and still splits the bomb)")
+        check(ae.bombs == Lode.BOMBS and has(ae.events, "bomb", "evoc") and ae.gifts == 1, "lode upgrades: Evocation: a crystal gives the bomb back")
+        ae.given = nil
+        check(ae:GiveBomb("evoc") == true and ae.gifts == 2, "lode upgrades: an upgrade gives a bomb back twice a floor")
+        ae.given = nil
+        check(ae:GiveBomb("pick") == false and ae.bombs == Lode.BOMBS + 1 and ae:GiveBomb("cart") == true and ae.bombs == Lode.BOMBS + 2,
+            "lode upgrades: then no more, though the cart still does")
+        ae:NextFloor()
+        check(ae.gifts == 0, "lode upgrades: (a new floor, two more)")
+        -- Multi-Shot
+        local ms = Run.New(11)
+        ms.upgrades.multi = 1
+        ms.pegs = {}
+        ms:Fire(0.2)
+        check(#ms.balls == 2 and ms.bombs == Lode.BOMBS - 1 and near(ms.balls[1].vx, Lode.SPEED * math.sin(0.2 - Lode.SPREAD))
+            and near(ms.balls[2].vx, Lode.SPEED * math.sin(0.2 + Lode.SPREAD)), "lode upgrades: Multi-Shot drops two bombs for one, a little apart")
+        Lode.CART_W, Lode.CAVE_IN = realCart, true
+    end
+
+    -- a whole run of each class plays out, ends, and keeps to the rules
+    do
+        local fine = true
+        for _, c in ipairs(Lode.CLASSES) do
+            for seed = 1, 3 do
+                local r = Run.New(seed * 13, c[1])
+                local aim = Lode.Rng(seed)
+                local n = 0
+                while r.state ~= "over" and n < 400 and r.floor < 6 do
+                    if r.state == "choose" then
+                        r:Choose(1 + n % #r.offers)
+                    else
+                        if not r:Fire((aim() * 2 - 1) * Lode.MAX_AIM) then fine = "stuck" break end
+                        fly(r)
+                        if r.state == "flying" or r.bombs < 0 or r.ore ~= math.floor(r.ore) then fine = false end
+                        if r.state == "aim" and r:Spent() then fine = "dead end" end
+                        if r.cart.x < r:CartWidth() / 2 - 1e-6 or r.cart.x > W - r:CartWidth() / 2 + 1e-6 then fine = "cart off the board" end
+                    end
+                    n = n + 1
+                end
+            end
+        end
+        check(fine == true, "lode: every class plays whole runs without a dead end, a stuck shot or a runaway cart (" .. tostring(fine) .. ")")
+    end
+
+    -- the screen: picking a class, the cart, the news
+    do
+        ns.Editor:ShowTab("games")
+        Games:SetMode("lode")
+        ns.db.games.lode = nil
+        Lode.run, Lode.picking, Lode.showScores = nil, nil, nil
+        Lode:Refresh()
+        local board, side, o = Lode.board, Lode.side, Lode.overlay
+        local bl, bt, bw, bh = STUB.rect(board)
+        STUB.Script(o.start, "OnClick")
+        check(Lode.run == nil and Lode.picking and o:IsShown() and o.title:GetText() == "Pick a class" and o.start.label:GetText() == "Back"
+            and o.classes[1]:IsShown() and o.classes[4]:IsShown() and not o.scoreTitle:IsShown() and not o.tiles[1]:IsShown(),
+            "lode screen: Start run asks for a class")
+        local c1l, c1t, cw, ch = STUB.rect(o.classes[1])
+        local c2l = STUB.rect(o.classes[2])
+        local c4l = STUB.rect(o.classes[4])
+        local _, stt, _, sth = STUB.rect(o.start)
+        check(near(c1l - bl, (bl + bw) - (c4l + cw)) and near(c2l - (c1l + cw), 8) and c1l > bl and c1t <= stt - sth - 8
+            and c1t - ch >= bt - bh + Lode.POCKET_H, "lode screen: four class tiles in a row, centred on the board under the button")
+        check(o.classes[2].name:GetText() == "Mage" and o.classes[2].desc:GetText() == Lode.CLASS.mage[3]
+            and o.classes[2].own:GetText() == "Arcane Explosion, Evocation" and o.classes[1].own:GetText() == "Cleave, Bloodthirst"
+            and o.classes[2].icon:GetTexture() == Lode.CLASS_SHEET and not o.classes[2].last:IsShown(),
+            "lode screen: a tile says the class, its perk and its own upgrades")
+        STUB.Script(board, "OnClick")
+        check(Lode.run == nil, "lode screen: (the board takes no shots behind the picker)")
+        STUB.Script(o.start, "OnClick")
+        check(not Lode.picking and o.title:GetText() == "Poggle" and not o.classes[1]:IsShown(), "lode screen: Back leaves the picker")
+        STUB.Script(o.start, "OnClick")
+        STUB.Script(o.classes[2], "OnClick")
+        local run = Lode.run
+        check(run and run.class == "mage" and not Lode.picking and not o:IsShown() and Lode.Saved().class == "mage"
+            and side.seam:GetText() == "Copper seam, Mage", "lode screen: picking one starts the run as that class")
+        -- the cart is drawn where the rules have it
+        local cl, ct, cwid, chgt = STUB.rect(Lode.cart)
+        check(Lode.cart:IsShown() and near(cl + cwid / 2, bl + run.cart.x) and near(cwid, run:CartWidth()) and near(ct - chgt, bt - bh + 5)
+            and ct <= bt - bh + Lode.POCKET_H, "lode screen: the cart sits in the strip along the bottom, where the rules have it")
+        run.upgrades.cart = 2
+        run.cart.x = 200
+        Lode:Refresh()
+        cl, ct, cwid = STUB.rect(Lode.cart)
+        check(near(cwid, Lode.CART_W * 1.5) and near(cl + cwid / 2, bl + 200), "lode screen: (wider and elsewhere when they say so)")
+        check(Lode.cart.left:GetText() == "3" and Lode.cart:GetAlpha() == 1, "lode screen: the cart says how many bombs it still gives back")
+        run.catches = Lode.CATCHES
+        Lode:Refresh()
+        check(Lode.cart.left:GetText() == "" and Lode.cart:GetAlpha() < 1, "lode screen: and dims when it has given them all")
+        run.catches = 0
+        Lode:Refresh()
+        -- a catch, a bomb back and a cave-in are all said on the board
+        local function shown(text)
+            for _, f in ipairs(Lode.floats) do if f:IsShown() and f:GetText() == text then return f end end
+        end
+        run.events = { { kind = "land", x = 200, gain = 30, caught = true }, { kind = "bomb", why = "cart", x = 200, y = 500 } }
+        STUB.sounds = {}
+        Lode:ShowEvents()
+        check(shown("+30") and shown("Caught! +1 bomb") and Lode.cart.flash:IsShown() and STUB.sounds[#STUB.sounds] == SOUNDKIT.IG_QUEST_LIST_COMPLETE,
+            "lode screen: a catch is called out, the cart flashes and chimes")
+        run.events = { { kind = "bomb", why = "evoc", x = 100, y = 200 }, { kind = "cavein" } }
+        Lode:ShowEvents()
+        check(shown("+1 bomb") and shown("Cave-in! Fresh rock"), "lode screen: so are a bomb back and a cave-in")
+        -- the message after a shot
+        run.last = { gain = 40, landed = { { ore = 40, gain = 40, caught = true } } }
+        Lode:ShotOver()
+        check(Lode.message:GetText() == "+40 ore, bomb caught.", "lode screen: the message says what the shot made and that the bomb came back")
+        run.last = { gain = 0, landed = { { ore = 0, gain = 0, caught = false } } }
+        Lode:ShotOver()
+        check(Lode.message:GetText() == "Nothing hit.", "lode screen: (or that it hit nothing)")
+        -- Aimed Shot: twice the aiming dots
+        run.pegs = {}
+        run.state = "aim"
+        STUB.cursorX, STUB.cursorY = bl + W / 2 + 40, bt - 400
+        Lode:Refresh()
+        STUB.Script(board, "OnUpdate", 0.016)
+        local dots = 0
+        for _, d in ipairs(Lode.dots) do if d:IsShown() then dots = dots + 1 end end
+        run.upgrades.aimed = 1
+        STUB.Script(board, "OnUpdate", 0.016)
+        local more = 0
+        for _, d in ipairs(Lode.dots) do if d:IsShown() then more = more + 1 end end
+        check(dots == 14 and more > dots and #Lode.dots == 28, "lode screen: Aimed Shot shows more of the path")
+        -- the mouse level with the mortar aims nearly flat
+        STUB.cursorX, STUB.cursorY = bl + 20, bt - Lode.LAUNCH_Y
+        check(near(Lode:AimAngle(), -Lode.MAX_AIM), "lode screen: the mouse beside the mortar aims as flat as it goes")
+        -- next time the picker remembers the class
+        Lode:NewRun()
+        check(Lode.picking and o.classes[2].last:IsShown() and not o.classes[1].last:IsShown(), "lode screen: the picker marks the class played last")
+        STUB.Script(o.classes[4], "OnClick")
+        check(Lode.run.class == "hunter" and Lode.run ~= run and side.seam:GetText() == "Copper seam, Hunter", "lode screen: New run from the picker starts over as the class picked")
+        Lode.run, Lode.picking = nil, nil
+        ns.db.games.lode = nil
+        Lode:Refresh()
+        STUB.cursorX, STUB.cursorY = 0, 0
+        Games:SetMode("wowdle")
+        ns.Editor:ShowTab("home")
+    end
+end
+
+-- 0.19.0: Motherlode, the corners the mutation check found untested ---------------------------------
+do
+    local Lode, Games = ns.Lode, ns.Games
+    local Run = Lode.Run
+    local W, H, STEP = Lode.W, Lode.H, Lode.STEP
+    local function peg(x, y, kind) return { x = x, y = y, kind = kind or "ore", hits = 0 } end
+    -- a bomb that timed out over the cart isn't caught
+    local r = Run.New(11)
+    r.landed = {}
+    r:Land({ x = W / 2, y = 200, ore = 0 }, true)
+    check(r.bombs == Lode.BOMBS and r.landed[1].caught == false and r.catches == 0, "lode gaps: a bomb that never came down isn't caught, even over the cart")
+    -- a Lodestone ignores bombs that have already landed
+    local m = Run.New(11)
+    m.upgrades.magnet = 1
+    m.balls = { { x = 100, y = 300 }, { x = 540, y = 500, done = true } }
+    m:MoveCart(0.5)
+    check(m.cart.x < W / 2, "lode gaps: a Lodestone goes after a bomb still in the air, not one that has landed")
+    -- what's mined doesn't count toward what's left
+    local q = Run.New(11)
+    q.pegs = { peg(10, 300), peg(40, 300) }
+    q.pegs[2].gone = true
+    check(q:Potential() == 10 and q:PegsLeft() == 1, "lode gaps: pegs already gone aren't worth anything")
+    -- Cleave only reaches so far
+    local c = Run.New(11)
+    c.upgrades.cleave = 1
+    local hit, far = peg(W / 2, 300), peg(W / 2 - 50, 300)
+    c.pegs = { hit, far }
+    Lode.CAVE_IN = false
+    c:Fire(0)
+    while c.state == "flying" and not hit.lit do c:Tick(STEP) end
+    Lode.CAVE_IN = true
+    check(hit.lit and not far.lit, "lode gaps: Cleave doesn't reach a peg further off than its range")
+    -- the board takes no shots while a class is being picked in the middle of a run
+    ns.Editor:ShowTab("games")
+    Games:SetMode("lode")
+    Lode:NewRun(5, "warrior")
+    local run = Lode.run
+    Lode:NewRun()
+    STUB.Script(Lode.board, "OnClick")
+    check(Lode.picking and Lode.run == run and run.shots == 0 and run.state == "aim" and not Lode.catcher:IsShown(),
+        "lode gaps: no shot is fired behind the class picker")
+    Lode.run, Lode.picking = nil, nil
+    ns.db.games.lode = nil
+    Lode:Refresh()
+    Games:SetMode("wowdle")
+    ns.Editor:ShowTab("home")
 end
 
 return results

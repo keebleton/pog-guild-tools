@@ -421,7 +421,6 @@ Siege.UPGRADES = {
     { "twin", "Second Shot", "Start every wall with an extra ball.", 2 },
     { "power", "Heavy Shot", "Balls hit for +1 damage.", 2 },
     { "slow", "Steady Hands", "Balls move 8% slower.", 3 },
-    { "sticky", "Tar Paddle", "Balls stick to your paddle. Click to fire them.", 1 },
     { "net", "Safety Net", "Saves a ball that gets past you, once a wall.", 2 },
     { "blast", "Bigger Booms", "Powder blows up a wider area.", 1 },
     { "gold", "War Chest", "+50% points.", 4 },
@@ -710,13 +709,9 @@ function Run:Tick(h)
                 local rel = max(-1, min(1, (b.x - self.paddleX) / half))
                 b.y = top - rad
                 self.pace = min(Siege.MAX_PACE, self.pace + Siege.PACE_UP)
-                if self:Has("sticky") > 0 then
-                    b.stuck, b.vx, b.vy = max(-half, min(half, b.x - self.paddleX)), 0, 0
-                    self.dirty = true -- (a ball waiting on the paddle: clicks off the board count again)
-                else
-                    if self.idle > Siege.IDLE then rel = max(-1, min(1, rel + (self.rand() - 0.5) * 0.8)) end
-                    self:Aim(b, rel)
-                end
+                -- (0.19.0: Tar Paddle, which held the ball here until a click, is gone: Jake's call)
+                if self.idle > Siege.IDLE then rel = max(-1, min(1, rel + (self.rand() - 0.5) * 0.8)) end
+                self:Aim(b, rel)
                 self:Note({ kind = "paddle" })
             elseif b.vy > 0 and self.net > 0 and b.y + rad >= H - 6 then
                 -- the safety net, once
@@ -897,7 +892,7 @@ Siege.layout = { SIDE_X = SIDE_X, SIDE_W = SIDE_W, HEAD_H = HEAD_H, TILE_W = TIL
     BREAK = BREAK, TRAIL = TRAIL }
 
 -- an upgrade's picture, from an item everyone knows
-Siege.UPGRADE_ITEMS = { wide = 2901, life = 118, twin = 4394, power = 4390, slow = 4496, sticky = 4500, net = 2776,
+Siege.UPGRADE_ITEMS = { wide = 2901, life = 118, twin = 4394, power = 4390, slow = 4496, net = 2776,
     blast = 10646, gold = 3858, lucky = 19972 }
 function Siege.UpgradeIcon(key) return U.itemIcon(Siege.UPGRADE_ITEMS[key]) end
 
