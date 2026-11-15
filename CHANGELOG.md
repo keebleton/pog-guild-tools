@@ -5,7 +5,7 @@
   - They're much harder to earn: 1 at a million fish, 2 at 32 million, 3 at 243 million, 10 at 100 billion.
   - Each pearl is worth 5% more fish (was 10%). Pearl Lustre makes that 8%.
   - Casting no longer counts your bonuses twice, and Golden Hooks is 3x (was 10x).
-  - **Your pearls will drop** to what your lifetime fish are worth under the new rule. You keep every perk you bought.
+  - **Everyone's Angler progress has been reset,** and the guild board with it, so we all start level under the new rules.
 
 New in 0.20.1:
 

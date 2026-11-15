@@ -54,6 +54,7 @@ Angler.CAST_SHARE = 0.05                -- a cast lands this share of a second's
 Angler.PEARL_AT = 1000000               -- fish caught in all for the first pearl
 Angler.PEARL_ROOT = 5                   -- ...and the n'th takes n^5 times that
 Angler.PEARL_RULE = 2                   -- (which rule a save's pearls were earned under: see G)
+Angler.WIPE = 1                         -- (which wipe a save has had: see G)
 Angler.PEARL_BONUS = 0.05                -- what every pearl ever earned adds to every catch (10% until 0.20.2: "holding pearls seems too overpowered")
 Angler.TROPHY_BONUS = 0.01
 Angler.QTYS = { 1, 10, "max" }
@@ -144,8 +145,15 @@ Angler.RANKS = { { 0, "Deckhand" }, { 1, "Mate" }, { 10, "Skipper" }, { 50, "Cap
 local function G()
     ns.db.games = ns.db.games or { best = {} }
     local g = ns.db.games.angler
+    -- The wipe (Jake, with 0.20.2's pearl rules: "also, wipe everyone's score"; asked how much, "Everything"):
+    -- a save from before it starts again from nothing, fish, crew, pearls, perks and trophies, so everyone is
+    -- level under the new rules. Angler.WIPE says which wipe a save has had; raise it to do it again.
+    if g and g.wipe ~= Angler.WIPE then
+        Angler.wiped = (g.life or 0) > 0 or nil -- (the page says so, once, to anyone who had something to lose)
+        g = nil
+    end
     if not g then
-        g = { fish = 0, total = 0, life = 0, own = {}, pearls = 0, t = ns.Now() }
+        g = { fish = 0, total = 0, life = 0, own = {}, pearls = 0, t = ns.Now(), wipe = Angler.WIPE }
         ns.db.games.angler = g
     end
     g.tackle, g.trophies, g.perks = g.tackle or {}, g.trophies or {}, g.perks or {}
@@ -559,7 +567,10 @@ Angler.BOARD_MIN = 1000         -- fish before you're on the board
 Angler.BOARD_MAX = 1e60         -- (far past anything the game reaches; the last digits of a big one are rounded on the way)
 
 ns.Sync:Register({
-    name = "angler", code = "v", order = 4,
+    -- ("anglers", code x: it was "angler", code v, until the wipe. A new collection is the only way to empty
+    --  the board for everyone at once: nobody can delete someone else's record, and the old ones, from fish
+    --  caught under the first pearl rule, would have sat at the top until each of them updated.)
+    name = "anglers", code = "x", order = 4,
     fields = { "life", "earned" },
     numeric = { life = true, earned = true },
     valid = function(rec)
@@ -578,19 +589,19 @@ function Angler:Publish(now)
     --  be exactly what the others will read back, or our record and theirs would never agree)
     local life = tonumber(("%.12g"):format(math.min(math.floor(g.life), Angler.BOARD_MAX / 10)))
     if life < Angler.BOARD_MIN then return false end
-    local cur = (ns.Sync:Store("angler") or {})[me]
+    local cur = (ns.Sync:Store("anglers") or {})[me]
     if cur and not cur.deleted then
         if cur.life == life and cur.earned == g.earned then return false end
         if not now and ns.Now() - (cur.t or 0) < Angler.PUBLISH_EVERY then return false end
     end
-    ns.Sync:Write("angler", { id = me, author = me, t = ns.Now(), life = life, earned = g.earned })
+    ns.Sync:Write("anglers", { id = me, author = me, t = ns.Now(), life = life, earned = g.earned })
     return true
 end
 
 -- Most fish ever caught first.
 function Angler:Leaderboard()
     local out = {}
-    for _, rec in pairs(ns.Sync:Store("angler") or {}) do
+    for _, rec in pairs(ns.Sync:Store("anglers") or {}) do
         if not rec.deleted then out[#out + 1] = rec end
     end
     table.sort(out, function(a, b)
@@ -1386,6 +1397,10 @@ function Angler:Refresh()
     if not self.view and not (self.pop and self.pop:IsShown()) then return end
     local gain, away = self:Settle()
     if away and gain >= 1 then self.note = ("Your crew caught %s fish while you were gone."):format(Angler.Short(gain)) end
+    if Angler.wiped then
+        Angler.wiped = nil
+        self.note = "Angler was reset for everyone: pearls were too strong, and they've been reworked. Fresh start!"
+    end
     local won = self:Award()
     if won[1] then
         ns.Sound("IG_QUEST_LIST_COMPLETE")

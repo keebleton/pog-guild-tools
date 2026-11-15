@@ -10626,20 +10626,36 @@ do
         "angler prestige: perks outlast a voyage, and outfit the next")
     for _, k in ipairs(A.PERKS) do check(#k[3] <= 58, "angler prestige: " .. k[2] .. "'s line fits its row") end
     -- an old save from before perks: pearls in hand count as earned
-    ns.db.games.angler = { fish = 0, total = 0, life = 243000000, own = {}, pearls = 3, t = ns.Now() }
+    ns.db.games.angler = { fish = 0, total = 0, life = 243000000, own = {}, pearls = 3, t = ns.Now(), wipe = A.WIPE }
     check(A.Saved().earned == 3 and A.Saved().pearls == 3 and near(A:Bonus(), 1.15), "angler prestige: a save from before perks keeps its pearls' worth")
+    -- the wipe (Jake: "also, wipe everyone's score", and all of it): a save from before it starts from nothing
+    ns.db.games.angler = { fish = 5e9, total = 6e9, life = 7e12, own = { rod = 80, kraken = 3 }, tackle = { hooks = true }, pearls = 40, earned = 90,
+        perks = { start = true, call = true }, trophies = { life3 = true, life5 = true }, casts = 900, schools = 12, voyages = 4, rule = 2, t = ns.Now() - 500 }
+    A.wiped = nil
+    local w = A.Saved()
+    check(w.fish == 0 and w.total == 0 and w.life == 0 and next(w.own) == nil and next(w.tackle) == nil and w.pearls == 0 and w.earned == 0 and next(w.perks) == nil
+        and next(w.trophies) == nil and w.casts == 0 and w.schools == 0 and w.voyages == 0 and w.wipe == A.WIPE and A.WIPE == 1 and ns.db.games.angler == w,
+        "angler wipe: a save from before the wipe starts again from nothing: fish, crew, tackle, pearls, perks and trophies")
+    check(A.wiped == true and A:Rate() == 0 and A:Bonus() == 1 and A:Rank() == "Deckhand" and A:PearlsNow() == 0, "angler wipe: (and is told so)")
+    w.fish, w.life = 50, 50
+    check(A.Saved() == w and A.Saved().fish == 50, "angler wipe: once: what's caught afterwards is kept")
+    A.wiped = nil
+    ns.db.games.angler = { fish = 0, total = 0, life = 0, own = {}, pearls = 0, t = ns.Now() }
+    check(A.Saved().wipe == A.WIPE and A.wiped == nil, "angler wipe: (someone with nothing to lose isn't told anything)")
+    ns.db.games.angler = nil
+    check(A.Saved().wipe == A.WIPE and A.wiped == nil, "angler wipe: (nor is someone new)")
     -- a save from the first pearl rule (0.20.0, 0.20.1): hundreds of pearls for fish now worth three
-    ns.db.games.angler = { fish = 5, total = 9, life = 1e9, own = { rod = 2 }, pearls = 100, earned = 500, perks = { start = true, legs = true }, t = ns.Now() }
+    ns.db.games.angler = { fish = 5, total = 9, life = 1e9, own = { rod = 2 }, pearls = 100, earned = 500, perks = { start = true, legs = true }, t = ns.Now(), wipe = A.WIPE }
     local old = A.Saved()
     check(A.Pearls(1e9) == 3 and old.earned == 3 and old.pearls == 0 and old.perks.start and old.perks.legs and old.rule == A.PEARL_RULE and old.life == 1e9 and old.own.rod == 2,
         "angler prestige: a save from the first rule keeps the pearls its fish are worth now, and every perk it bought")
     old.earned, old.pearls = 50, 40
     check(A.Saved().earned == 50 and A.Saved().pearls == 40, "angler prestige: (once: it isn't done again)")
-    ns.db.games.angler = { fish = 0, total = 0, life = 1e11, own = {}, pearls = 4, earned = 6, t = ns.Now() }
+    ns.db.games.angler = { fish = 0, total = 0, life = 1e11, own = {}, pearls = 4, earned = 6, t = ns.Now(), wipe = A.WIPE }
     check(A.Saved().earned == 6 and A.Saved().pearls == 4, "angler prestige: (a save with no more than its fish are worth is left alone)")
-    ns.db.games.angler = { fish = 0, total = 0, life = 1e11, own = {}, pearls = 30, earned = 40, t = ns.Now() }
+    ns.db.games.angler = { fish = 0, total = 0, life = 1e11, own = {}, pearls = 30, earned = 40, t = ns.Now(), wipe = A.WIPE }
     check(A.Saved().earned == 10 and A.Saved().pearls == 0, "angler prestige: (what was spent stays spent: 10 fair, 10 spent, none in hand)")
-    ns.db.games.angler = { fish = 0, total = 0, life = 1e11, own = {}, pearls = 38, earned = 40, t = ns.Now() }
+    ns.db.games.angler = { fish = 0, total = 0, life = 1e11, own = {}, pearls = 38, earned = 40, t = ns.Now(), wipe = A.WIPE }
     check(A.Saved().earned == 10 and A.Saved().pearls == 8, "angler prestige: (and what wasn't is still in hand)")
 
     -- the screen
@@ -10779,8 +10795,8 @@ do
     do
         local Sync = ns.Sync
         local me = Sync:Me()
-        local store = Sync:Store("angler")
-        check(Sync:GuildName() ~= nil and type(store) == "table" and Sync.collections.angler.code == "v", "angler board: a collection of its own")
+        local store = Sync:Store("anglers")
+        check(Sync:GuildName() ~= nil and type(store) == "table" and Sync.collections.anglers.code == "x" and Sync.collections.angler == nil, "angler board: a collection of its own (a new one since the wipe: the old board is left behind)")
         for k in pairs(store) do store[k] = nil end
         g = fresh()
         g.life = 999
@@ -10798,14 +10814,14 @@ do
         g.life, g.earned = 123456789012345678901, 7
         local sent = store[me]
         check(A:Publish(true) == true and store[me].life == 1.23456789012e20 and tonumber(ns.Sync.Escape(store[me].life)) == store[me].life
-            and Sync.collections.angler.valid({ id = me, author = me, by = me, life = store[me].life, earned = 7 }), "angler board: a huge catch is kept to twelve figures, which is what goes over the wire")
+            and Sync.collections.anglers.valid({ id = me, author = me, by = me, life = store[me].life, earned = 7 }), "angler board: a huge catch is kept to twelve figures, which is what goes over the wire")
         g.life = 1e80
         check(A:Publish(true) == true and store[me].life == A.BOARD_MAX / 10 and store[me].earned == 7, "angler board: a silly number is capped")
         A.share = false
         g.earned = 8
         check(A:Publish(true) == false and store[me].earned == 7, "angler board: sharing can be switched off")
         A.share = true
-        local valid = Sync.collections.angler.valid
+        local valid = Sync.collections.anglers.valid
         local function rec(over)
             local r = { id = "Ann-Realm", author = "Ann-Realm", by = "Ann-Realm", life = 5000, earned = 2 }
             for k, v in pairs(over or {}) do r[k] = v end
@@ -10815,7 +10831,7 @@ do
             and not valid(rec({ life = 1.5 })) and not valid(rec({ life = A.BOARD_MAX })) and not valid(rec({ earned = -1 }))
             and not valid(rec({ earned = 0.5 })) and not valid(rec({ earned = 1e6 })), "angler board: only your own record, with whole, sane numbers")
         local isOwn = false
-        for _, name in ipairs(Sync.OWN) do if name == "angler" then isOwn = true end end
+        for _, name in ipairs(Sync.OWN) do if name == "anglers" then isOwn = true end end
         check(isOwn, "angler board: the record follows a renamed character")
         store["Ann-Realm"] = { id = "Ann-Realm", author = "Ann-Realm", life = 9e9, earned = 52, t = 1 }
         store["Bob-Realm"] = { id = "Bob-Realm", author = "Bob-Realm", life = 9e9, earned = 0, t = 1 }
@@ -10850,6 +10866,20 @@ do
         STUB.Script(side.sell, "OnClick")
         check(store[me].earned == 1, "angler board: selling publishes the pearl at once")
         for k in pairs(store) do store[k] = nil end
+    end
+
+    -- the wipe is said on the page, once
+    do
+        ns.db.games.angler = { fish = 10, total = 10, life = 5e8, own = { rod = 4 }, pearls = 9, earned = 9, t = ns.Now() }
+        A.wiped, A.note = nil, nil
+        ns.Editor:ShowTab("games")
+        Games:SetMode("angler")
+        A:Refresh()
+        check(side.note:GetText():find("Angler was reset for everyone", 1, true) and side.fish:GetText() == "0" and side.pearls:GetText() == "none yet" and A.wiped == nil,
+            "angler wipe: the page says Angler was reset, to someone who had a save")
+        A.note = nil
+        A:Refresh()
+        check(side.note:GetText() == "", "angler wipe: (once)")
     end
 
     -- the pop-out (Jake: "a pop out menu that we can click to get fish without the addon open")
