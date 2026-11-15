@@ -217,6 +217,84 @@ function Home:Changed()
     if self.page and self.page:IsVisible() then self:Refresh() end
 end
 
+------------------------------------------------------------------------
+-- Congrats (Jake, 0.20.0: "make clicking a person's level up send congrats.
+-- let us set up a custom grats message. if they click it without one set,
+-- prompt them to make one. input gz by default"). Clicking a level-up, in
+-- Activity or on the level pop-up, whispers them our message. It's kept in
+-- settings.grats; until it's set the first click asks for it, with "gz"
+-- typed in ready, and then sends.
+------------------------------------------------------------------------
+Home.GRATS_DEFAULT, Home.GRATS_MAX = "gz", 80
+Home.gratsed = {}   -- "name:level" we've congratulated since logging in (once each)
+
+function Home:GratsMessage()
+    local m = ns.db.settings.grats
+    return type(m) == "string" and m ~= "" and m or nil
+end
+
+-- Keep `text` as our message (trimmed; an empty one isn't kept).
+function Home:SetGrats(text)
+    text = tostring(text or ""):match("^%s*(.-)%s*$"):sub(1, Home.GRATS_MAX)
+    if text == "" then return false end
+    ns.db.settings.grats = text
+    return true
+end
+
+function Home:Gratsed(name, level) return self.gratsed[tostring(name) .. ":" .. tostring(level)] == true end
+
+-- What hovering a level-up says about clicking it (nil: nothing to click).
+function Home:GratsHint(name, level)
+    if not name or name == ns.Sync:Me() or not ns.Roster.online[name] then return nil end
+    if self:Gratsed(name, level) then return "Congrats sent" end
+    local msg = self:GratsMessage()
+    return msg and ("Click to send: %s"):format(msg) or "Click to send congrats"
+end
+
+function Home:SendGrats(name, level)
+    local msg = self:GratsMessage()
+    local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
+    if not msg or not send or ns.Comm.IsRestricted() then
+        ns.Print("whispers can't be sent right now")
+        return false
+    end
+    -- ("|" starts the game's colour and link codes: a bare one is refused)
+    if not pcall(send, (msg:gsub("|", "||")), "WHISPER", nil, Ambiguate(name, "none")) then
+        ns.Print("that whisper didn't go")
+        return false
+    end
+    self.gratsed[name .. ":" .. tostring(level)] = true
+    ns.Print(("congrats sent to %s: %s"):format(display(name), msg))
+    self:Changed()
+    return true
+end
+
+-- Ask for the message (a small box at `anchor`), then `after`.
+function Home:AskGrats(anchor, x, y, after)
+    UI.Prompt(anchor or UIParent, x or 0, y or 0, "Your congrats message (Enter to save)", self:GratsMessage() or Home.GRATS_DEFAULT, function(text)
+        if self:SetGrats(text) then
+            if after then after() end
+            self:Changed()
+        end
+    end)
+end
+
+-- A level-up was clicked. Returns true (sent), "asked" (the box is up: it sends once the message is in) or false.
+function Home:Grats(name, level, anchor, x, y)
+    if not name or name == ns.Sync:Me() then return false end
+    if not ns.Roster.online[name] then
+        ns.Print(("%s is offline"):format(display(name)))
+        return false
+    end
+    if self:Gratsed(name, level) then
+        ns.Print(("you already congratulated %s"):format(display(name)))
+        return false
+    end
+    if self:GratsMessage() then return self:SendGrats(name, level) end
+    self:AskGrats(anchor, x, y, function() self:SendGrats(name, level) end)
+    return "asked"
+end
+
 function Home:FeedText(e)
     if e.kind == "level" then
         return ("%s reached level %d"):format(colorName(e.name), e.value)
@@ -967,16 +1045,35 @@ function Home:Build(page)
                 GameTooltip:AddLine(self:FeedText(e), 1, 1, 1, true)
             end
             GameTooltip:Show()
-        elseif cut then
+        elseif cut or (e.kind == "level" and self:GratsHint(e.name, e.value)) then
             GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
             GameTooltip:AddLine(self:FeedText(e), 1, 1, 1, true)
+            local hint = e.kind == "level" and self:GratsHint(e.name, e.value)
+            if hint then GameTooltip:AddLine(hint, 0.4, 0.87, 0.47) end
             if not e.away then
                 local ago = Home.Ago(e.t)
                 GameTooltip:AddLine(ago == "now" and "just now" or ago .. " ago", 0.6, 0.6, 0.65)
             end
             GameTooltip:Show()
         end
-    end, nil, true)
+    end, function(row)
+        -- a level-up: click to congratulate them
+        local e = row.item
+        if e and e.kind == "level" then self:Grats(e.name, e.value, row, 24, -LINE_H) end
+    end, true)
+    -- our congrats message, to look at and change
+    self.feedCard.grats = headButton(self.feedCard, "Congrats", 70, function(b)
+        self:AskGrats(b, -150, -20)
+    end)
+    self.feedCard.grats:HookScript("OnEnter", function(b)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(b, "ANCHOR_TOP")
+        GameTooltip:AddLine("Your congrats message", 1, 1, 1)
+        GameTooltip:AddLine(self:GratsMessage() or ("Not set yet (%s to start with)"):format(Home.GRATS_DEFAULT), 0.4, 0.87, 0.47, true)
+        GameTooltip:AddLine("Click a level-up in this list to whisper it to them. Click here to change it.", nil, nil, nil, true)
+        GameTooltip:Show()
+    end)
+    self.feedCard.grats:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 
     self.onlineCard = card(page, "Online now", LEFT_X, FEED_Y, LEFT_W, FEED_H)
     self.onlineCard.toggle = headButton(self.onlineCard, "Show offline", 84, function()

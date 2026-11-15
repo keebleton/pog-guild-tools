@@ -416,12 +416,12 @@ end
 
 -- key, name, what it does, how many times it can be taken
 Siege.UPGRADES = {
-    { "wide", "Longer Ram", "+15% paddle width.", 4 },
+    { "wide", "Longer Ram", "Paddle is 15% wider.", 4 },
     { "life", "Field Medic", "+1 life, right now.", 9 },
     { "twin", "Second Shot", "Start every wall with an extra ball.", 2 },
-    { "power", "Heavy Shot", "Balls hit for +1 damage.", 2 },
+    { "power", "Heavy Shot", "Balls hit 1 harder.", 2 },
     { "slow", "Steady Hands", "Balls move 8% slower.", 3 },
-    { "net", "Safety Net", "Saves a ball that gets past you, once a wall.", 2 },
+    { "net", "Safety Net", "Saves one ball that gets past you, each wall.", 2 },
     { "blast", "Bigger Booms", "Powder blows up a wider area.", 1 },
     { "gold", "War Chest", "+50% points.", 4 },
     { "lucky", "Scavenger", "Bricks drop pickups more often.", 3 },
@@ -1706,8 +1706,8 @@ function Siege:RefreshOverlay()
     end
     if state == "idle" then
         o.title:SetText("Siegebreaker")
-        o.sub:SetText("Knock the wall down. Move your mouse to slide the paddle and click to fire the ball. "
-            .. "Keep it in play, break every brick, and pick an upgrade for the next wall. You get three lives.")
+        o.sub:SetText("Knock the wall down. Slide the paddle with your mouse and click to fire. "
+            .. "Keep the ball in play, break every brick, then pick an upgrade for the next wall. You get three lives.")
         o.start:SetLabel("Start run")
     elseif choosing then
         o.title:SetText(("Wall %d is down"):format(run.cleared))

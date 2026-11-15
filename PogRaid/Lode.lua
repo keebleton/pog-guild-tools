@@ -5,8 +5,9 @@
 --
 -- You bomb your way down a mine. Each floor is a board of ore pegs: aim with
 -- the mouse, click to drop a bomb from the top, and every peg it bounces off
--- is mined. A mine cart rides along the bottom: land in it and the bomb comes
--- back. Reach the floor's ore quota before the bombs run out and you go down
+-- is mined. A bucket slides back and forth along the bottom, all the time:
+-- land in it and the bomb comes back (0.20.0: it was a cart that only moved
+-- during a shot and paid three times a floor; the guild didn't take to it). Reach the floor's ore quota before the bombs run out and you go down
 -- a floor, picking one of three upgrades on the way; miss it and the run is
 -- over. You pick a class for the run: a perk, and upgrades of its own.
 --
@@ -38,12 +39,11 @@ Lode.WALL_BOUNCE = 0.70
 Lode.STEP = 1 / 240         -- the physics tick (a bomb moves well under its radius in one)
 Lode.MAX_AIM = math.rad(88) -- either side of straight down
 Lode.LAUNCH_Y = 26
-Lode.POCKET_H = 34          -- the strip along the bottom the cart rides in
-Lode.CART_W = 80            -- the cart: land a bomb in it and it comes back (one bomb a shot at most)
-Lode.CART_SPEED = 150       -- px/s, side to side while a bomb is in the air
+Lode.POCKET_H = 34          -- the strip along the bottom the bucket slides in
+Lode.CART_W = 80            -- the bucket ("cart" in the code): land a bomb in it and it comes back (one bomb a shot at most)
+Lode.CART_SPEED = 150       -- px/s, side to side, whether a bomb is in the air or not
 Lode.BOMBS = 5              -- per floor
-Lode.CATCHES = 3            -- bombs the cart gives back on one floor (with a Lodestone every shot was free, for ever)
-Lode.GIFTS = 2              -- bombs an upgrade can give back on one floor (the cart's don't count)
+Lode.GIFTS = 2              -- bombs an upgrade can give back on one floor (the bucket's don't count)
 Lode.CAVE_IN = true         -- fresh rock when the board can't make the quota (the tests switch it off to watch one peg)
 Lode.CAVE_AT = 0.5          -- ...once this share of the pegs or fewer are left (deep floors need more than one board)
 Lode.MAX_HITS = 3           -- a peg bounced on this often crumbles at once (so nothing rests on it)
@@ -69,48 +69,87 @@ Lode.KINDS = {
     ore = { nil, "Ore", nil, { 0.62, 0.55, 0.45 } },
 }
 
--- key, name, what it does, how many times it can be taken, and whose it is (a class key; nil = anyone's)
-Lode.UPGRADES = {
-    { "spare", "Spare Bomb", "+1 bomb every floor.", 5 },
-    { "fever", "Gold Fever", "Gold veins pay double.", 5 },
-    { "rich", "Rich Seams", "+3 ore from every peg.", 9 },
-    { "cart", "Wide Cart", "A wider mine cart.", 3 },
-    { "prospector", "Prospector", "2 extra gold veins every floor.", 4 },
-    { "big", "Big Kegs", "Kegs blow up a bigger area.", 3 },
-    { "twin", "Twin Fuse", "Your bomb splits in two on its first hit.", 1 },
-    { "rubber", "Rubber Shell", "Bouncier bombs.", 3 },
-    { "lucky", "Lucky Strike", "+10% chance for ore to count double.", 5 },
-    { "deep", "Deep Pockets", "Leftover bombs carry over to the next floor.", 1 },
-    { "kegs", "Powder Store", "1 extra keg every floor.", 3 },
-    { "geode", "Geodes", "1 extra crystal every floor.", 3 },
-    { "streak", "Hot Streak", "From the 8th peg of a shot on, ore counts double.", 1 },
-    { "magnet", "Lodestone", "The cart follows your bomb.", 1 },
-    { "last", "Last Gasp", "The last bomb of a floor mines triple.", 1 },
-    { "cleave", "Cleave", "Mining a peg also mines the one next to it.", 2, "warrior" },
-    { "blood", "Bloodthirst", "A shot that mines 10 pegs pays half again.", 1, "warrior" },
-    { "nova", "Arcane Explosion", "Crystals blow up like a small keg.", 1, "mage" },
-    { "evoc", "Evocation", "Hitting a crystal gives the bomb back, twice a floor.", 1, "mage" },
-    { "ambush", "Ambush", "The first peg of every shot pays five times over.", 2, "rogue" },
-    { "pick", "Pick Pocket", "Gold can give the bomb back (1 in 3), twice a floor.", 1, "rogue" },
-    { "multi", "Multi-Shot", "Every shot drops two bombs.", 1, "hunter" },
-    { "aimed", "Aimed Shot", "Your aim line reaches twice as far.", 1, "hunter" },
+-- Every upgrade is a spell or talent of the run's class (Jake, 0.20.0: "the upgrades you get offered are
+-- all talents/spells from the classes", with the spell's own icon). A row: what it does (a key the rules
+-- ask Run:Has about; two classes may share one under different names), the spell, its line, how many
+-- times it can be taken, and its icon. No two classes have the same upgrade (Jake, the day after: "let's get
+-- rid of the abilities that are the same across classes"), so a key belongs to one class.
+Lode.SPELLS = {
+    warrior = {
+        { "cleave", "Cleave", "Mining a peg also mines the one next to it.", 2, "Ability_Warrior_Cleave" },
+        { "blood", "Bloodthirst", "Mine 10 pegs in one shot and it pays 50% more.", 1, "Spell_Nature_BloodLust" },
+        { "spare", "Battle Shout", "+1 bomb every floor.", 5, "Ability_Warrior_BattleShout" },
+        { "last", "Execute", "Your last bomb of a floor mines triple.", 1, "INV_Sword_48" },
+        { "big", "Whirlwind", "Kegs blow up a bigger area.", 3, "Ability_Whirlwind" },
+        { "heroic", "Heroic Strike", "Your first bomb of a floor mines double.", 1, "Ability_Rogue_Ambush" },
+        { "clap", "Thunder Clap", "Your bomb mines the pegs near where it lands.", 1, "Spell_Nature_ThunderClap" },
+        { "stand", "Last Stand", "Once a run, running out of bombs gives you 3 more.", 1, "Spell_Holy_AshesToAshes" },
+    },
+    mage = {
+        { "nova", "Arcane Explosion", "Crystals blow up as big as a keg.", 1, "Spell_Nature_WispSplode" },
+        { "evoc", "Evocation", "Hit a crystal and you get the bomb back, twice a floor.", 1, "Spell_Nature_Purge" },
+        { "geode", "Mana Gem", "1 extra crystal every floor.", 3, "INV_Misc_Gem_Emerald_01" },
+        { "kegs", "Pyroblast", "1 extra keg every floor.", 3, "Spell_Fire_Fireball02" },
+        { "streak", "Combustion", "From the 8th peg of a shot on, ore counts double.", 1, "Spell_Fire_SealOfFire" },
+        { "rubber", "Blink", "Bouncier bombs.", 3, "Spell_Arcane_Blink" },
+        { "sheep", "Polymorph", "The first ore peg of every shot pays like gold.", 1, "Spell_Nature_Polymorph" },
+        { "missiles", "Arcane Missiles", "Crystals split your bomb in three, not two.", 1, "Spell_Nature_StarFall" },
+    },
+    rogue = {
+        { "ambush", "Ambush", "The first peg of every shot pays 5x.", 2, "Ability_Rogue_Ambush" },
+        { "pick", "Pick Pocket", "Gold can hand the bomb back (1 in 3), twice a floor.", 1, "INV_Misc_Bag_11" },
+        { "prospector", "Pick Lock", "2 extra gold veins every floor.", 4, "INV_Misc_Key_03" },
+        { "fever", "Backstab", "Gold veins pay double.", 5, "Ability_BackStab" },
+        { "lucky", "Malice", "+10% chance for ore to count double.", 5, "Ability_Racial_BloodRage" },
+        { "deep", "Preparation", "Leftover bombs carry over to the next floor.", 1, "Spell_Shadow_AntiShadow" },
+        { "vanish", "Vanish", "Once a floor, a shot that mines nothing comes back.", 1, "Ability_Vanish" },
+        { "seal", "Seal Fate", "Lucky ore pays triple, not double.", 1, "Spell_Shadow_ChillTouch" },
+    },
+    hunter = {
+        { "multi", "Multi-Shot", "Every shot drops one more bomb.", 1, "Ability_UpgradeMoonGlaive" },
+        { "twin", "Scatter Shot", "Your bomb splits in two on its first hit.", 1, "Ability_GolemStormBolt" },
+        { "cart", "Entrapment", "A wider bucket.", 3, "Spell_Nature_StrangleVines" },
+        { "rich", "Hunter's Mark", "+3 ore from every peg.", 9, "Ability_Hunter_SniperShot" },
+        { "freeze", "Freezing Trap", "The bucket holds still while your bomb is in the air.", 1, "Spell_Frost_ChainsOfIce" },
+        { "sting", "Serpent Sting", "Bouncing on a peg you already hit pays half again.", 1, "Ability_Hunter_Quickshot" },
+        { "pet", "Call Pet", "Your pet digs up 3 ore pegs at the start of every floor.", 3, "Ability_Hunter_BeastCall" },
+    },
 }
-Lode.UPGRADE = {}
-for _, u in ipairs(Lode.UPGRADES) do Lode.UPGRADE[u[1]] = u end
+-- A class's spell for what an upgrade does (nil: not one of its own). A run without a class has
+-- none: nobody plays one, but the tests do, and give it a list of its own (SPELLS.none).
+function Lode.Spells(class) return Lode.SPELLS[class or "none"] or {} end
+function Lode.Spell(class, key)
+    for _, u in ipairs(Lode.Spells(class)) do
+        if u[1] == key then return u end
+    end
+end
+function Lode.UpgradeIcon(key, class)
+    local u = Lode.Spell(class, key)
+    return u and ("Interface\\Icons\\" .. u[5]) or 134400
+end
 
 -- A class for the run (asked for by guildies: "mage would have its own set of powerups"): key, name,
--- its perk, and the upgrades the others never see what it has built in.
+-- its perk, and the bomb's colour (the class's own).
 Lode.CLASSES = {
-    { "warrior", "Warrior", "Two extra bombs on every floor." },
-    { "mage", "Mage", "Your bomb splits in two on its first hit.", built = { twin = true } },
-    { "rogue", "Rogue", "Gold veins pay double, and ore has a 10% chance to as well.", built = {} },
-    { "hunter", "Hunter", "A wider cart that follows your bomb.", built = { magnet = true } },
+    { "warrior", "Warrior", "2 extra bombs every floor, and pegs pay 50% more.", color = { 0.78, 0.61, 0.43 } },
+    -- (it was "your bomb splits in two on its first hit", much the same as the Hunter's two bombs: Jake had
+    --  crystals made the Mage's own thing instead)
+    { "mage", "Mage", "3 extra crystals every floor, and crystals blow up.", color = { 0.41, 0.80, 0.94 } },
+    { "rogue", "Rogue", "Gold pays double, and ore has a 10% chance to.", color = { 1.00, 0.96, 0.41 } },
+    -- (it was a wider bucket and the long aim line. Jake: "hunter's perk in poggle seems very very weak")
+    { "hunter", "Hunter", "Every shot drops two bombs, with an aim line twice as long.", color = { 0.67, 0.83, 0.45 } },
 }
 Lode.CLASS = {}
 for _, c in ipairs(Lode.CLASSES) do Lode.CLASS[c[1]] = c end
 Lode.CLEAVE_R = 40          -- how far Cleave reaches (plus half again a second time)
-Lode.NOVA = 0.7             -- an Arcane Explosion's size, as a share of a keg's
-Lode.SPREAD = math.rad(5)   -- Multi-Shot's two bombs, either side of the aim
+Lode.CLAP_R = 100           -- how far Thunder Clap reaches from where the bomb lands
+Lode.STAND = 3              -- the bombs Last Stand gives, once a run
+Lode.PET = 3                -- the ore pegs Call Pet digs up as a floor starts (each time it's taken)
+Lode.NOVA = 0.7             -- a Mage's crystal blast, as a share of a keg's
+Lode.MAGE_CRYSTALS = 3      -- extra crystals on every floor for a Mage
+Lode.WARRIOR_ORE = 1.5      -- what a peg is worth to a Warrior
+Lode.WARRIOR_BOMBS = 2      -- and the extra bombs on every floor
+Lode.SPREAD = math.rad(5)   -- a Hunter's two bombs, this far either side of the aim
 
 ------------------------------------------------------------------------
 -- Rules (no UI)
@@ -189,17 +228,30 @@ end
 
 function Run:Has(key) return self.upgrades[key] or 0 end
 function Run:Is(class) return self.class == class end
-function Run:OreValue() return 10 + 2 * (self.floor - 1) + 3 * self:Has("rich") end
+-- (a Warrior's pegs are worth more: two extra bombs alone fell behind as the quota grew, the balance script)
+function Run:OreValue()
+    local v = 10 + 2 * (self.floor - 1) + 3 * self:Has("rich")
+    return self:Is("warrior") and math.floor(v * Lode.WARRIOR_ORE + 0.5) or v
+end
 function Run:GoldValue() return self:OreValue() * 5 * (1 + self:Has("fever") + (self:Is("rogue") and 1 or 0)) end
 function Run:KegRadius() return Lode.KEG_R * (1 + 0.3 * self:Has("big")) end
 function Run:Luck() return 0.1 * (self:Has("lucky") + (self:Is("rogue") and 1 or 0)) end
-function Run:Twin() return self:Has("twin") > 0 or self:Is("mage") end
-function Run:Magnet() return self:Has("magnet") > 0 or self:Is("hunter") end
-function Run:CartWidth() return Lode.CART_W * (1 + 0.25 * self:Has("cart")) * (self:Is("hunter") and 1.5 or 1) end
-function Run:BombsAFloor() return Lode.BOMBS + self:Has("spare") + (self:Is("warrior") and 2 or 0) end
+function Run:Twin() return self:Has("twin") > 0 end
+-- How big a crystal's blast is, as a share of a keg's (nil: it just splits the bomb). A Mage's crystals blow
+-- up small; Arcane Explosion makes that a keg's size (or a small one for anyone else who has it).
+function Run:Nova()
+    local mage, spell = self:Is("mage"), self:Has("nova") > 0
+    if mage and spell then return 1 end
+    if mage or spell then return Lode.NOVA end
+end
+function Run:LongAim() return self:Is("hunter") end
+function Run:CartWidth() return Lode.CART_W * (1 + 0.25 * self:Has("cart")) end
+-- Bombs a shot: a Hunter's two, and one more with Multi-Shot.
+function Run:Volley() return 1 + (self:Is("hunter") and 1 or 0) + self:Has("multi") end
+function Run:BombsAFloor() return Lode.BOMBS + self:Has("spare") + (self:Is("warrior") and Lode.WARRIOR_BOMBS or 0) end
 
 function Run:NewBoard()
-    return Lode.Board(self.rand, Lode.GOLD + 2 * self:Has("prospector"), Lode.KEGS + self:Has("kegs"), Lode.CRYSTALS + self:Has("geode"))
+    return Lode.Board(self.rand, Lode.GOLD + 2 * self:Has("prospector"), Lode.KEGS + self:Has("kegs"), Lode.CRYSTALS + self:Has("geode") + (self:Is("mage") and Lode.MAGE_CRYSTALS or 0))
 end
 
 function Run:NextFloor()
@@ -208,8 +260,19 @@ function Run:NextFloor()
     self.bombs = self:BombsAFloor() + self.carried
     self.carried = 0
     self.pegs = self:NewBoard()
-    self.cart = { x = Lode.W / 2, dir = 1 }
-    self.gifts, self.catches = 0, 0
+    self.cart = self.cart or { x = Lode.W / 2, dir = 1 }
+    self.gifts, self.floorShots, self.vanished = 0, 0, nil
+    -- Call Pet: a few ore pegs are dug up before the first shot
+    for _ = 1, Lode.PET * self:Has("pet") do
+        local ores = {}
+        for _, p in ipairs(self.pegs) do
+            if p.kind == "ore" and not p.gone then ores[#ores + 1] = p end
+        end
+        if not ores[1] then break end
+        local p = ores[math.floor(self.rand() * #ores) + 1]
+        p.gone = true
+        self.ore, self.total = self.ore + self:OreValue(), self.total + self:OreValue()
+    end
     self.balls, self.offers, self.last = {}, nil, nil
     self.state = "aim"
     self.dirty = true
@@ -255,13 +318,16 @@ function Run:Fire(angle)
     angle = math.max(-Lode.MAX_AIM, math.min(Lode.MAX_AIM, tonumber(angle) or 0))
     self.bombs = self.bombs - 1
     self.shots = self.shots + 1
+    self.floorShots = (self.floorShots or 0) + 1
     self.balls = {}
-    local angles = self:Has("multi") > 0 and { angle - Lode.SPREAD, angle + Lode.SPREAD } or { angle }
+    -- (two go either side of the aim, three with one down the middle)
+    local n, angles = self:Volley(), {}
+    for i = 1, n do angles[i] = angle + (i - (n + 1) / 2) * 2 * Lode.SPREAD end
     for i, a in ipairs(angles) do
         self.balls[i] = { x = Lode.W / 2, y = Lode.LAUNCH_Y, vx = Lode.SPEED * math.sin(a), vy = Lode.SPEED * math.cos(a),
             ore = 0, first = true }
     end
-    self.landed, self.events, self.pegsHit, self.given = {}, {}, 0, nil
+    self.landed, self.events, self.pegsHit, self.given, self.sheeped = {}, {}, 0, nil, nil
     self.state, self.shotTime, self.acc = "flying", 0, 0
     self.dirty = true
     return true
@@ -276,10 +342,16 @@ function Run:Mine(peg, ball)
         v = self:GoldValue()
         if self:Has("pick") > 0 and self.rand() < 1 / 3 then self:GiveBomb("pick", peg.x, peg.y) end
     elseif peg.kind == "ore" and self.rand() < self:Luck() then
-        v = v * 2
+        v = v * (self:Has("seal") > 0 and 3 or 2)
         peg.lucky = true
     end
     local nth = (self.pegsHit or 0) + 1
+    -- Polymorph: the first ore peg of a shot is worth what gold is
+    if peg.kind == "ore" and not self.sheeped and self:Has("sheep") > 0 then
+        self.sheeped = true
+        v = math.max(v, self:GoldValue())
+    end
+    if self.floorShots == 1 and self:Has("heroic") > 0 then v = v * 2 end
     if nth == 1 and self:Has("ambush") > 0 then v = v * 5 * self:Has("ambush") end
     if nth >= 8 and self:Has("streak") > 0 then v = v * 2 end
     if self.bombs == 0 and self:Has("last") > 0 then v = v * 3 end
@@ -289,7 +361,7 @@ function Run:Mine(peg, ball)
     self.dirty = true
 end
 
--- A bomb comes back (the cart, an upgrade): `why` is for the screen. One a
+-- A bomb comes back (the bucket, an upgrade): `why` is for the screen. One a
 -- shot at most, whatever gives it: with two (a split bomb, both halves in
 -- the cart) a careful player made more bombs than they spent and never ran
 -- out (found by the balance script, 0.19.0). Returns whether it was given.
@@ -337,25 +409,32 @@ function Run:Cleave(peg, ball)
 end
 
 -- A second bomb from where this one is, going the other way.
-function Run:Split(ball)
+function Run:Split(ball, third)
     if #self.balls >= Lode.MAX_BALLS then return end
     local vx = -ball.vx
     if math.abs(vx) < 60 then vx = (ball.vx >= 0 and -1 or 1) * 120 end
+    if third then vx = vx / 4 end -- (Arcane Missiles: one more, nearly straight down)
     self.balls[#self.balls + 1] = { x = ball.x, y = ball.y, vx = vx, vy = ball.vy, ore = 0 }
 end
 
 function Run:Hit(peg, ball)
     peg.hits = peg.hits + 1
     local fresh = not peg.lit
-    if peg.lit then self.events[#self.events + 1] = { kind = "hit", ref = peg } end
+    if peg.lit then
+        self.events[#self.events + 1] = { kind = "hit", ref = peg }
+        -- Serpent Sting: a peg already hit pays again, half as much
+        if self:Has("sting") > 0 then ball.ore = ball.ore + math.floor(self:OreValue() / 2) end
+    end
     self:Mine(peg, ball)
     if fresh and self:Has("cleave") > 0 then self:Cleave(peg, ball) end
     if peg.kind == "keg" then
         self:Explode(peg, ball)
     elseif peg.kind == "crystal" then
         if self:Has("evoc") > 0 then self:GiveBomb("evoc", peg.x, peg.y) end
-        if self:Has("nova") > 0 then self:Explode(peg, ball, Lode.KEG_R * Lode.NOVA) else peg.gone = true end
+        local nova = self:Nova()
+        if nova then self:Explode(peg, ball, Lode.KEG_R * nova) else peg.gone = true end
         self:Split(ball)
+        if self:Has("missiles") > 0 then self:Split(ball, true) end
     elseif peg.hits >= Lode.MAX_HITS then
         peg.gone = true
     end
@@ -366,41 +445,32 @@ function Run:Hit(peg, ball)
     self.dirty = true
 end
 
--- A bomb reaches the bottom: what it mined is banked, and if the cart was
+-- A bomb reaches the bottom: what it mined is banked, and if the bucket was
 -- under it the bomb comes back. (`timeout`: it never got there.)
 function Run:Land(ball, timeout)
     ball.done = true
+    if not timeout and self:Has("clap") > 0 then
+        local y, r2 = Lode.H - Lode.POCKET_H / 2, Lode.CLAP_R ^ 2
+        for _, p in ipairs(self.pegs) do
+            if not p.gone and not p.lit and (p.x - ball.x) ^ 2 + (p.y - y) ^ 2 <= r2 then self:Mine(p, ball) end
+        end
+    end
     local gain = ball.ore
     local inCart = not timeout and math.abs(ball.x - self.cart.x) <= self:CartWidth() / 2
     self.ore, self.total = self.ore + gain, self.total + gain
     local event = { kind = "land", x = ball.x, gain = gain }
     self.events[#self.events + 1] = event
     -- (caught = it gave the bomb back: only the first of a shot does)
-    local caught = inCart and self:CatchesLeft() > 0 and self:GiveBomb("cart", ball.x, Lode.H - Lode.POCKET_H) or false
-    if caught then self.catches = (self.catches or 0) + 1 end
+    local caught = inCart and self:GiveBomb("cart", ball.x, Lode.H - Lode.POCKET_H) or false
     event.caught = caught
     self.landed[#self.landed + 1] = { ore = ball.ore, gain = gain, caught = caught }
     self.dirty = true
 end
 
--- How many more bombs the cart will give back on this floor.
-function Run:CatchesLeft() return math.max(0, Lode.CATCHES - (self.catches or 0)) end
-
--- The cart: back and forth, or after the lowest bomb with a Lodestone.
+-- The bucket: back and forth, at one speed, for ever.
 function Run:MoveCart(h)
     local cart, half = self.cart, self:CartWidth() / 2
-    if self:Magnet() then
-        local low
-        for _, b in ipairs(self.balls) do
-            if not b.done and (not low or b.y > low.y) then low = b end
-        end
-        if low then
-            local step = Lode.CART_SPEED * 1.2 * h
-            cart.x = cart.x + math.max(-step, math.min(step, low.x - cart.x))
-        end
-    else
-        cart.x = cart.x + cart.dir * Lode.CART_SPEED * h
-    end
+    cart.x = cart.x + cart.dir * Lode.CART_SPEED * h
     if cart.x < half then
         cart.x, cart.dir = half, 1
     elseif cart.x > Lode.W - half then
@@ -408,12 +478,17 @@ function Run:MoveCart(h)
     end
 end
 
+-- It keeps moving while you aim, so a shot can be timed (the screen calls this).
+function Run:Idle(dt)
+    if self.state == "aim" then self:MoveCart(math.max(0, math.min(dt or 0, 0.05))) end
+end
+
 function Run:Tick(h)
     local W, r, R = Lode.W, Lode.BALL_R, Lode.PEG_R
     local reach = (r + R) ^ 2
     local e = Lode.BOUNCE + 0.06 * self:Has("rubber")
     self.shotTime = self.shotTime + h
-    self:MoveCart(h)
+    if self:Has("freeze") == 0 then self:MoveCart(h) end
     local flying = false
     for i = 1, #self.balls do
         local b = self.balls[i]
@@ -475,6 +550,14 @@ function Run:EndShot()
         self.ore, self.total, self.last.gain = self.ore + bonus, self.total + bonus, gain + bonus
         self.events[#self.events + 1] = { kind = "bonus", why = "blood", gain = bonus }
     end
+    if (self.pegsHit or 0) == 0 and self:Has("vanish") > 0 and not self.vanished and self:GiveBomb("vanish") then
+        self.vanished = true
+    end
+    if self.ore < self.quota and self.bombs <= 0 and self:Has("stand") > 0 and not self.stood then
+        self.stood = true
+        self.bombs = Lode.STAND
+        self.events[#self.events + 1] = { kind = "bomb", why = "stand" }
+    end
     if self.ore >= self.quota then
         self.cleared = self.floor
         if self:Has("deep") > 0 then self.carried = self.bombs end
@@ -501,12 +584,12 @@ function Run:Step(dt)
     end
 end
 
--- Three upgrades to pick from (fewer once most are taken as often as they can be).
+-- Three of the class's spells to pick from (fewer once most are taken as often as they can be;
+-- none without a class).
 function Run:Offers()
     local pool = {}
-    local built = self.class and Lode.CLASS[self.class].built or {}
-    for _, u in ipairs(Lode.UPGRADES) do
-        if self:Has(u[1]) < u[4] and (u[5] == nil or u[5] == self.class) and not built[u[1]] then pool[#pool + 1] = u[1] end
+    for _, u in ipairs(Lode.Spells(self.class)) do
+        if self:Has(u[1]) < u[4] then pool[#pool + 1] = u[1] end
     end
     local out = {}
     for _ = 1, math.min(3, #pool) do
@@ -628,6 +711,7 @@ local TILE_W, TILE_H, TILE_GAP = 164, 138, 10
 local TRAIL = 7                 -- sparks behind a bomb
 local FLOATS, RINGS = 30, 6     -- "+10"s in the air at once, keg blasts
 local PIPS = 10                 -- bombs shown as pips on the run card
+local UPS = 12                  -- rows for the spells taken (a class has eleven at most)
 local POP, FADE = 0.2, 0.28     -- seconds: a peg's ring jumps when hit; a mined peg fades away
 local APPEAR, STAGGER = 0.25, 0.4 -- a new floor's pegs fade in, the top rows first
 local LIT_GLOW, IDLE_GLOW = 0.5, 0.22 -- a hit peg's halo; the slow pulse of gold, kegs and crystals
@@ -671,10 +755,6 @@ function Lode.PegIcon(kind, floor)
     return itemIcon(k[1], k[3])
 end
 
--- an upgrade's picture, from an item everyone knows
-Lode.UPGRADE_ITEMS = { spare = 4390, fever = 2776, rich = 3858, cart = 4500, prospector = 2901, big = 10646, twin = 4394,
-    rubber = 18662, lucky = 19972, deep = 4496, kegs = 4378, geode = 12363, streak = 7078, magnet = 12360, last = 3928,
-    cleave = 6975, blood = 3220, nova = 7082, evoc = 6149, ambush = 5267, pick = 5060, multi = 2512, aimed = 4406 }
 -- a class's picture: its square from the character-creation sheet (never a masked texture: those can't be cropped)
 Lode.CLASS_SHEET = "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES"
 function Lode.ClassIcon(tex, class)
@@ -683,7 +763,6 @@ function Lode.ClassIcon(tex, class)
     tex:SetTexture(Lode.CLASS_SHEET)
     if c then tex:SetTexCoord(c[1], c[2], c[3], c[4]) end
 end
-function Lode.UpgradeIcon(key) return itemIcon(Lode.UPGRADE_ITEMS[key]) end
 
 local function disc(parent, layer, sub, d, r, g, b, a)
     local t = parent:CreateTexture(nil, layer, nil, sub)
@@ -808,7 +887,7 @@ function Lode:Build(view, top, height)
     catcher:Hide()
     self.catcher = catcher
 
-    -- the mine cart along the bottom: land a bomb in it and it comes back
+    -- the bucket along the bottom: land a bomb in it and it comes back
     local cart = CreateFrame("Frame", nil, board)
     cart:SetSize(Lode.CART_W, CART_H)
     cart:SetPoint("BOTTOM", board, "BOTTOMLEFT", Lode.W / 2, 5)
@@ -835,10 +914,6 @@ function Lode:Build(view, top, height)
     cart.flash:SetAllPoints(cart.body)
     cart.flash:SetColorTexture(0.6, 1, 0.6, 0.7)
     cart.flash:Hide()
-    -- how many more bombs it gives back on this floor
-    cart.left = UI.Text(cart, 12)
-    cart.left:SetPoint("CENTER", 0, 2)
-    cart.left:SetTextColor(GOLD[1], GOLD[2], GOLD[3])
     cart:Hide()
     self.cart = cart
     local lip = board:CreateTexture(nil, "ARTWORK")
@@ -1017,7 +1092,7 @@ function Lode:BuildSide(view, top, height)
     rule(y, 8)
     s.upTitle = label(y + 10, "Upgrades")
     s.ups = {}
-    for i = 1, #Lode.UPGRADES do
+    for i = 1, UPS do
         local row = CreateFrame("Frame", nil, s)
         row:SetHeight(LINE_H)
         row:SetPoint("TOPLEFT", 12, -(y + 30 + (i - 1) * LINE_H))
@@ -1035,8 +1110,10 @@ function Lode:BuildSide(view, top, height)
         row:SetScript("OnEnter", function(r)
             if not r.key or not GameTooltip then return end
             GameTooltip:SetOwner(r, "ANCHOR_LEFT")
-            GameTooltip:AddLine(Lode.UPGRADE[r.key][2], 1, 1, 1)
-            GameTooltip:AddLine(Lode.UPGRADE[r.key][3], nil, nil, nil, true)
+            local u = Lode.Spell(Lode.run and Lode.run.class, r.key)
+            if not u then return end
+            GameTooltip:AddLine(u[2], 1, 1, 1)
+            GameTooltip:AddLine(u[3], nil, nil, nil, true)
             GameTooltip:Show()
         end)
         row:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
@@ -1071,14 +1148,9 @@ function Lode:BuildSide(view, top, height)
 
     -- the foot: our best, and New run
     rule(height - FOOT_H, 8)
-    s.newRun = UI.Button(s, "New run", 120, 24, function(b)
-        local run = self.run
-        if run and run.state ~= "over" and run.shots > 0 then
-            UI.ConfirmClick(b, function() self:NewRun() end)
-        else
-            self:NewRun()
-        end
-    end)
+    -- (no "Sure?", and it works with a bomb in the air: Jake, 0.20.0. It opens the class picker, the shot
+    --  waits behind it, and Back there goes on with the run, so nothing is lost by a stray click.)
+    s.newRun = UI.Button(s, "New run", 120, 24, function() self:NewRun() end)
     s.newRun:SetWidth(96)
     s.newRun:SetPoint("BOTTOM", 52, 12)
     -- a look at the guild's hiscores in the middle of a run (they're on the board before and after one)
@@ -1211,16 +1283,12 @@ function Lode:BuildOverlays(board)
         t.desc:SetWidth(CLASS_W - 16)
         t.desc:SetJustifyH("CENTER")
         t.desc:SetText(c[3])
-        local own = {}
-        for _, u in ipairs(Lode.UPGRADES) do
-            if u[5] == c[1] then own[#own + 1] = u[2] end
-        end
         t.own = UI.Text(t, 10)
         t.own:SetPoint("BOTTOM", 0, 12)
         t.own:SetWidth(CLASS_W - 12)
         t.own:SetJustifyH("CENTER")
         t.own:SetTextColor(0.6, 0.6, 0.65)
-        t.own:SetText(table.concat(own, ", "))
+        t.own:SetText(("%d %s spells to learn"):format(#Lode.SPELLS[c[1]], c[2]))
         t.key = c[1]
         t:SetScript("OnClick", function() self:NewRun(nil, c[1]) end)
         o.classes[i] = t
@@ -1229,15 +1297,27 @@ function Lode:BuildOverlays(board)
     self.overlay = o
 end
 
--- The cart where the rules have it, as wide as it is this run.
+-- The bombs in the class's colour (the plain fiery one without a class).
+function Lode:Tint()
+    local class = self.run and self.run.class or false
+    if self.tint == class then return end
+    self.tint = class
+    local c = class and Lode.CLASS[class].color
+    local core, glow = c or { 1, 0.80, 0.32 }, c or HOT
+    for _, b in ipairs(self.ballArt) do
+        b:SetVertexColor(core[1], core[2], core[3], 1)
+        b.glow:SetVertexColor(glow[1], glow[2], glow[3], 0.95)
+        for k, t in ipairs(b.trail) do t:SetVertexColor(glow[1], glow[2], glow[3], 0.6 * (1 - k / (TRAIL + 1))) end
+    end
+    self.mortarGlow:SetVertexColor(glow[1], glow[2], glow[3], 0.5)
+end
+
+-- The bucket where the rules have it, as wide as it is this run.
 function Lode:PlaceCart()
     local run, cart = self.run, self.cart
     cart:SetShown(run ~= nil)
     if not run then return end
     local w = run:CartWidth()
-    local left = run:CatchesLeft()
-    cart.left:SetText(left > 0 and tostring(left) or "")
-    cart:SetAlpha(left > 0 and 1 or 0.4)
     cart:SetWidth(w)
     cart:ClearAllPoints()
     cart:SetPoint("BOTTOM", self.board, "BOTTOMLEFT", run.cart.x, 5)
@@ -1353,11 +1433,12 @@ function Lode:ShowEvents()
             if e.why == "cart" then
                 self.cart.flash:Show()
                 UI.Fade(self.cart.flash, 1, 0, 0.9)
-                self:Float(run.cart.x, Lode.H - Lode.POCKET_H - 34, "Caught! +1 bomb", 16, GREEN, 1.3, 40)
+                self:Float(run.cart.x, Lode.H - Lode.POCKET_H - 34, "Free bomb!", 16, GREEN, 1.3, 40)
                 self:Flash(0.12)
                 ns.Sound("IG_QUEST_LIST_COMPLETE")
             else
-                self:Float(e.x or Lode.W / 2, (e.y or Lode.H / 2) - 26, "+1 bomb", 14, GREEN, 1.1, 34)
+                local say = e.why == "stand" and ("Last Stand! +%d bombs"):format(Lode.STAND) or e.why == "vanish" and "Vanish! +1 bomb" or "+1 bomb"
+                self:Float(e.x or Lode.W / 2, (e.y or Lode.H / 2) - 26, say, e.why == "stand" and 18 or 14, GREEN, 1.1, 34)
             end
         elseif e.kind == "bonus" then
             self:Float(Lode.W / 2, Lode.H / 2 - 10, "Bloodthirst +" .. commas(e.gain), 18, HOT, 1.4, 44)
@@ -1461,7 +1542,9 @@ end
 function Lode:Update(elapsed)
     local run = self.run
     if run then
-        if run.state == "flying" then
+        if run.state == "flying" and self.picking then
+            -- (a bomb in the air waits while a class is being picked)
+        elseif run.state == "flying" then
             run:Step(elapsed)
             self:ShowEvents()
             if run.state ~= "flying" then self:ShotOver() end
@@ -1475,6 +1558,10 @@ function Lode:Update(elapsed)
             end
             self:Draw()
         elseif run.state == "aim" then
+            if not self.picking then
+                run:Idle(elapsed)
+                self:PlaceCart()
+            end
             self:DrawAim()
         end
         if run.dirty then self:Refresh() end
@@ -1523,7 +1610,7 @@ function Lode:DrawAim()
     local run = self.run
     local angle = self:AimAngle()
     self:AimBarrel(angle)
-    local dots = run:Preview(angle, DOTS * (run:Has("aimed") > 0 and 2 or 1), DOT_GAP)
+    local dots = run:Preview(angle, DOTS * (run:LongAim() and 2 or 1), DOT_GAP)
     for i, d in ipairs(self.dots) do
         local p = dots[i]
         if p then
@@ -1663,13 +1750,13 @@ function Lode:RefreshSide()
     end
     s.togo:SetText(not run and "" or share >= 1 and "Quota hit!" or (commas(run.quota - run.ore) .. " to go"))
     local n = 0
-    for _, u in ipairs(Lode.UPGRADES) do
-        local have = run and run:Has(u[1]) or 0
-        if have > 0 then
+    for _, u in ipairs(run and Lode.Spells(run.class) or {}) do
+        local have = run:Has(u[1])
+        if have > 0 and s.ups[n + 1] then
             n = n + 1
             local row = s.ups[n]
             row.key = u[1]
-            row.icon:SetTexture(Lode.UpgradeIcon(u[1]))
+            row.icon:SetTexture(Lode.UpgradeIcon(u[1], run.class))
             row.name:SetText(u[2])
             row.count:SetText(u[4] > 1 and ("x" .. have) or "")
             row:Show()
@@ -1718,10 +1805,9 @@ end
 function Lode:RefreshOverlay()
     local o, run = self.overlay, self.run
     local state = run and run.state or "idle"
-    local choosing = state == "choose"
+    local choosing = state == "choose" and self.picking ~= true
     if state ~= "aim" then self.showScores = nil end
-    if state == "flying" or choosing then self.picking = nil end
-    local picking = self.picking == true
+    local picking = self.picking == true -- (over a bomb in the air or the upgrade tiles too: New run works at any time)
     local peek = self.showScores == true and not picking
     local scores = (state == "idle" or state == "over" or peek) and not picking
     o:SetShown(scores or choosing or picking)
@@ -1755,8 +1841,8 @@ function Lode:RefreshOverlay()
         local key = choosing and run.offers[i]
         t:SetShown(key ~= nil and key ~= false)
         if key then
-            local u = Lode.UPGRADE[key]
-            t.icon:SetTexture(Lode.UpgradeIcon(key))
+            local u = Lode.Spell(run.class, key)
+            t.icon:SetTexture(Lode.UpgradeIcon(key, run.class))
             t.name:SetText(u[2])
             t.desc:SetText(u[3])
             t.own:SetText(u[4] > 1 and run:Has(key) > 0 and ("You have %d"):format(run:Has(key)) or "")
@@ -1764,12 +1850,12 @@ function Lode:RefreshOverlay()
     end
     if picking then
         o.title:SetText("Pick a class")
-        o.sub:SetText("A perk for the whole run, and upgrades only that class is offered.")
+        o.sub:SetText("You get its perk for the whole run, and every upgrade is one of its spells.")
         o.start:SetLabel("Back")
     elseif state == "idle" then
         o.title:SetText("Poggle")
-        o.sub:SetText("Aim with your mouse and click to drop a bomb. Every peg it hits gets mined. Land the bomb in the mine cart "
-            .. "and you get it back, three times a floor. Hit the ore quota before you run out of bombs to go deeper.")
+        o.sub:SetText("Aim with your mouse and click to drop a bomb. Every peg it hits gets mined. Land it in the bucket "
+            .. "and you get the bomb back. Hit the ore quota before you run out of bombs to go deeper.")
         o.start:SetLabel("Start run")
     elseif choosing then
         o.title:SetText(("Floor %d cleared"):format(run.cleared))
@@ -1790,6 +1876,7 @@ function Lode:Refresh()
     if not self.view then return end
     local run = self.run
     if run then run.dirty = nil end
+    self:Tint()
     self:PlaceCart()
     local aiming = run ~= nil and run.state == "aim" and not self.picking
     self.catcher:SetShown(aiming)

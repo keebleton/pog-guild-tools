@@ -301,16 +301,17 @@ function Milestone:Celebrate(name, level)
     end
 end
 
--- 20 to 50: the small pop-up, with their portrait. Clicking it opens a chat with them to say so.
+-- 20 to 50: the small pop-up, with their portrait. Clicking it whispers them our congrats (Home:Grats;
+-- until 0.20.0 it opened a chat with them to type it).
 function Milestone:Toast(name, level)
     local mine = name == ns.Sync:Me()
-    local canChat = not mine and ns.Chat and ns.Chat:CanChat(name)
+    local canChat = not mine and ns.Home:GratsHint(name, level) ~= nil
     -- (silent, like a new group's: the game's level-up sound here made it seem we'd levelled ourselves, Jake)
     Toast:Note({
         icon = ns.Profiles and ns.Profiles:Portrait(name) or 134400,
         text = mine and ("You reached level %d!"):format(level) or ("%s reached level %d!"):format(colorName(name), level),
-        sub = canChat and "Click to say grats" or "",
-        onClick = canChat and function() ns.Chat:OpenWith({ name }) end or nil,
+        sub = canChat and ns.Home:GratsHint(name, level) or "",
+        onClick = canChat and function() ns.Home:Grats(name, level, UIParent, 20, -120) end or nil,
     })
 end
 

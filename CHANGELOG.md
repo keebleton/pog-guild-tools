@@ -1,4 +1,25 @@
-# Pog Guild Tools 0.19.0
+# Pog Guild Tools 0.20.0
+
+- **New game: Angler.** An idle fishing game on the Games tab (or /pog angler). Restart the game after updating to see its tab. It's built to last: expect weeks, not an evening.
+  - **Crew** catch fish every second, even with the window closed and while you're logged off (at half speed, up to eight hours). Fourteen kinds, from a Fishing Rod to an Abyssal Rift. Owning 10, 25, 50, 100 and every 50th after that of one kind doubles what that kind catches. Buy one, ten or as many as you can afford.
+  - **Cast** for a few fish by hand.
+  - **Schools of fish** show up every few minutes for a few seconds. Click one for a feeding frenzy, a lucky haul or a casting spree.
+  - **Tackle:** 46 one-off upgrades, including a Better and a Master upgrade for every kind of crew.
+  - **Trophies:** 34 goals, each worth 1% more fish for good. The last ones take a long time.
+  - **Pop-out:** /pog fish (or Pop out on the page) opens a small card you can leave up with the addon shut: cast, catch schools, and buy crew, tackle and perks from a little shop you can fold away. Every cast pops a "+" off the icon and the count ticks up as you watch.
+  - **Guild board:** the Guild tab ranks everyone by the most fish ever caught, with their rank and pearls.
+  - **Pearls and perks:** sell the catch to start the voyage over for pearls. Every pearl you've ever earned is 10% more fish for good, and you spend pearls on twelve perks that last through every voyage, from 2 pearls to 1,000. Your rank climbs from Deckhand to Tide King.
+- **Poggle, from your feedback:**
+  - **The mine cart is now a bucket.** It slides back and forth along the bottom all the time, so you can time your shot. Land a bomb in it and you get the bomb back, every time, with no limit a floor.
+  - **Every upgrade is a class spell.** Each class has seven or eight spells and talents of its own, with the spell's icon, and no two classes share one. Warriors get Cleave, Execute, Thunder Clap and Last Stand. Mages get Arcane Explosion, Polymorph and Arcane Missiles. Rogues get Ambush, Vanish and Seal Fate. Hunters get Multi-Shot, Freezing Trap and Call Pet.
+  - **Your bomb is your class colour.**
+  - Hunters now drop two bombs every shot and get a longer aim line. The Lodestone is gone.
+- **Sapper Sweeper:** the three difficulty buttons are now one drop-down, so they no longer sit on top of the game tabs.
+- **Poggle:** New run works at one click, even with a bomb in the air.
+- **Congrats:** click a level-up in Activity, or on the level pop-up, to whisper that guildie your congrats. The first click asks for your message with "gz" typed in. Change it any time with the Congrats button on Activity.
+- **Games:** tidier wording across the games.
+
+New in 0.19.0:
 
 Motherlode is now called **Poggle**, and it got a big update from your feedback:
 
@@ -14,9 +35,3 @@ Also:
 - **Kill on sight:** a name typed with angle brackets, like <Kraken Skulls>, now shows without them.
 - **Guildies on the map:** the dots are now the same size and style as OneForAll's, for those who use both.
 - **Kill on sight:** you can mark a whole guild. Type the guild's name, and anyone in that guild is called out when you come across them.
-
-New in 0.18.0:
-
-- **Kill on sight list.** A list of enemy players the whole guild shares. Type /pog kos to open it, or /pog kos Name Surname and a few words saying why to mark someone (/pog kos remove Name takes them off). Everyone gets a pop-up when a guildie marks someone, and a pop-up, a sound and a chat line when they come across someone on the list. The Alerts tick at the top of the list turns those off. It is also in the minimap button's right-click menu.
-- **Wanted board and hunters.** The list is a board of wanted posters, and beside it the guild's hunters: who has killed the most players that someone else marked. A kill counts when you or your group land it, and everyone gets a pop-up when a guildie gets one.
-- **Guildies on the world map.** Guildies show up on your world map as dots in their class colour, even when you aren't grouped. Hover a dot to see who it is. Only guildies on Pog Guild Tools 0.18 or newer show up, and not inside dungeons or raids. If you'd rather not be seen, untick "Share location on the guild map" in Settings (or type /pog map): nobody sees you, and you don't see them. If you also run OneForAll, a guildie it already shows doesn't get a second dot.

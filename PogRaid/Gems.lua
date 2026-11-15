@@ -244,7 +244,7 @@ function Gems:Move(dir)
     end
     if not self.board:CanMove() then
         self.over = true
-        self.message = ("No moves left. Final score %d."):format(self.board.score)
+        self.message = ("Out of moves. Final score %d."):format(self.board.score)
     end
     self:Record()
     self:Save()

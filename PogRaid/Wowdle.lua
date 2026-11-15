@@ -148,7 +148,7 @@ function Wowdle:Guess(text)
     local g = tostring(text or ""):upper()
     local cur = self:Current()
     local len = self:Length(cur.day)
-    if #g ~= len or g:find("[^A-Z]") then return ("%d letters, please"):format(len) end
+    if #g ~= len or g:find("[^A-Z]") then return ("Needs %d letters"):format(len) end
     cur.guesses[#cur.guesses + 1] = g
     local state = self:State()
     if state ~= "playing" then
@@ -397,7 +397,7 @@ function Wowdle:Build(view, top, height)
     side.empty = UI.Text(side, 11)
     side.empty:SetPoint("TOPLEFT", 14, -36)
     side.empty:SetTextColor(0.5, 0.5, 0.55)
-    side.empty:SetText("Nobody has finished today's word yet.")
+    side.empty:SetText("Nobody's finished today's word yet.")
 
     local card = CreateFrame("Frame", nil, view)
     card:SetPoint("TOPLEFT", SIDE_X, -(top + height - Wowdle.STATS_H))

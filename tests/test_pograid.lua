@@ -2109,7 +2109,7 @@ do
     bl, bt, bw, bh = STUB.rect(Games.board)
     check(near(bw, 30 * Games.cellSize + 4) and bl - pl >= 12 and bl + bw <= pl + 890 and pt - (bt - bh) <= ns.PAGE_H - 12 - 6,
         "games: expert fits above the help line")
-    check(Games.cells[480]:IsShown() and Games.levelButtons.expert.selected, "games: 30x16 tiles")
+    check(Games.cells[480]:IsShown() and Games.levelBtn.label:GetText() == "Expert", "games: 30x16 tiles")
     Games:NewGame("journeyman")
     check(not Games.cells[300]:IsShown() and Games.cells[256]:IsShown(), "games: extra tiles hidden on a smaller board")
 
@@ -2194,11 +2194,11 @@ do
     check(col.rows[1].name:GetText() == "Raider02" and col.rows[1].time:GetText() == "18.4s" and col.rows[1].rank:GetText() == "1.",
         "leaderboard: rows show rank and name")
     check(col.rows[2].mine:IsShown() and not col.rows[1].mine:IsShown(), "leaderboard: your row highlighted")
-    STUB.Script(Games.levelButtons.expert, "OnClick")
+    Games:NewGame("expert")
     local expertTime = col.rows[1].time:GetText()
-    STUB.Script(Games.levelButtons.journeyman, "OnClick")
+    Games:NewGame("journeyman")
     check(expertTime == "5:01" and col.empty:IsShown(), "leaderboard: shows the picked difficulty's times")
-    STUB.Script(Games.levelButtons.apprentice, "OnClick")
+    Games:NewGame("apprentice")
     -- you outside the top rows: your place shows at the bottom
     for i = 1, 22 do
         local who = ("Speedy%02d-Realm"):format(i)
@@ -2209,7 +2209,7 @@ do
     local last = col.rows[#col.rows]
     check(last:IsShown() and last.rank:GetText() == "24." and last.mine:IsShown(), "leaderboard: your rank shown below the top 20")
     -- beating your time: shared and ranked in the win message
-    STUB.Script(Games.levelButtons.apprentice, "OnClick")
+    Games:NewGame("apprentice")
     check(Games.board:IsShown() and Games.scores:IsShown(), "leaderboard: picking a difficulty keeps the game in view")
     STUB.Script(Games.cells[41], "OnClick", "LeftButton")
     STUB.Advance(5)
@@ -2393,7 +2393,7 @@ do
     -- the Games tab switch
     SlashCmdList.POGRAID("duels")
     check(Editor.currentTab == "games" and Games.mode == "duels" and Games.duelsView:IsShown()
-        and not Games.board:IsShown() and not Games.levelButtons.expert:IsShown(), "duels: /pog duels opens the Ranked Duels page")
+        and not Games.board:IsShown() and not Games.levelBtn:IsShown(), "duels: /pog duels opens the Ranked Duels page")
     check(Games.modeTabs.duels.selected and not Games.modeTabs.sweeper.selected, "duels: page tabs")
     local card = Duels.card
     check(card.rating:GetText() == "1200" and card.rank:GetText():find("Unranked", 1, true), "duels: everyone starts at 1200")
@@ -2486,7 +2486,7 @@ do
     check(onlineEntries and onlineEntries[#onlineEntries].text == "Challenge to a ranked duel", "duels: challenge from Online now")
     SlashCmdList.POGRAID("games")
     Games:SetMode("sweeper")
-    check(Games.board:IsShown() and not Games.duelsView:IsShown() and Games.levelButtons.expert:IsShown(), "duels: back to Sapper Sweeper")
+    check(Games.board:IsShown() and not Games.duelsView:IsShown() and Games.levelBtn:IsShown(), "duels: back to Sapper Sweeper")
     STUB.target = nil
     STUB.sent = {}
     Editor:ShowTab("boards")
@@ -2723,7 +2723,7 @@ do
     Gems.board = Gems.Board.New({ 3, 4, 3, 4,  4, 3, 4, 3,  3, 4, 3, 4,  5, 6, 7, 7 })
     Gems.over = nil
     Gems:Move("right")
-    check(Gems.over and Gems.side.message:GetText():find("No moves left", 1, true), "gems: game over when no moves remain")
+    check(Gems.over and Gems.side.message:GetText():find("Out of moves", 1, true), "gems: game over when no moves remain")
     -- best score kept, shared, shown
     local rec = ns.Sync:Store("gems")["Jake-Realm"]
     check(rec and rec.best >= 2048 and rec.tier >= 11 and ns.db.games.gems.best == rec.best, "gems: best score shared with the guild")
@@ -2783,7 +2783,7 @@ do
     STUB.Script(W.delKey, "OnClick")
     check(W.typed == "TOT", "wowdle: delete key")
     STUB.Script(W.enterKey, "OnClick")
-    check(#W:Current().guesses == 0 and W.status:GetText():find(#answer .. " letters, please", 1, true), "wowdle: short guesses refused")
+    check(#W:Current().guesses == 0 and W.status:GetText():find("Needs " .. #answer .. " letters", 1, true), "wowdle: short guesses refused")
     -- two wrong guesses then the answer
     local wrong = answer == "QQQQQ" and "ZZZZZ" or "QQQQQ"
     for _, g in ipairs({ wrong, wrong }) do
@@ -2886,7 +2886,7 @@ do
     W.input:SetText("abcdefghij")
     STUB.Script(W.input, "OnTextChanged", true)
     check(W.typed == "ABCDEFGH", "wowdle: typing stops at the word's length")
-    check(W:Guess("ABCDE") == "8 letters, please", "wowdle: guesses must match the word's length")
+    check(W:Guess("ABCDE") == "Needs 8 letters", "wowdle: guesses must match the word's length")
     W.typed = word8
     W:Submit()
     local rec8 = ns.Sync:Store("wowdle")["Jake-Realm:" .. W:Current().day]
@@ -6869,6 +6869,20 @@ do
     --  the block after this one is about those)
     local realCartW, realCaveIn = Lode.CART_W, Lode.CAVE_IN
     Lode.CART_W, Lode.CAVE_IN = -1, false
+    -- (0.20.0: every upgrade is a class's spell. These runs have no class, so they draw on one of
+    --  each upgrade there is, under whichever class's name comes first.)
+    Lode.SPELLS.none = {}
+    do
+        local got = {}
+        for _, class in ipairs({ "warrior", "mage", "rogue", "hunter" }) do
+            for _, u in ipairs(Lode.SPELLS[class]) do
+                if not got[u[1]] then
+                    got[u[1]] = true
+                    Lode.SPELLS.none[#Lode.SPELLS.none + 1] = u
+                end
+            end
+        end
+    end
     -- Start run now asks for a class first: these runs have none
     local function startRun(o)
         STUB.Script(o.start, "OnClick")
@@ -7082,7 +7096,7 @@ do
         fly(r)
         local o = r.offers
         check(r.state == "choose" and r.cleared == 1 and #o == 3 and o[1] ~= o[2] and o[2] ~= o[3] and o[1] ~= o[3]
-            and Lode.UPGRADE[o[1]] and Lode.UPGRADE[o[2]] and Lode.UPGRADE[o[3]], "lode: reaching the quota offers three different upgrades")
+            and Lode.Spell(nil, o[1]) and Lode.Spell(nil, o[2]) and Lode.Spell(nil, o[3]), "lode: reaching the quota offers three different upgrades")
         check(r:Fire(0) == false and r:Choose(4) == false and r:Choose(0) == false and r.state == "choose", "lode: nothing else until one is picked")
         local distinct = true
         for seed = 1, 60 do
@@ -7109,14 +7123,14 @@ do
             "lode: Spare Bomb, Deep Pockets and Prospector do what they say on the next floor")
         -- upgrades taken as often as they can be aren't offered; with none left the run just goes on
         local m = Run.New(21)
-        for _, u in ipairs(Lode.UPGRADES) do if not u[5] then m.upgrades[u[1]] = u[4] end end
+        for _, u in ipairs(Lode.SPELLS.none) do m.upgrades[u[1]] = u[4] end
         m.upgrades.rich, m.upgrades.lucky = 1, 0
         local offers = m:Offers()
         table.sort(offers)
         check(#offers == 2 and offers[1] == "lucky" and offers[2] == "rich", "lode: an upgrade taken as often as it can be isn't offered")
-        m.upgrades.rich, m.upgrades.lucky = Lode.UPGRADE.rich[4], Lode.UPGRADE.lucky[4]
+        m.upgrades.rich, m.upgrades.lucky = Lode.Spell(nil, "rich")[4], Lode.Spell(nil, "lucky")[4]
         m.pegs = { peg(W / 2, 300) }
-        m.quota = 10
+        m.quota = 0 -- (Multi-Shot's two bombs go either side of the one peg)
         m:Fire(0)
         fly(m)
         check(m.state == "aim" and m.floor == 2 and m.cleared == 1, "lode: with nothing left to offer the run goes straight down")
@@ -7245,7 +7259,7 @@ do
         local board, side, o = Lode.board, Lode.side, Lode.overlay
         -- before a run: how to play, and Start run
         check(o:IsShown() and o.title:GetText() == "Poggle" and side.title:GetText() == "Poggle" and o.start:IsShown() and o.start.label:GetText() == "Start run"
-            and o.sub:GetText():find("mine cart", 1, true) and not o.tiles[1]:IsShown() and not o.classes[1]:IsShown() and side.best:GetText() == "No runs yet"
+            and o.sub:GetText():find("in the bucket", 1, true) and not o.tiles[1]:IsShown() and not o.classes[1]:IsShown() and side.best:GetText() == "No runs yet"
             and side.newRun.label:GetText() == "Start run", "lode: before a run it says how to play")
         -- layout: the board from the page's left edge, the run beside it, both to the bottom margin
         local pl, pt = STUB.rect(Games.page)
@@ -7321,10 +7335,9 @@ do
             if not Lode.pegArt[i].icon:IsShown() then hidden = hidden + 1 end
         end
         check(gone == hidden and gone > 0 and fadingNow > 0, "lode: mined pegs fade off the board")
-        -- New run in the middle of one asks twice
+        -- New run in the middle of one: straight to the class picker (0.20.0: it asked "Sure?" first)
         STUB.Script(side.newRun, "OnClick")
-        check(Lode.run == run and side.newRun.armed, "lode: New run in the middle of a run wants a second click")
-        STUB.Script(side.newRun, "OnClick")
+        check(not side.newRun.armed and side.newRun.label:GetText() == "New run", "lode: New run doesn't ask twice")
         check(Lode.run == run and Lode.picking and o:IsShown() and o.title:GetText() == "Pick a class" and o.classes[4]:IsShown(), "lode: which asks for a class")         if Lode.picking then Lode:NewRun(nil, false) end         check(Lode.run ~= run and Lode.run.floor == 1 and Lode.run.shots == 0 and not Lode.picking, "lode: and starts over")
 
         -- clearing a floor: three tiles; picking one goes down
@@ -7342,7 +7355,7 @@ do
         end
         check(run.state == "choose" and o:IsShown() and o.title:GetText() == "Floor 1 cleared" and not o.start:IsShown()
             and o.tiles[1]:IsShown() and o.tiles[2]:IsShown() and o.tiles[3]:IsShown()
-            and o.tiles[1].name:GetText() == Lode.UPGRADE[run.offers[1]][2] and o.tiles[3].desc:GetText() == Lode.UPGRADE[run.offers[3]][3]
+            and o.tiles[1].name:GetText() == Lode.Spell(nil, run.offers[1])[2] and o.tiles[3].desc:GetText() == Lode.Spell(nil, run.offers[3])[3]
             and STUB.sounds[#STUB.sounds] == SOUNDKIT.IG_QUEST_LIST_COMPLETE, "lode: a cleared floor shows three upgrades to pick from")
         check(Lode.message:GetText() == "+10 ore." and Lode.cart:IsShown() and not Lode.cart.flash:IsShown(),
             "lode: the message says what the bomb did")
@@ -7351,10 +7364,10 @@ do
         local picked = run.offers[2]
         STUB.Script(o.tiles[2], "OnClick")
         check(run.state == "aim" and run.floor == 2 and run:Has(picked) == 1 and not o:IsShown() and side.floor:GetText() == "2"
-            and side.ups[1]:IsShown() and side.ups[1].name:GetText() == Lode.UPGRADE[picked][2] and not side.noUps:IsShown()
+            and side.ups[1]:IsShown() and side.ups[1].name:GetText() == Lode.Spell(nil, picked)[2] and not side.noUps:IsShown()
             and not side.ups[2]:IsShown() and side.ore:GetText() == "0 / " .. Lode.Commas(Lode.Quota(2)), "lode: picking one goes down a floor and lists it")
         STUB.Script(side.ups[1], "OnEnter")
-        check(GameTooltip.shown and GameTooltip.lines[1] == Lode.UPGRADE[picked][2], "lode: hovering an upgrade says what it does")
+        check(GameTooltip.shown and GameTooltip.lines[1] == Lode.Spell(nil, picked)[2], "lode: hovering an upgrade says what it does")
         STUB.Script(side.ups[1], "OnLeave")
         local fillW = side.bar.fill:GetWidth()
         check(fillW <= 1.01, "lode: the quota bar starts empty")
@@ -7581,7 +7594,7 @@ do
                 local _, u2t, _, u2h = STUB.rect(side.ups[2])
                 check(l4t - l4h >= (st - sh) + L.FOOT_H and nt < l4t - l4h and u2t - u2h > ltt, "lode polish: upgrades, then the pegs, then the foot")
                 local n = 0
-                for _, u in ipairs(Lode.UPGRADES) do
+                for _, u in ipairs(Lode.SPELLS.none) do
                     n = n + 1
                     q.upgrades[u[1]] = n <= 8 and 1 or nil
                 end
@@ -7590,7 +7603,7 @@ do
                 local _, u8t, _, u8h = STUB.rect(side.ups[8])
                 local _, lrt = STUB.rect(side.legendRule)
                 check(side.ups[8]:IsShown() and not side.ups[9]:IsShown() and lg[1]:IsShown() and u8t - u8h >= lrt, "lode polish: eight upgrades still clear the legend")
-                q.upgrades[Lode.UPGRADES[9][1]] = 1
+                q.upgrades[Lode.SPELLS.none[9][1]] = 1
                 q.dirty = true
                 STUB.Script(board, "OnUpdate", 0.016)
                 check(side.ups[9]:IsShown() and not lg[1]:IsShown() and not side.legendTitle:IsShown() and not side.legendRule:IsShown(),
@@ -7801,12 +7814,105 @@ do
     Roster:ScanGuild()
     local f = T.frame
     check(f and f:IsShown() and f.note and f.text:GetText():find("Dinger", 1, true) and f.text:GetText():find("reached level 40!", 1, true)
-        and f.sub:GetText() == "Click to say grats" and f.icon:GetTexture() == ns.Profiles:Portrait("Dinger-Realm") and #STUB.sounds == 0
+        and f.sub:GetText() == "Click to send congrats" and f.icon:GetTexture() == ns.Profiles:Portrait("Dinger-Realm") and #STUB.sounds == 0
         and not (M.frame and M.frame:IsShown()), "milestone: a guildie reaching 40 pops up, without a sound (the game's level-up sound read as our own, Jake)")
     check(G.feed[1].kind == "level" and G.feed[1].name == "Dinger-Realm" and G.feed[1].value == 40, "milestone: (Activity still has it)")
-    STUB.Script(f, "OnClick", "LeftButton")
-    check(Chat.frame:IsShown() and Chat.current == Chat:Get({ me, "Dinger-Realm" }) and not f:IsShown(), "milestone: clicking it opens a chat with them")
-    Chat:Delete(Chat.current)
+    -- 0.20.0 (Jake): clicking a level-up whispers them our congrats. The first time it asks what to say, with "gz" typed in.
+    do
+        local Home, UI = ns.Home, ns.UI
+        local said0 = #STUB.said
+        ns.db.settings.grats = nil
+        Home.gratsed = {}
+        check(Home:GratsMessage() == nil and Home:GratsHint("Dinger-Realm", 40) == "Click to send congrats" and Home.GRATS_DEFAULT == "gz", "grats: no message until one is set")
+        STUB.Script(f, "OnClick", "LeftButton")
+        local pr = UI.promptFrame
+        check(pr and pr:IsShown() and pr.box:GetText() == "gz" and pr.label:GetText():find("congrats message", 1, true) and ns.db.settings.grats == nil
+            and not f:IsShown() and #STUB.said == said0 and not Home:Gratsed("Dinger-Realm", 40), "grats: the first click asks for a message, with gz typed in, and sends nothing yet")
+        STUB.Script(pr.box, "OnEnterPressed")
+        local last = STUB.said[#STUB.said]
+        check(ns.db.settings.grats == "gz" and #STUB.said == said0 + 1 and last.text == "gz" and last.type == "WHISPER" and last.target:find("Dinger", 1, true)
+            and Home:Gratsed("Dinger-Realm", 40) and not pr:IsShown(), "grats: Enter keeps it and whispers it to them")
+        STUB.printed = {}
+        check(Home:Grats("Dinger-Realm", 40) == false and #STUB.said == said0 + 1 and STUB.printed[1]:find("already congratulated Dinger", 1, true)
+            and Home:GratsHint("Dinger-Realm", 40) == "Congrats sent", "grats: once for a level-up")
+        check(Home:GratsHint("Dinger-Realm", 41) == "Click to send: gz", "grats: (the next level is a new one, and the hint says what will go)")
+        -- the Activity line: hover says so, a click sends
+        ns.Editor:ShowTab("home")
+        Home.feedCard.offset = 0
+        Home:Refresh()
+        local row = Home.feedCard.rows[1]
+        check(row.item.kind == "level" and row.item.name == "Dinger-Realm", "grats: (the level-up is Activity's top line)")
+        row.item.value = 41
+        STUB.Script(row, "OnEnter")
+        local hinted = false
+        for _, line in ipairs(GameTooltip.lines) do if line == "Click to send: gz" then hinted = true end end
+        check(GameTooltip.shown and hinted, "grats: hovering a level-up in Activity says a click sends your message")
+        STUB.Script(row, "OnLeave")
+        STUB.Script(row, "OnClick", "LeftButton")
+        check(#STUB.said == said0 + 2 and STUB.said[#STUB.said].text == "gz" and Home:Gratsed("Dinger-Realm", 41) and not pr:IsShown(), "grats: clicking it sends at once, now there's a message")
+        row.item.value = 40
+        -- only a level-up, only someone else, only someone online
+        local n = #STUB.said
+        Home.gratsed = {}
+        STUB.printed = {}
+        check(Home:Grats(me, 40) == false and Home:Grats(nil, 40) == false and Home:GratsHint(me, 40) == nil and #STUB.printed == 0, "grats: not to yourself")
+        local wasOn = Roster.online["Dinger-Realm"]
+        Roster.online["Dinger-Realm"] = nil
+        check(Home:Grats("Dinger-Realm", 40) == false and Home:GratsHint("Dinger-Realm", 40) == nil and STUB.printed[1]:find("Dinger is offline", 1, true) and #STUB.said == n,
+            "grats: not to someone offline")
+        Roster.online["Dinger-Realm"] = wasOn
+        local join = { t = ns.Now(), kind = "join", name = "Dinger-Realm" }
+        local keep = row.item
+        row.item = join
+        STUB.Script(row, "OnClick", "LeftButton")
+        check(#STUB.said == n, "grats: (a line that isn't a level-up does nothing)")
+        row.item = keep
+        -- when whispers can't go
+        local realRestricted = ns.Comm.IsRestricted
+        ns.Comm.IsRestricted = function() return true end
+        check(Home:Grats("Dinger-Realm", 40) == false and #STUB.said == n and not Home:Gratsed("Dinger-Realm", 40), "grats: nothing is marked sent when whispers are locked")
+        ns.Comm.IsRestricted = realRestricted
+        -- the message: trimmed, never empty, not endless, and a bare | is doubled on the way out
+        check(Home:SetGrats("   ") == false and Home:SetGrats("") == false and Home:SetGrats(nil) == false and ns.db.settings.grats == "gz", "grats: an empty message isn't kept")
+        check(Home:SetGrats("  grats!  ") == true and Home:GratsMessage() == "grats!", "grats: it's trimmed")
+        check(Home:SetGrats(("x"):rep(200)) and #Home:GratsMessage() == Home.GRATS_MAX, "grats: and no longer than a line")
+        Home:SetGrats("gz | nice")
+        check(Home:Grats("Dinger-Realm", 40) == true and STUB.said[#STUB.said].text == "gz || nice", "grats: a | is sent doubled (a bare one is refused by the game)")
+        ns.db.settings.grats = 5
+        check(Home:GratsMessage() == nil, "grats: (a broken setting counts as none)")
+        -- the Congrats button on Activity: look at it, change it
+        ns.db.settings.grats = "gz"
+        local btn = Home.feedCard.grats
+        local bl, bt, bw = STUB.rect(btn)
+        local cl, ct, cw = STUB.rect(Home.feedCard)
+        check(btn:IsShown() and btn.label:GetText() == "Congrats" and bl + bw <= cl + cw and bl > cl + cw / 2 and bt <= ct, "grats: a Congrats button sits in Activity's head")
+        STUB.Script(btn, "OnEnter")
+        check(GameTooltip.shown and GameTooltip.lines[1] == "Your congrats message" and GameTooltip.lines[2] == "gz", "grats: hovering it shows your message")
+        STUB.Script(btn, "OnLeave")
+        n = #STUB.said
+        STUB.Script(btn, "OnClick")
+        check(pr:IsShown() and pr.box:GetText() == "gz", "grats: clicking it opens the box with your message in it")
+        pr.box:SetText("Grats on the ding!")
+        STUB.Script(pr.box, "OnEnterPressed")
+        check(ns.db.settings.grats == "Grats on the ding!" and #STUB.said == n and not pr:IsShown(), "grats: Enter changes it (and whispers nobody)")
+        STUB.Script(btn, "OnClick")
+        pr.box:SetText("something else")
+        STUB.Script(pr.box, "OnEscapePressed")
+        check(ns.db.settings.grats == "Grats on the ding!" and not pr:IsShown(), "grats: Escape leaves it as it was")
+        STUB.Script(btn, "OnClick")
+        pr.box:SetText("  ")
+        STUB.Script(pr.box, "OnEnterPressed")
+        check(ns.db.settings.grats == "Grats on the ding!", "grats: (an empty box doesn't wipe it)")
+        ns.db.settings.grats = nil
+        STUB.Script(btn, "OnEnter")
+        check(GameTooltip.lines[2]:find("Not set yet", 1, true), "grats: (unset, it says so)")
+        STUB.Script(btn, "OnLeave")
+        Home.gratsed = {}
+        ns.Editor:ShowTab("games")
+        -- (the whisper may have opened a chat with them)
+        local made = Chat:Store()[Chat.Key({ me, "Dinger-Realm" })]
+        if made then Chat:Delete(made) end
+    end
     Chat.frame:Hide()
     -- an ordinary level is just Activity
     a.level = 41
@@ -8480,12 +8586,28 @@ do
         check(near(bl - pl, 12) and bw == W and bh == H and near(sl - (bl + bw), 8) and near(sl + sw, pl + 890) and near(st, bt) and near(sh, bh)
             and near(pt - (bt - bh), ns.PAGE_H - 12), "siege layout: the board and the run card fill the page side by side")
         -- the game tabs fit, and Sapper Sweeper's difficulty buttons still clear them
-        local lastTab = Games.modeTabs.duels
+        -- (0.20.0: Angler's tab ran under the three difficulty buttons, Jake's screenshot; there is one now, a drop-down)
+        local lastTab = Games.modeTabs[Games.MODES[#Games.MODES].key]
         local tl, _, tw = STUB.rect(lastTab)
-        local al = STUB.rect(Games.levelButtons.apprentice)
-        local el, _, ew = STUB.rect(Games.levelButtons.expert)
-        check(Games.MODES[5].key == "siege" and near(el + ew, pl + 890) and ew == Games.layout.LEVEL_W, "siege layout: six game tabs; the difficulty buttons end at the margin")
-        check(al >= tl + tw + 6, "siege layout: Sapper Sweeper's difficulty buttons still clear the tabs: " .. tostring(al - pl) .. " vs " .. tostring(tl + tw - pl))
+        local el, _, ew = STUB.rect(Games.levelBtn)
+        check(Games.MODES[5].key == "siege" and Games.MODES[#Games.MODES].key == "angler" and near(el + ew, pl + 890) and ew == Games.layout.LEVEL_W and Games.levelButtons == nil,
+            "siege layout: one difficulty button, ending at the margin")
+        check(el >= tl + tw + 6, "siege layout: Sapper Sweeper's difficulty button clears the last game's tab: " .. tostring(el - pl) .. " vs " .. tostring(tl + tw - pl))
+        do
+            local realShow, menu, anchor = ns.UI.ShowMenu, nil, nil
+            ns.UI.ShowMenu = function(a, e) anchor, menu = a, e end
+            Games:SetMode("sweeper")
+            Games:NewGame("journeyman")
+            STUB.Script(Games.levelBtn, "OnClick")
+            ns.UI.ShowMenu = realShow
+            check(anchor == Games.levelBtn and #menu == 3 and menu[1].text == "Apprentice  (9x9)" and menu[3].text:find("Expert", 1, true) and menu[2].color ~= nil
+                and menu[1].color == nil and Games.levelBtn.label:GetText() == "Journeyman", "games: the difficulty button says the level and opens a menu of the three")
+            menu[3].func()
+            check(Games.level == "expert" and Games.levelBtn.label:GetText() == "Expert" and Games:LevelMenu()[3].color ~= nil and Games:LevelMenu()[2].color == nil,
+                "games: picking one starts a game on it")
+            Games:NewGame("apprentice")
+            Games:SetMode("siege")
+        end
 
         -- Start run: the wall is drawn, the paddle waits under the mouse
         STUB.cursorX, STUB.cursorY = bl + 200, bt - 300
@@ -9444,64 +9566,64 @@ do
         check(hit, "lode aim: a peg in the top corner can be hit straight from the mortar")
     end
 
-    -- the cart
+    -- the bucket ("cart" in the code): 0.20.0, it slides all the time and gives back every bomb that lands in it
     do
         local r = Run.New(11)
-        check(r.cart.x == W / 2 and r:CartWidth() == Lode.CART_W, "lode cart: starts in the middle of the bottom")
+        check(r.cart.x == W / 2 and r:CartWidth() == Lode.CART_W, "lode bucket: starts in the middle of the bottom")
         r.landed = {}
         local bombs = r.bombs
         r:Land({ x = W / 2 + Lode.CART_W / 2 - 1, y = H, ore = 7 })
         check(r.bombs == bombs + 1 and r.landed[1].caught == true and r.ore == 7 and has(r.events, "bomb", "cart")
-            and has(r.events, "land").caught == true, "lode cart: a bomb that lands in the cart comes back, and its ore still counts")
+            and has(r.events, "land").caught == true, "lode bucket: a bomb that lands in it comes back, and its ore still counts")
         r:Land({ x = W / 2 + Lode.CART_W / 2 + 1, y = H, ore = 7 })
-        check(r.bombs == bombs + 1 and r.landed[2].caught == false and r.ore == 14, "lode cart: one that misses it doesn't")
+        check(r.bombs == bombs + 1 and r.landed[2].caught == false and r.ore == 14, "lode bucket: one that misses it doesn't")
         r:Land({ x = W / 2, y = 200, ore = 0 }, true)
-        check(r.bombs == bombs + 1 and r.landed[3].caught == false, "lode cart: nor one that never came down")
+        check(r.bombs == bombs + 1 and r.landed[3].caught == false, "lode bucket: nor one that never came down")
         r:Land({ x = W / 2, y = H, ore = 5 })
-        check(r.bombs == bombs + 1 and r.landed[4].caught == false and r.ore == 19, "lode cart: one bomb back a shot: a second in the cart only banks its ore")
+        check(r.bombs == bombs + 1 and r.landed[4].caught == false and r.ore == 19, "lode bucket: one bomb back a shot: a second in it only banks its ore")
         r.pegs = {}
         r:Fire(0)
-        check(r.given == nil, "lode cart: (the next shot can be caught again)")
+        check(r.given == nil, "lode bucket: (the next shot can be caught again)")
         r.state, r.balls = "aim", {}
         r.cart = { x = W / 2, dir = 1 }
         r.bombs = bombs + 1
-        -- three a floor
-        check(r.catches == 1 and r:CatchesLeft() == Lode.CATCHES - 1, "lode cart: it counts what it has given back")
-        for _ = 1, 4 do
+        -- as often as you land in it (it was three a floor)
+        for _ = 1, 6 do
             r.given = nil
             r:Land({ x = W / 2, y = H, ore = 0 })
         end
-        check(r.catches == Lode.CATCHES and r:CatchesLeft() == 0 and r.bombs == bombs + Lode.CATCHES and r.landed[#r.landed].caught == false,
-            "lode cart: three bombs back a floor, then it only banks the ore")
-        r:NextFloor()
-        check(r:CatchesLeft() == Lode.CATCHES, "lode cart: (three more on the next floor)")
+        check(r.bombs == bombs + 7 and r.landed[#r.landed].caught == true and r.CatchesLeft == nil and Lode.CATCHES == nil,
+            "lode bucket: every shot that lands in it comes back, with no limit a floor")
         r.landed = {}
-        -- it rides back and forth while a bomb is in the air
+        -- back and forth
         r.balls = {}
         r:MoveCart(1)
-        check(near(r.cart.x, W / 2 + Lode.CART_SPEED), "lode cart: it moves at its speed")
+        check(near(r.cart.x, W / 2 + Lode.CART_SPEED), "lode bucket: it moves at its speed")
         for _ = 1, 100 do r:MoveCart(0.01) end
-        check(r.cart.x <= W - Lode.CART_W / 2 + 1e-6 and r.cart.dir == -1, "lode cart: turns round at the wall")
+        check(r.cart.x <= W - Lode.CART_W / 2 + 1e-6 and r.cart.dir == -1, "lode bucket: turns round at the wall")
         for _ = 1, 300 do r:MoveCart(0.01) end
-        check(r.cart.x >= Lode.CART_W / 2 - 1e-6 and r.cart.dir == 1, "lode cart: and at the other")
+        check(r.cart.x >= Lode.CART_W / 2 - 1e-6 and r.cart.dir == 1, "lode bucket: and at the other")
+        -- all the time: while you aim, and during the shot
         local still = Run.New(11)
         still.pegs = {}
         local x0 = still.cart.x
+        still:Idle(0.01)
+        check(near(still.cart.x, x0 + Lode.CART_SPEED * 0.01), "lode bucket: it moves while you aim")
+        still:Idle(5)
+        check(near(still.cart.x, x0 + Lode.CART_SPEED * 0.06), "lode bucket: (a long frame moves it a twentieth of a second at most)")
+        local x1 = still.cart.x
         still:Fire(0)
         still:Tick(STEP)
-        check(still.cart.x ~= x0, "lode cart: (a shot sets it moving)")
+        check(near(still.cart.x, x1 + Lode.CART_SPEED * STEP), "lode bucket: and while the bomb is in the air")
+        still:Idle(0.01)
+        check(near(still.cart.x, x1 + Lode.CART_SPEED * STEP), "lode bucket: (the shot moves it then, not the aiming)")
+        local keep = still.cart
+        still:NextFloor()
+        check(still.cart == keep, "lode bucket: it carries on from where it was on the next floor")
         r.upgrades.cart = 2
-        check(r:CartWidth() == Lode.CART_W * 1.5, "lode cart: Wide Cart makes it wider")
-        -- a Lodestone: it goes after the lowest bomb
-        local m = Run.New(11)
-        m.upgrades.magnet = 1
-        m.balls = { { x = 100, y = 300 }, { x = 500, y = 200 }, { x = 20, y = 400, done = true } }
-        m:MoveCart(0.5)
-        check(m.cart.x < W / 2 and near(m.cart.x, W / 2 - Lode.CART_SPEED * 1.2 * 0.5), "lode cart: with a Lodestone it follows the lowest bomb")
-        m.balls = { { x = W / 2 - Lode.CART_SPEED * 1.2 * 0.5 + 3, y = 300 } }
-        m:MoveCart(0.5)
-        check(near(m.cart.x, m.balls[1].x), "lode cart: (and stops under it)")
-        check(Run.New(11).PocketMult == nil and Lode.POCKETS == nil and Lode.UPGRADE.loaded == nil, "lode cart: the pockets and Loaded Pockets are gone")
+        check(r:CartWidth() == Lode.CART_W * 1.5, "lode bucket: Entrapment makes it wider")
+        check(Run.New(11).PocketMult == nil and Lode.POCKETS == nil and Lode.Spell(nil, "loaded") == nil and Run.Magnet == nil
+            and Lode.Spell(nil, "magnet") == nil, "lode bucket: the pockets, Loaded Pockets and the Lodestone are gone")
     end
 
     -- cave-ins: never a floor that can't be finished with bombs in hand
@@ -9550,41 +9672,274 @@ do
 
     -- classes
     do
+        local fixture = Lode.SPELLS.none
+        Lode.SPELLS.none = nil
         check(#Lode.CLASSES == 4 and Lode.CLASS.warrior and Lode.CLASS.mage and Lode.CLASS.rogue and Lode.CLASS.hunter, "lode classes: Warrior, Mage, Rogue, Hunter")
         local none, odd = Run.New(11), Run.New(11, "paladin")
-        check(none.class == nil and odd.class == nil and none.bombs == Lode.BOMBS and not none:Twin() and not none:Magnet(), "lode classes: a run without one has no perk")
+        check(none.class == nil and odd.class == nil and none.bombs == Lode.BOMBS and not none:Twin() and not none:LongAim() and #none:Offers() == 0,
+            "lode classes: a run without one has no perk, and no spells to learn")
         local w = Run.New(11, "warrior")
         check(w.class == "warrior" and w.bombs == Lode.BOMBS + 2 and w:BombsAFloor() == Lode.BOMBS + 2, "lode classes: a Warrior has two more bombs a floor")
+        local w5 = Run.New(11, "warrior")
+        w5.floor = 3
+        w5.upgrades.fever = 1
+        check(w:OreValue() == 15 and none:OreValue() == 10 and w5:OreValue() == 21 and w5:GoldValue() == 21 * 5 * 2 and Lode.WARRIOR_ORE == 1.5 and Lode.WARRIOR_BOMBS == 2
+            and odd:OreValue() == 10, "lode classes: and a Warrior's pegs pay half again, gold too, at every depth")
         local mg = Run.New(11, "mage")
         local c = peg(W / 2, 300)
         mg.pegs = { c }
         mg:Fire(0)
         while mg.state == "flying" and not c.lit do mg:Tick(STEP) end
-        check(mg:Twin() and #mg.balls == 2, "lode classes: a Mage's bomb splits on its first hit")
+        check(not mg:Twin() and #mg.balls == 1, "lode classes: a Mage's bomb no longer splits on its first hit (the Hunter's two bombs were too like it)")
+        local function crystals(r)
+            local n = 0
+            for _, q in ipairs(r.pegs) do if q.kind == "crystal" then n = n + 1 end end
+            return n
+        end
+        local mg2 = Run.New(11, "mage")
+        check(crystals(mg2) == Lode.CRYSTALS + Lode.MAGE_CRYSTALS and crystals(none) == Lode.CRYSTALS and Lode.MAGE_CRYSTALS == 3, "lode classes: a Mage has three more crystals on every floor")
+        mg2.upgrades.geode = 1
+        mg2:NextFloor()
+        check(crystals(mg2) == Lode.CRYSTALS + 4, "lode classes: (and Mana Gem's on top)")
+        -- and they blow up: small, or a keg's size with Arcane Explosion
+        local function blast(class, spell, dist)
+            local r = Run.New(11, class)
+            if spell then r.upgrades.nova = 1 end
+            local cr, by = peg(W / 2, 300, "crystal"), peg(W / 2 + dist, 300)
+            r.pegs = { cr, by }
+            r:Fire(0)
+            while r.state == "flying" and not cr.gone do r:Tick(STEP) end
+            return by.lit == true, r:Nova()
+        end
+        local near1, n1 = blast("mage", false, Lode.KEG_R * Lode.NOVA - 2)
+        local far1 = blast("mage", false, Lode.KEG_R * Lode.NOVA + 2)
+        local near2, n2 = blast("mage", true, Lode.KEG_R - 2)
+        local far2 = blast("mage", true, Lode.KEG_R + 2)
+        local plain, n3 = blast("warrior", false, 30)
+        local _, n4 = blast(nil, true, 30)
+        check(near1 and not far1 and n1 == Lode.NOVA, "lode classes: a Mage's crystals blow up like a small keg")
+        check(near2 and not far2 and n2 == 1, "lode classes: Arcane Explosion makes that a keg's size")
+        check(not plain and n3 == nil and n4 == Lode.NOVA, "lode classes: (nobody else's crystals blow up)")
         local rg = Run.New(11, "rogue")
         check(rg:GoldValue() == 100 and near(rg:Luck(), 0.1) and near(none:Luck(), 0) and none:GoldValue() == 50, "lode classes: a Rogue's gold pays double, with a little luck")
         local h = Run.New(11, "hunter")
-        check(h:Magnet() and h:CartWidth() == Lode.CART_W * 1.5, "lode classes: a Hunter's cart is wider and follows the bomb")
-        -- who is offered what
-        local seen = { none = {}, warrior = {}, mage = {}, hunter = {} }
+        h.pegs = {}
+        h:Fire(0.3)
+        check(h:LongAim() and not w:LongAim() and h:CartWidth() == Lode.CART_W and h:Volley() == 2 and w:Volley() == 1 and #h.balls == 2 and h.bombs == Lode.BOMBS - 1
+            and near(math.atan2(h.balls[1].vx, h.balls[1].vy), 0.3 - Lode.SPREAD) and near(math.atan2(h.balls[2].vx, h.balls[2].vy), 0.3 + Lode.SPREAD),
+            "lode classes: a Hunter drops two bombs a shot for the one spent, either side of the aim, with a longer aim line")
+        local h3 = Run.New(11, "hunter")
+        h3.upgrades.multi = 1
+        h3.pegs = {}
+        h3:Fire(0)
+        check(#h3.balls == 3 and near(h3.balls[2].vx, 0) and near(h3.balls[1].vx, -h3.balls[3].vx) and h3.balls[3].vx > 0 and h3.bombs == Lode.BOMBS - 1,
+            "lode classes: Multi-Shot makes it three, one down the middle")
+        local w1 = Run.New(11, "warrior")
+        w1.pegs = {}
+        w1:Fire(0.3)
+        check(#w1.balls == 1 and near(math.atan2(w1.balls[1].vx, w1.balls[1].vy), 0.3), "lode classes: (everyone else drops one, where they aimed)")
+        -- who is offered what: the class's own spells, all of them, and nothing else
+        local seen = { warrior = {}, mage = {}, rogue = {}, hunter = {} }
         for seed = 1, 150 do
             for class, got in pairs(seen) do
-                for _, key in ipairs(Run.New(seed, class ~= "none" and class or nil):Offers()) do got[key] = true end
+                for _, key in ipairs(Run.New(seed, class):Offers()) do got[key] = true end
             end
         end
-        local classless = true
-        for key in pairs(seen.none) do if Lode.UPGRADE[key][5] then classless = false end end
-        check(classless and seen.none.twin and seen.none.magnet and seen.none.cart, "lode classes: a run without a class is never offered a class's upgrades")
-        check(seen.warrior.cleave and seen.warrior.blood and not seen.warrior.nova and not seen.warrior.multi and not seen.warrior.ambush,
-            "lode classes: a class is offered its own upgrades and nobody else's")
-        check(seen.mage.nova and seen.mage.evoc and not seen.mage.twin and seen.hunter.multi and seen.hunter.aimed and not seen.hunter.magnet,
-            "lode classes: and never what it already has built in")
-        local owned = 0
-        for _, u in ipairs(Lode.UPGRADES) do if u[5] then owned = owned + 1 check(Lode.CLASS[u[5]] ~= nil, "lode classes: " .. u[1] .. " belongs to a real class") end end
-        check(owned == 8 and #Lode.UPGRADES == 23, "lode classes: two upgrades each, 23 upgrades in all")
-        for _, u in ipairs(Lode.UPGRADES) do
-            check(Lode.UPGRADE_ITEMS[u[1]] ~= nil and #u[3] <= 60, "lode upgrades: " .. u[1] .. " has a picture and a short line")
+        local own = true
+        for class, got in pairs(seen) do
+            local n = 0
+            for key in pairs(got) do
+                n = n + 1
+                if not Lode.Spell(class, key) then own = false end
+            end
+            if n ~= #Lode.SPELLS[class] then own = false end
         end
+        check(own, "lode classes: a class is offered every one of its spells and nobody else's")
+        check(seen.warrior.cleave and not seen.warrior.nova and seen.mage.nova and not seen.mage.twin and seen.hunter.multi and seen.hunter.twin
+            and not seen.hunter.aimed and seen.rogue.ambush and not seen.rogue.cleave, "lode classes: (Cleave is a Warrior's; a Mage splits already)")
+        check(Lode.Spell("warrior", "spare")[2] == "Battle Shout" and Lode.Spell("rogue", "spare") == nil and Lode.Spell("hunter", "rich")[2] == "Hunter's Mark" and Lode.Spell("mage", "cleave") == nil
+            and Lode.UPGRADES == nil and Lode.UPGRADE == nil and Lode.UPGRADE_ITEMS == nil, "lode classes: an upgrade goes by its class's spell, and only that class has it")
+        local known = { cleave = 1, blood = 1, spare = 1, rich = 1, big = 1, kegs = 1, last = 1, streak = 1, deep = 1, fever = 1, nova = 1, evoc = 1, geode = 1,
+            lucky = 1, rubber = 1, ambush = 1, pick = 1, prospector = 1, multi = 1, twin = 1, cart = 1,
+            heroic = 1, clap = 1, stand = 1, sheep = 1, missiles = 1, vanish = 1, seal = 1, freeze = 1, sting = 1, pet = 1 }
+        local classes = 0
+        for class, list in pairs(Lode.SPELLS) do
+            classes = classes + 1
+            check(Lode.CLASS[class] ~= nil and #list >= 7, "lode spells: " .. class .. " is a real class with seven spells or more")
+            local keys, names = {}, {}
+            for _, u in ipairs(list) do
+                check(known[u[1]] and not keys[u[1]] and not names[u[2]] and #u[3] <= 60 and u[4] >= 1 and type(u[5]) == "string" and not u[5]:find("\\", 1, true)
+                    and Lode.UpgradeIcon(u[1], class) == "Interface\\Icons\\" .. u[5], "lode spells: " .. class .. "'s " .. u[2] .. " does something real, once, with a short line and its icon")
+                keys[u[1]], names[u[2]] = true, true
+            end
+        end
+        check(classes == 4 and Lode.UpgradeIcon("nova", "warrior") == 134400, "lode spells: four spellbooks (and a spell that isn't the class's has the question mark)")
+        for _, cl in ipairs(Lode.CLASSES) do
+            check(type(cl.color) == "table" and #cl.color == 3 and #cl[3] <= 60, "lode classes: " .. cl[1] .. " has its colour and a short perk line")
+        end
+        Lode.SPELLS.none = fixture
+    end
+
+    -- 0.20.0: no two classes share an upgrade, and the ten that came of that
+    do
+        local owner, shared = {}, false
+        for class, list in pairs(Lode.SPELLS) do
+            if class ~= "none" then
+                for _, u in ipairs(list) do
+                    if owner[u[1]] then shared = true end
+                    owner[u[1]] = class
+                end
+            end
+        end
+        check(not shared and owner.spare == "warrior" and owner.rich == "hunter" and owner.lucky == "rogue" and owner.kegs == "mage",
+            "lode spells: no upgrade belongs to two classes")
+        local realCave, realCart = Lode.CAVE_IN, Lode.CART_W
+        Lode.CAVE_IN, Lode.CART_W = false, -1
+        local function one(key, n)
+            local r = Run.New(11)
+            if key then r.upgrades[key] = n or 1 end
+            return r
+        end
+        -- Heroic Strike
+        local r = one("heroic")
+        r.pegs = { peg(W / 2, 300) }
+        r:Fire(0)
+        fly(r)
+        local first = r.last.gain
+        r.pegs = { peg(W / 2, 300) }
+        r:Fire(0)
+        fly(r)
+        check(first == 20 and r.last.gain == 10, "lode spells: Heroic Strike doubles the first bomb of a floor, and only that one")
+        r:NextFloor()
+        check(r.floorShots == 0, "lode spells: (the next floor has a first bomb of its own)")
+        -- Thunder Clap
+        r = one("clap")
+        local close, far = peg(W / 2 + 40, H - 90), peg(W / 2 + 40, H - 300)
+        r.pegs = { close, far }
+        r:Fire(0)
+        fly(r)
+        check(r.last.gain == 10 and close.gone and not far.gone and not far.lit, "lode spells: Thunder Clap mines what's near where the bomb lands")
+        local plain = one()
+        local same = peg(W / 2 + 40, H - 90)
+        plain.pegs = { same }
+        plain:Fire(0)
+        fly(plain)
+        check(plain.last.gain == 0 and not same.gone, "lode spells: (nothing does without it)")
+        r.pegs = { peg(W / 2, H - 60) }
+        r.landed = {}
+        r:Land({ x = W / 2, y = 200, ore = 0 }, true)
+        check(not r.pegs[1].lit, "lode spells: (nor a bomb that never came down)")
+        -- Last Stand
+        r = one("stand")
+        r.pegs, r.bombs = {}, 1
+        r:Fire(0)
+        fly(r)
+        check(r.state == "aim" and r.bombs == Lode.STAND and r.stood and has(r.events, "bomb", "stand"), "lode spells: Last Stand gives three bombs when you run out")
+        r.bombs = 1
+        r:Fire(0)
+        fly(r)
+        check(r.state == "over" and r.bombs == 0, "lode spells: once a run")
+        r = one("stand")
+        r.pegs, r.bombs, r.quota = { peg(W / 2, 300) }, 1, 10
+        r:Fire(0)
+        fly(r)
+        check(r.state == "choose" and not r.stood, "lode spells: (it isn't spent on a floor that was cleared)")
+        -- Polymorph
+        r = one("sheep")
+        r.pegs = {}
+        r:Fire(0)
+        local ball = r.balls[1]
+        r:Mine(peg(10, 300), ball)
+        r:Mine(peg(40, 300), ball)
+        check(ball.ore == 50 + 10, "lode spells: Polymorph pays the first ore peg of a shot like gold")
+        r.state, r.balls = "aim", {}
+        r:Fire(0)
+        ball = r.balls[1]
+        r:Mine(peg(10, 300, "gold"), ball)
+        r:Mine(peg(40, 300), ball)
+        r:Mine(peg(70, 300), ball)
+        check(ball.ore == 50 + 50 + 10, "lode spells: (the first ORE peg, on every shot)")
+        -- Seal Fate
+        r = one("lucky", 10)
+        r.pegs = {}
+        r:Fire(0)
+        r:Mine(peg(10, 300), r.balls[1])
+        local double = r.balls[1].ore
+        r = one("lucky", 10)
+        r.upgrades.seal = 1
+        r.pegs = {}
+        r:Fire(0)
+        r:Mine(peg(10, 300), r.balls[1])
+        check(double == 20 and r.balls[1].ore == 30, "lode spells: Seal Fate makes lucky ore triple")
+        -- Arcane Missiles
+        local function crystal(key)
+            local c = one(key)
+            local cr = peg(W / 2, 300, "crystal")
+            c.pegs = { cr }
+            c:Fire(0.02)
+            while c.state == "flying" and not cr.gone do c:Tick(STEP) end
+            return c
+        end
+        local two, three = crystal(), crystal("missiles")
+        check(#two.balls == 2 and #three.balls == 3 and near(three.balls[3].vx, three.balls[2].vx / 4) and three.balls[3].vx ~= 0,
+            "lode spells: Arcane Missiles splits a bomb in three at a crystal, the third nearly straight down")
+        -- Vanish
+        r = one("vanish")
+        r.pegs = {}
+        local bombs = r.bombs
+        r:Fire(0)
+        fly(r)
+        check(r.bombs == bombs and r.vanished and has(r.events, "bomb", "vanish"), "lode spells: Vanish gives back a shot that mined nothing")
+        r:Fire(0)
+        fly(r)
+        check(r.bombs == bombs - 1, "lode spells: once a floor")
+        r:NextFloor()
+        check(r.vanished == nil, "lode spells: (and again on the next)")
+        r = one("vanish")
+        r.pegs = { peg(W / 2, 300) }
+        r:Fire(0)
+        fly(r)
+        check(r.bombs == bombs - 1 and not r.vanished, "lode spells: (a shot that mined something is just spent)")
+        -- Freezing Trap
+        r = one("freeze")
+        r.pegs = {}
+        local x0 = r.cart.x
+        r:Fire(0)
+        r:Tick(STEP)
+        r:Tick(STEP)
+        check(r.cart.x == x0, "lode spells: Freezing Trap holds the bucket still while the bomb is in the air")
+        fly(r)
+        r:Idle(0.01)
+        check(near(r.cart.x, x0 + Lode.CART_SPEED * 0.01), "lode spells: (it slides again while you aim)")
+        -- Serpent Sting
+        local function twice(key)
+            local c = one(key)
+            local pg = peg(W / 2, 300)
+            c.pegs = { pg }
+            c:Fire(0)
+            c:Hit(pg, c.balls[1])
+            c:Hit(pg, c.balls[1])
+            return c.balls[1].ore
+        end
+        check(twice() == 10 and twice("sting") == 15, "lode spells: Serpent Sting pays half again for a peg hit twice")
+        -- Call Pet
+        r = one("pet", 2)
+        r:NextFloor()
+        local gone, other = 0, 0
+        for _, q in ipairs(r.pegs) do
+            if q.gone then
+                gone = gone + 1
+                if q.kind ~= "ore" then other = other + 1 end
+            end
+        end
+        check(gone == 2 * Lode.PET and other == 0 and r.ore == gone * r:OreValue() and r.total == r.ore and #r.pegs == Lode.PEGS,
+            "lode spells: Call Pet digs up three ore pegs a floor each time it's taken, and banks them")
+        local none = one()
+        none:NextFloor()
+        check(none.ore == 0, "lode spells: (nothing is dug without it)")
+        Lode.CAVE_IN, Lode.CART_W = realCave, realCart
+        -- on the board
+        check(#Lode.Spell("warrior", "stand")[3] <= 60 and Lode.Spell("hunter", "freeze")[2] == "Freezing Trap", "lode spells: (their lines)")
     end
 
     -- the new upgrades
@@ -9752,9 +10107,9 @@ do
         check(near(c1l - bl, (bl + bw) - (c4l + cw)) and near(c2l - (c1l + cw), 8) and c1l > bl and c1t <= stt - sth - 8
             and c1t - ch >= bt - bh + Lode.POCKET_H, "lode screen: four class tiles in a row, centred on the board under the button")
         check(o.classes[2].name:GetText() == "Mage" and o.classes[2].desc:GetText() == Lode.CLASS.mage[3]
-            and o.classes[2].own:GetText() == "Arcane Explosion, Evocation" and o.classes[1].own:GetText() == "Cleave, Bloodthirst"
+            and o.classes[2].own:GetText() == "8 Mage spells to learn" and o.classes[4].own:GetText() == "7 Hunter spells to learn"
             and o.classes[2].icon:GetTexture() == Lode.CLASS_SHEET and not o.classes[2].last:IsShown(),
-            "lode screen: a tile says the class, its perk and its own upgrades")
+            "lode screen: a tile says the class, its perk and how many spells it has")
         STUB.Script(board, "OnClick")
         check(Lode.run == nil, "lode screen: (the board takes no shots behind the picker)")
         STUB.Script(o.start, "OnClick")
@@ -9773,12 +10128,7 @@ do
         Lode:Refresh()
         cl, ct, cwid = STUB.rect(Lode.cart)
         check(near(cwid, Lode.CART_W * 1.5) and near(cl + cwid / 2, bl + 200), "lode screen: (wider and elsewhere when they say so)")
-        check(Lode.cart.left:GetText() == "3" and Lode.cart:GetAlpha() == 1, "lode screen: the cart says how many bombs it still gives back")
-        run.catches = Lode.CATCHES
-        Lode:Refresh()
-        check(Lode.cart.left:GetText() == "" and Lode.cart:GetAlpha() < 1, "lode screen: and dims when it has given them all")
-        run.catches = 0
-        Lode:Refresh()
+        check(Lode.cart.left == nil and Lode.cart:GetAlpha() == 1, "lode screen: the bucket has no count on it any more")
         -- a catch, a bomb back and a cave-in are all said on the board
         local function shown(text)
             for _, f in ipairs(Lode.floats) do if f:IsShown() and f:GetText() == text then return f end end
@@ -9786,8 +10136,11 @@ do
         run.events = { { kind = "land", x = 200, gain = 30, caught = true }, { kind = "bomb", why = "cart", x = 200, y = 500 } }
         STUB.sounds = {}
         Lode:ShowEvents()
-        check(shown("+30") and shown("Caught! +1 bomb") and Lode.cart.flash:IsShown() and STUB.sounds[#STUB.sounds] == SOUNDKIT.IG_QUEST_LIST_COMPLETE,
-            "lode screen: a catch is called out, the cart flashes and chimes")
+        check(shown("+30") and shown("Free bomb!") and Lode.cart.flash:IsShown() and STUB.sounds[#STUB.sounds] == SOUNDKIT.IG_QUEST_LIST_COMPLETE,
+            "lode screen: a catch is called out, the bucket flashes and chimes")
+        run.events = { { kind = "bomb", why = "stand" }, { kind = "bomb", why = "vanish" }, { kind = "bomb", why = "evoc" } }
+        Lode:ShowEvents()
+        check(shown("Last Stand! +3 bombs") and shown("Vanish! +1 bomb") and shown("+1 bomb"), "lode screen: Last Stand and Vanish say their names when they give bombs back")
         run.events = { { kind = "bomb", why = "evoc", x = 100, y = 200 }, { kind = "cavein" } }
         Lode:ShowEvents()
         check(shown("+1 bomb") and shown("Cave-in! Fresh rock"), "lode screen: so are a bomb back and a cave-in")
@@ -9806,11 +10159,13 @@ do
         STUB.Script(board, "OnUpdate", 0.016)
         local dots = 0
         for _, d in ipairs(Lode.dots) do if d:IsShown() then dots = dots + 1 end end
-        run.upgrades.aimed = 1
+        run.class = "hunter"
         STUB.Script(board, "OnUpdate", 0.016)
         local more = 0
         for _, d in ipairs(Lode.dots) do if d:IsShown() then more = more + 1 end end
-        check(dots == 14 and more > dots and #Lode.dots == 28, "lode screen: Aimed Shot shows more of the path")
+        check(dots == 14 and more > dots and #Lode.dots == 28, "lode screen: a Hunter sees more of the path")
+        run.class = nil
+        Lode:Refresh()
         -- the mouse level with the mortar aims nearly flat
         STUB.cursorX, STUB.cursorY = bl + 20, bt - Lode.LAUNCH_Y
         check(near(Lode:AimAngle(), -Lode.MAX_AIM), "lode screen: the mouse beside the mortar aims as flat as it goes")
@@ -9838,13 +10193,7 @@ do
     local r = Run.New(11)
     r.landed = {}
     r:Land({ x = W / 2, y = 200, ore = 0 }, true)
-    check(r.bombs == Lode.BOMBS and r.landed[1].caught == false and r.catches == 0, "lode gaps: a bomb that never came down isn't caught, even over the cart")
-    -- a Lodestone ignores bombs that have already landed
-    local m = Run.New(11)
-    m.upgrades.magnet = 1
-    m.balls = { { x = 100, y = 300 }, { x = 540, y = 500, done = true } }
-    m:MoveCart(0.5)
-    check(m.cart.x < W / 2, "lode gaps: a Lodestone goes after a bomb still in the air, not one that has landed")
+    check(r.bombs == Lode.BOMBS and r.landed[1].caught == false, "lode gaps: a bomb that never came down isn't caught, even over the cart")
     -- what's mined doesn't count toward what's left
     local q = Run.New(11)
     q.pegs = { peg(10, 300), peg(40, 300) }
@@ -9865,13 +10214,942 @@ do
     Games:SetMode("lode")
     Lode:NewRun(5, "warrior")
     local run = Lode.run
+    -- 0.20.0: the bomb is the class's colour, and the bucket slides while you aim
+    do
+        local function rgb(tex) local v = tex.__vertex return v[1], v[2], v[3], v[4] end
+        local wc = Lode.CLASS.warrior.color
+        local art = Lode.ballArt[1]
+        local r1, g1, b1, a1 = rgb(art)
+        local r2, g2, b2 = rgb(art.glow)
+        local r3, g3, b3, a3 = rgb(art.trail[2])
+        local r4, g4, b4 = rgb(Lode.mortarGlow)
+        local r5 = rgb(Lode.ballArt[#Lode.ballArt])
+        check(r1 == wc[1] and g1 == wc[2] and b1 == wc[3] and a1 == 1 and r2 == wc[1] and g2 == wc[2] and b2 == wc[3] and r3 == wc[1] and g3 == wc[2] and b3 == wc[3]
+            and a3 > 0 and a3 < 0.6 and r4 == wc[1] and g4 == wc[2] and b4 == wc[3] and r5 == wc[1], "lode screen: a Warrior's bombs, their glow, sparks and the mortar are Warrior tan")
+        Lode:NewRun(5, "mage")
+        local mc = Lode.CLASS.mage.color
+        r1, g1, b1 = rgb(art)
+        check(r1 == mc[1] and g1 == mc[2] and b1 == mc[3] and mc[3] > mc[1], "lode screen: a Mage's are Mage blue")
+        Lode:NewRun(5, false)
+        r1, g1, b1 = rgb(art)
+        r2, g2, b2 = rgb(art.glow)
+        check(r1 == 1 and g1 == 0.80 and b1 == 0.32 and r2 == 1 and g2 == 0.60 and b2 == 0.15, "lode screen: (without a class, the fiery one it always was)")
+        Lode:NewRun(5, "warrior")
+        run = Lode.run
+        -- the spells taken are listed under the class's own names
+        run.upgrades.spare, run.upgrades.nova = 1, 1
+        Lode:Refresh()
+        local ups = Lode.side.ups
+        check(ups[1]:IsShown() and ups[1].name:GetText() == "Battle Shout" and ups[1].icon:GetTexture() == "Interface\\Icons\\Ability_Warrior_BattleShout"
+            and not ups[2]:IsShown(), "lode screen: a Warrior's extra bomb is listed as Battle Shout (and a Mage's spell isn't listed at all)")
+        run.upgrades = {}
+        Lode:Refresh()
+        local x0 = run.cart.x
+        STUB.Script(Lode.board, "OnUpdate", 0.02)
+        local left, _, width = STUB.rect(Lode.cart)
+        local bl = STUB.rect(Lode.board)
+        check(near(run.cart.x, x0 + Lode.CART_SPEED * 0.02) and near(left + width / 2, bl + run.cart.x), "lode screen: the bucket slides while you aim, and is drawn where it is")
+    end
     Lode:NewRun()
+    local x1 = run.cart.x
+    STUB.Script(Lode.board, "OnUpdate", 0.02)
+    check(run.cart.x == x1, "lode screen: (it waits while a class is being picked)")
     STUB.Script(Lode.board, "OnClick")
     check(Lode.picking and Lode.run == run and run.shots == 0 and run.state == "aim" and not Lode.catcher:IsShown(),
         "lode gaps: no shot is fired behind the class picker")
+    -- New run with a bomb in the air: the shot waits behind the picker, and goes on if you back out
+    Lode.picking = nil
+    run.pegs = {}
+    run:Fire(0)
+    STUB.Script(Lode.board, "OnUpdate", 0.02)
+    local y0 = run.balls[1].y
+    STUB.Script(Lode.side.newRun, "OnClick")
+    check(Lode.picking and Lode.run == run and run.state == "flying" and not Lode.side.newRun.armed, "lode: New run works with a bomb in the air, at one click")
+    STUB.Script(Lode.board, "OnUpdate", 0.02)
+    check(run.balls[1].y == y0 and run.state == "flying", "lode: the bomb waits while a class is picked")
+    Lode.picking = nil
+    STUB.Script(Lode.board, "OnUpdate", 0.02)
+    check(run.balls[1].y > y0, "lode: and carries on if you go back to the run")
+    STUB.Script(Lode.side.newRun, "OnClick")
+    STUB.Script(Lode.overlay.classes[2], "OnClick")
+    check(Lode.run ~= run and Lode.run.class == "mage" and Lode.run.state == "aim" and Lode.run.shots == 0 and not Lode.picking,
+        "lode: picking a class starts over, bomb in the air or not")
+    -- and over the upgrade tiles: the picker comes first, Back returns to the tiles
+    do
+        local m, o = Lode.run, Lode.overlay
+        m.pegs, m.quota = {}, 0
+        m:Fire(0)
+        for _ = 1, 3000 do
+            if m.state ~= "flying" then break end
+            STUB.Script(Lode.board, "OnUpdate", 0.02)
+        end
+        check(m.state == "choose" and o.tiles[1]:IsShown() and not o.classes[1]:IsShown(), "lode: (a cleared floor shows its tiles)")
+        STUB.Script(Lode.side.newRun, "OnClick")
+        check(Lode.picking and o.classes[1]:IsShown() and not o.tiles[1]:IsShown() and o.title:GetText() == "Pick a class", "lode: New run works over the upgrade tiles too")
+        STUB.Script(o.start, "OnClick")
+        check(not Lode.picking and o.tiles[1]:IsShown() and not o.classes[1]:IsShown() and Lode.run == m and m.state == "choose", "lode: and Back returns to them")
+    end
     Lode.run, Lode.picking = nil, nil
     ns.db.games.lode = nil
     Lode:Refresh()
+    Games:SetMode("wowdle")
+    ns.Editor:ShowTab("home")
+end
+
+-- 0.20.0: Angler, the idle fishing game -----------------------------------------------------------
+do
+    local A, Games = ns.Angler, ns.Games
+    local realRandom = A.Random
+    local function fresh()
+        ns.db.games.angler = nil
+        A.buff, A.school, A.schoolAt, A.note = nil, nil, nil, nil
+        return A.Saved()
+    end
+    local g = fresh()
+    local t0 = ns.Now()
+
+    -- crew, casting and prices
+    check(g.fish == 0 and g.pearls == 0 and g.earned == 0 and A:Rate() == 0 and A:Cost(1) == 15 and A:CastValue() == 1 and #A.CREW == 14,
+        "angler: starts with nothing, a rod costs 15 and a cast lands one fish")
+    check(A:Buy(1) == false and A:Owned(1) == 0, "angler: nothing is bought without the fish for it")
+    for _ = 1, 15 do A:Cast() end
+    check(g.fish == 15 and g.total == 15 and g.life == 15 and g.casts == 15, "angler: casting by hand catches fish, and is counted")
+    check(A:Buy(1) == 1 and g.fish == 0 and A:Owned(1) == 1 and A:Cost(1) == 17 and near(A:Rate(), 0.2) and A:Buy(99) == false,
+        "angler: a rod costs its price, the next one more, and it fishes by itself")
+    -- ten at a time, and as many as the fish will buy
+    g.own, g.fish = {}, 1000
+    local ten = 0
+    for k = 0, 9 do ten = ten + math.floor(15 * 1.15 ^ k + 0.5) end
+    check(A:Cost(1, 10) == ten and A:Buy(1, 10) == 10 and A:Owned(1) == 10 and near(g.fish, 1000 - ten), "angler: ten at once cost what ten one by one would")
+    g.own, g.fish = {}, 100
+    local n = A:Affordable(1)
+    check(n == 4 and A:Cost(1, 4) <= 100 and A:Cost(1, 5) > 100 and A:Buy(1, "max") == 4 and A:Owned(1) == 4 and g.fish < 15 + 30,
+        "angler: Buy max takes as many as the fish will buy")
+    g.fish = 0
+    check(A:Buy(1, "max") == false and A:Buy(1, 10) == false and A:Owned(1) == 4, "angler: (and none when there's nothing to buy with)")
+
+    -- time passing: full speed for a short gap, half speed and capped when away
+    g.own, g.fish, g.total, g.t = { rod = 1 }, 0, 0, t0
+    local gain, away = A:Settle(t0 + 30)
+    check(near(gain, 6) and away == false and near(g.fish, 6) and g.t == t0 + 30, "angler: the crew's catch is counted up to now")
+    gain = A:Settle(t0 + 30)
+    check(gain == 0 and near(g.fish, 6), "angler: (once)")
+    gain, away = A:Settle(t0 + 30 + 600)
+    check(near(gain, 600 * 0.2 * 0.5) and away == true, "angler: away for a while, the crew fishes at half speed")
+    gain, away = A:Settle(t0 + 630 + 100 * 3600)
+    check(near(gain, A.AWAY_CAP * 0.2 * 0.5) and away == true, "angler: and for eight hours at most")
+    check(A:Settle(t0) == 0, "angler: a clock that went backwards catches nothing")
+    -- milestones double a kind
+    check(A.Doubles(9) == 0 and A.Doubles(10) == 1 and A.Doubles(25) == 2 and A.Doubles(99) == 3 and A.Doubles(100) == 4
+        and A.NextMilestone(0) == 10 and A.NextMilestone(10) == 25 and A.NextMilestone(100) == 150 and A.Doubles(299) == 7 and A.Doubles(300) == 8
+        and A.NextMilestone(300) == nil, "angler: the 10th, 25th, 50th and 100th of a kind double it, and every 50th after to the 300th")
+    g.own = { rod = 10, net = 2 }
+    check(near(A:RateOf(1), 10 * 0.2 * 2) and near(A:Each(1), 0.4) and near(A:RateOf(2), 3) and near(A:Rate(), 7), "angler: what each kind catches adds up")
+    g.own = { rig = 1 }
+    check(near(A:Rate(), 4000) and A:CastValue() == 200, "angler: a cast is worth a twentieth of a second's catch")
+    check(A.Short(999) == "999" and A.Short(1234) == "1,234" and A.Short(999999) == "999,999" and A.Short(1234567) == "1.23M"
+        and A.Short(2.5e9) == "2.50B" and A.Short(3e12) == "3.00T" and A.Short(4e15) == "4.00Q" and A.Short(5e18) == "5.00Qi", "angler: big numbers are shortened")
+
+    -- tackle: one-off upgrades for the voyage
+    g = fresh()
+    g.own, g.fish = { rod = 10 }, 50
+    check(A:BuyTackle("hooks") == false and A:BuyTackle("nonsense") == false, "angler tackle: it costs fish")
+    g.fish = 100
+    local cast = A:CastValue()
+    check(A:BuyTackle("hooks") == true and A:Has("hooks") and near(g.fish, 0) and A:CastValue() == cast * 2 and A:BuyTackle("hooks") == false,
+        "angler tackle: Sharp Hooks doubles a cast, once")
+    g.fish = 1000 check(A:BuyTackle("hooks") == false and g.fish == 1000, "angler tackle: (a piece is only bought once, fish or no fish)") g.tackle.barbs, g.tackle.lure = true, true
+    check(A:CastValue() == cast * 8, "angler tackle: the three hooks stack")
+    g.tackle = {}
+    local rate = A:Rate()
+    g.tackle.charts = true
+    check(near(A:Rate(), rate * 1.25), "angler tackle: Tide Charts is a quarter more from all crew")
+    g.tackle.sonar, g.tackle.shanties = true, true
+    check(near(A:Rate(), rate * 1.25 ^ 3), "angler tackle: (three of those stack)")
+    g.tackle = {}
+    check(A:AwayRate() == 0.5 and A:AwayCap() == 8 * 3600, "angler tackle: away is half speed for eight hours to begin with")
+    g.tackle.lanterns, g.tackle.hold = true, true
+    check(A:AwayRate() == 0.75 and A:AwayCap() == 16 * 3600, "angler tackle: Night Lanterns and a Bigger Hold make away better")
+    g.tackle.shift, g.tackle.cold = true, true
+    check(A:AwayRate() == 1 and A:AwayCap() == 24 * 3600, "angler tackle: Night Shift and Cold Storage better still")
+    g.t = t0
+    gain = A:Settle(t0 + 20 * 3600)
+    check(near(gain, 20 * 3600 * A:Rate()), "angler tackle: (and the catch while away follows)")
+    local priced = true
+    for _, t in ipairs(A.TACKLE) do
+        if not (A.GEAR[t[1]] == t and t[4] > 0 and #t[3] <= 60) then priced = false end
+    end
+    check(priced and #A.TACKLE == 12 + 6 + 2 * #A.CREW and #A.TACKLE == 46, "angler tackle: 46 pieces, each with a price and a short line")
+    -- the long game (Jake: "aim for longevity"): six more crew, two upgrades for every kind, late tackle
+    do
+        local keep = { g.own, g.tackle, g.fish, g.perks, g.earned, g.trophies }
+        g.own, g.tackle, g.perks, g.earned, g.trophies = { kraken = 1 }, {}, {}, 0, {}
+        local base = A:Each(12)
+        check(A.CREW[9][1] == "sub" and A.CREW[14][1] == "rift" and A.CREW[14][3] == 1.8e16 and base == 1.7e9 and A.CREW[12][2] == "Kraken", "angler long game: fourteen kinds of crew, up to an Abyssal Rift")
+        local ratios = true
+        for i = 2, #A.CREW do
+            local cost, catch = A.CREW[i][3] / A.CREW[i - 1][3], A.CREW[i][4] / A.CREW[i - 1][4]
+            if cost < 7 or cost > 20 or catch < 6 or catch > 10 or cost <= catch then ratios = false end
+        end
+        check(ratios, "angler long game: each kind costs more than it out-catches the last (so the next one is always further off)")
+        check(A.GEAR.kraken2 and A.GEAR.kraken2[2] == "Better Kraken" and A.GEAR.kraken2[4] == 6e13 * 40 and A.GEAR.kraken3[2] == "Master Kraken" and A.GEAR.kraken3[4] == 6e13 * 2000
+            and A.GEAR.rod2[3] == "Each Fishing Rod catches twice as much." and A.GEAR.rod2[5] == A.CREW[1][5], "angler long game: Better and Master tackle for every kind of crew")
+        g.tackle.kraken2 = true
+        local two = A:Each(12)
+        g.tackle.kraken3 = true
+        check(two == base * 2 and A:Each(12) == base * 4 and A:Each(11) == A.CREW[11][4], "angler long game: each doubles that kind, and only that kind")
+        g.tackle = {}
+        g.tackle.deep, g.tackle.light = true, true
+        check(near(A:Bonus(), 1.25 * 1.25), "angler long game: Deep Charts and the Lighthouse are 25% each")
+        g.tackle.ancient = true
+        check(near(A:Bonus(), 1.25 * 1.25 * 1.5), "angler long game: Charts of the Ancients 50%")
+        g.tackle = {}
+        local cast = A:CastValue()
+        g.tackle.golden = true
+        check(A:CastValue() == cast * 2, "angler long game: a Golden Lure doubles a cast")
+        g.tackle = {}
+        check(A:FrenzyMult() == 7, "angler long game: (a frenzy is seven times)")
+        g.tackle.siren = true
+        check(A:FrenzyMult() == 14, "angler long game: Siren Song doubles a frenzy")
+        g.tackle = {}
+        A.Random = function() return 0.5 end
+        A.school, A.schoolAt, g.t, g.fish = { kind = "haul", till = t0 + 50 }, nil, t0, 0
+        A:CatchSchool(t0)
+        local plain = g.fish
+        g.tackle.nets = true
+        A.school, g.fish, g.t = { kind = "haul", till = t0 + 50 }, 0, t0
+        A:CatchSchool(t0)
+        check(plain > 0 and near(g.fish, plain * 2), "angler long game: Bigger Nets doubles a lucky haul")
+        A.Random = realRandom
+        g.schools = 0
+        g.tackle, g.fish = {}, 0
+        -- the dear perks
+        check(#A.PERKS == 12 and A.PERK.call[4] == 1000 and A.PERK.friends[4] == 50, "angler long game: five more perks, up to a thousand pearls")
+        g.own = {}
+        g.perks = { friends = true }
+        A:Outfit()
+        check(A:Owned(3) == 10 and A:Owned(4) == 10 and A:Owned(1) == 0, "angler long game: Old Friends brings 10 Rowboats and 10 Trawlers")
+        g.own, g.perks = { kraken = 1 }, {}
+        local c0, p5 = A:CastValue(), A:Price(1, 5)
+        g.perks = { ghooks = true }
+        check(A:CastValue() == c0 * 10, "angler long game: Golden Hooks makes a cast ten times")
+        g.perks = { wright = true }
+        check(A:Price(1, 5) == math.floor(15 * 1.13 ^ 5 + 0.5) and A:Price(1, 5) < p5 and A:Price(1, 0) == 15, "angler long game: Shipwright slows how fast crew gets dearer")
+        g.perks = { call = true }
+        check(A:Each(12) == base * 2, "angler long game: Call of the Deep doubles every crew")
+        g.perks, g.trophies = { room = true }, { life3 = true, life5 = true }
+        check(near(A:Bonus(), 1.04), "angler long game: Trophy Room makes a trophy 2%")
+        g.perks = {}
+        check(near(A:Bonus(), 1.02), "angler long game: (1% without it)")
+        check(A.RankOf(999) == "Admiral" and A.RankOf(1000) == "Sea Lord" and A.RankOf(10000) == "Tide King", "angler long game: two ranks past Admiral")
+        check(A.Short(1.5e21) == "1.50Sx" and A.Short(2e24) == "2.00Sp" and A.Short(3e27) == "3.00Oc" and A.Short(4e30) == "4.00No" and A.Short(5e33) == "5.00Dc",
+            "angler long game: numbers past a quintillion have names")
+        g.own, g.tackle, g.fish, g.perks, g.earned, g.trophies = keep[1], keep[2], keep[3], keep[4], keep[5], keep[6]
+    end
+
+    -- schools of fish
+    g = fresh()
+    A.Random = function() return 0 end
+    g.own = { rod = 10 }
+    check(A:Watch(t0) == nil and A.schoolAt == t0 + 120, "angler schools: the first is a couple of minutes off")
+    check(A:Watch(t0 + 119) == nil, "angler schools: (not before)")
+    local school = A:Watch(t0 + 120)
+    check(school and school.kind == "frenzy" and school.till == t0 + 120 + A.SCHOOL_SHOWS, "angler schools: then one shows, for a few seconds")
+    check(A:CatchSchool(t0 + 120 + A.SCHOOL_SHOWS) == nil and g.schools == 0, "angler schools: too late and it's gone")
+    check(A:Watch(t0 + 120 + A.SCHOOL_SHOWS) == nil and A.school == nil and A.schoolAt == t0 + 135 + 120, "angler schools: a missed one swims off, and the next is drawn")
+    school = A:Watch(t0 + 255)
+    g.t = t0 + 255
+    local said = A:CatchSchool(t0 + 256)
+    check(said == "Feeding frenzy! 7x fish for 30 seconds." and g.schools == 1 and A.school == nil
+        and A:Buff("frenzy", t0 + 256) and not A:Buff("frenzy", t0 + 286) and A.schoolAt == t0 + 256 + 120, "angler schools: a frenzy is seven times the catch for half a minute")
+    local base = A:Rate()
+    g.t = t0 + 256
+    gain = A:Settle(t0 + 266)
+    check(near(gain, base * 10 * 7), "angler schools: (the catch during it)")
+    gain = A:Settle(t0 + 296)
+    check(near(gain, base * (20 * 7 + 10)), "angler schools: (and only for as long as it lasts)")
+    A.Random = function() return 0.5 end
+    A.schoolAt, A.buff = t0 + 300, nil
+    school = A:Watch(t0 + 300)
+    local before = g.fish
+    g.t = t0 + 300
+    said = A:CatchSchool(t0 + 300)
+    check(school.kind == "haul" and near(g.fish - before, A:Rate() * A.HAUL) and said:find("Lucky haul!", 1, true), "angler schools: a haul is ten minutes of catch at once")
+    A.Random = function() return 0.99 end
+    A.schoolAt = t0 + 400
+    school = A:Watch(t0 + 400)
+    local one = A:CastValue()
+    said = A:CatchSchool(t0 + 400)
+    check(school.kind == "spree" and A:Buff("spree", t0 + 400) and said:find("Casting spree", 1, true), "angler schools: or a casting spree")
+    g.t = ns.Now()
+    A.buff = { kind = "spree", from = ns.Now(), till = ns.Now() + 20 }
+    check(A:CastValue() == one * A.SPREE, "angler schools: casts land twenty times as much while it lasts")
+    A.buff = nil
+    g.own = {}
+    A.schoolAt = t0
+    check(A:Watch(t0 + 5) == nil, "angler schools: no school before there's a crew to feed")
+    g.own = { rod = 10 }
+    A.Random = function() return 0 end
+    g.tackle.spotter = true
+    check(A:NextSchoolIn() == 60, "angler schools: a Spotter halves the wait")
+    g.tackle.chum = true
+    A.schoolAt = t0 + 500
+    A:Watch(t0 + 500)
+    said = A:CatchSchool(t0 + 500)
+    check(A.buff.till == t0 + 560 and said:find("60 seconds", 1, true), "angler schools: Chum doubles a frenzy's length")
+    A.Random = realRandom
+
+    -- trophies: a percent each, for good
+    g = fresh()
+    check(#A:Award() == 0 and A:TrophyCount() == 0, "angler trophies: none to begin with")
+    g.life, g.casts, g.own = 1000, 100, { rod = 10 }
+    local won = A:Award()
+    table.sort(won)
+    check(#won == 3 and won[1] == "First Catch" and won[2] == "Sore Arm" and won[3] == "Tackle Box" and A:TrophyCount() == 3 and #A:Award() == 0,
+        "angler trophies: earned as their goals are met, once")
+    check(near(A:Bonus(), 1.03) and near(A:Rate(), 10 * 0.2 * 2 * 1.03), "angler trophies: each is 1% more fish")
+    g.own = { hunter = 1, net = 100 }
+    g.schools, g.voyages, g.earned, g.perks = 100, 5, 10, { start = true }
+    g.life, g.casts = 1e11, 10000
+    A:Award()
+    check(A:TrophyCount() == 19 and #A.TROPHIES == 34 and not g.trophies.life13 and not g.trophies.tackleall and not g.trophies.perkall,
+        "angler trophies: the first nineteen can be earned in an evening; fifteen more take the long game")
+    do
+        local keepTackle, keepPerks = g.tackle, g.perks
+        g.own = { hunter = 1, net = 200, kraken = 1, rift = 1 }
+        g.schools, g.voyages, g.earned, g.life, g.casts = 500, 100, 1000, 1e18, 100000
+        g.tackle, g.perks = {}, {}
+        for _, tk in ipairs(A.TACKLE) do g.tackle[tk[1]] = true end
+        for _, k in ipairs(A.PERKS) do g.perks[k[1]] = true end
+        local won = A:Award()
+        check(#won == 15 and A:TrophyCount() == #A.TROPHIES, "angler trophies: all 34 can be earned")
+        g.tackle.rift3 = nil
+        g.trophies.tackleall = nil
+        check(#A:Award() == 0, "angler trophies: (every piece of tackle means every one)")
+        g.tackle, g.perks = keepTackle, keepPerks
+        g.own = { hunter = 1, net = 100 }
+        g.schools, g.voyages, g.earned, g.life, g.casts = 100, 5, 10, 1e11, 10000
+    end
+    local keys = {}
+    for _, t in ipairs(A.TROPHIES) do keys[t[1]] = (keys[t[1]] or 0) + 1 end
+    local unique = true
+    for _, c in pairs(keys) do if c ~= 1 then unique = false end end
+    check(unique, "angler trophies: (each its own)")
+
+    -- prestige: pearls, perks, rank
+    g = fresh()
+    check(A.Pearls(999999) == 0 and A.Pearls(1000000) == 1 and A.Pearls(7999999) == 1 and A.Pearls(8000000) == 2 and A.Pearls(27e6) == 3 and A.Pearls(1e9) == 10
+        and A.Pearls(-5) == 0 and A.PearlAt(1) == 1000000 and A.PearlAt(3) == 27000000,
+        "angler prestige: a million fish is one pearl, eight million two, twenty-seven million three")
+    g.own, g.fish, g.total, g.tackle, g.t = { rod = 3 }, 500, 500, { hooks = true }, ns.Now()
+    check(A:Sell() == false and g.fish == 500 and A:Owned(1) == 3, "angler prestige: a voyage too small to earn a pearl can't be sold")
+    g.total, g.life = 8000000, 8000000
+    A.buff = { kind = "frenzy", from = ns.Now(), till = ns.Now() + 30 }
+    check(A:Sell() == 2 and g.pearls == 2 and g.earned == 2 and g.fish == 0 and g.total == 0 and A:Owned(1) == 0 and not A:Has("hooks")
+        and g.life == 8000000 and g.voyages == 1 and A.buff == nil, "angler prestige: selling starts the voyage over (crew, tackle), keeps the pearls")
+    g.own = { rod = 1 }
+    check(near(A:Bonus(), 1.2) and near(A:Rate(), 0.2 * 1.2) and near(A:CastValue(), 1.2), "angler prestige: each pearl earned is 10% more of everything")
+    check(A:Rank() == "Mate", "angler prestige: a pearl makes a Mate of a Deckhand")
+    g.earned = 0
+    check(A:Rank() == "Deckhand", "angler prestige: (who starts as one)")
+    g.earned = 250
+    check(A:Rank() == "Admiral", "angler prestige: and 200 an Admiral")
+    -- perks: bought with pearls in hand, kept for good; the bonus is from pearls EARNED
+    g.earned, g.pearls, g.own = 2, 2, {}
+    check(A:BuyPerk("legs") == false and A:BuyPerk("nonsense") == false, "angler prestige: a perk costs pearls")
+    check(A:BuyPerk("start") == true and g.pearls == 0 and g.earned == 2 and A:Perk("start") and near(A:Bonus(), 1.2) and A:Owned(1) == 25 and A:Owned(2) == 10
+        and A:Owned(3) == 0 and A:BuyPerk("start") == false and A.PERK.start[3]:find("25 Fishing Rods and 10 Cast Nets", 1, true),
+        "angler prestige: Head Start is 25 rods and 10 nets now and every voyage, and spending pearls keeps their bonus")
+    g.own = { rod = 40 }
+    A:Outfit()
+    check(A:Owned(1) == 40 and A:Owned(2) == 10, "angler prestige: (it never takes crew away)")
+    g.own = { rod = 25, net = 10 }
+    g.pearls = 5000
+    for _, k in ipairs(A.PERKS) do A:BuyPerk(k[1]) end
+    local spent = 0
+    for _, k in ipairs(A.PERKS) do if k[1] ~= "start" then spent = spent + k[4] end end
+    -- (the five dear ones have their own checks above: these are about the first seven)
+    for _, key in ipairs({ "friends", "ghooks", "room", "wright", "call" }) do g.perks[key] = nil end
+    g.own.boat, g.own.trawl = nil, nil
+    check(g.pearls == 5000 - spent and A:Has("hooks") and A:Has("barbs") and A:Has("charts") and not A:Has("hold"), "angler prestige: Sea Legs brings three pieces of tackle aboard")
+    check(A:TackleCost("hold") == 12500 and A:TackleCost("sonar") == 500000 and A:TackleCost("nonsense") == nil, "angler prestige: and halves what the rest costs")
+    g.fish = 12500
+    check(A:BuyTackle("hold") == true and g.fish == 0 and A:BuyTackle("lanterns") == false, "angler prestige: (that's what is paid)")
+    g.tackle.hold = nil
+    check(A:Price(1, 0) == math.floor(15 * 0.75 + 0.5) and A:FrenzyMult() == 15 and A:PearlBonus() == 0.15 and A:AwayRate() == 0.75 and A:AwayCap() == 16 * 3600,
+        "angler prestige: cheaper crew, a bigger frenzy, brighter pearls, and a crew that fishes faster and twice as long while away")
+    g.tackle.cold = true
+    check(A:AwayCap() == 48 * 3600, "angler prestige: (twice as long as the hold allows, whatever the hold)")
+    g.tackle.cold = nil
+    do
+        local keep = g.perks
+        g.perks = {}
+        A.Random = function() return 0.5 end
+        local plain = A:NextSchoolIn()
+        local cost = A:TackleCost("hold")
+        g.perks = keep
+        check(near(A:NextSchoolIn(), plain / 1.5) and cost == 25000 and A:AwayCap() == 2 * 8 * 3600, "angler prestige: Keen Lookout brings schools half again as often")
+        g.tackle.spotter = true
+        check(near(A:NextSchoolIn(), plain / 3), "angler prestige: (on top of a Spotter)")
+        g.tackle.spotter = nil
+        A.Random = realRandom
+    end
+    g.tackle.shift = true
+    check(A:AwayRate() == 1, "angler prestige: (never faster than full speed)")
+    A.Random = function() return 0 end
+    A.school, A.schoolAt = nil, t0
+    g.own = { rod = 10 }
+    check(A:Watch(t0).till == t0 + 2 * A.SCHOOL_SHOWS, "angler prestige: Keen Lookout keeps a school twice as long")
+    check(A:CatchSchool(t0):find("15x fish", 1, true), "angler prestige: (and the frenzy says fifteen times)")
+    A.Random = realRandom
+    g.total = 1000000
+    A:Sell()
+    check(A:Owned(1) == 25 and A:Owned(2) == 10 and A:Has("hooks") and A:Has("barbs") and A:Has("charts") and not A:Has("shift") and A:Perk("bulk"),
+        "angler prestige: perks outlast a voyage, and outfit the next")
+    for _, k in ipairs(A.PERKS) do check(#k[3] <= 58, "angler prestige: " .. k[2] .. "'s line fits its row") end
+    -- an old save from before perks: pearls in hand count as earned
+    ns.db.games.angler = { fish = 0, total = 0, life = 0, own = {}, pearls = 3, t = ns.Now() }
+    check(A.Saved().earned == 3 and near(A:Bonus(), 1.3), "angler prestige: a save from before perks keeps its pearls' worth")
+
+    -- the screen
+    g = fresh()
+    SlashCmdList.POGRAID("angler")
+    local last = Games.MODES[#Games.MODES]
+    check(Games.mode == "angler" and Games.views.angler:IsShown() and not Games.views.lode:IsShown() and last.key == "angler" and last.label == "Angler"
+        and Games.MODES[6].key == "duels", "angler: /pog angler opens its tab, the last on Games")
+    local crew, side, rows, tabs = A.crew, A.side, A.rows, A.tabs
+    local pl, pt = STUB.rect(Games.page)
+    local cl, ct, cw, ch = STUB.rect(crew)
+    local sl, st, sw, sh = STUB.rect(side)
+    check(near(cl - pl, 12) and cw == 560 and near(sl - (cl + cw), 8) and near(sl + sw, pl + 890) and near(st, ct) and sh == ch
+        and near(pt - (ct - ch), ns.PAGE_H - 12), "angler layout: the list and the catch fill the page side by side")
+    local r1l, r1t, r1w = STUB.rect(rows[1])
+    local _, r2t = STUB.rect(rows[2])
+    local _, r6t, _, r6h = STUB.rect(rows[6])
+    local bl2, _, bw2 = STUB.rect(rows[1].buy)
+    check(#rows == 6 and near(r1l - cl, 10) and near(cl + cw - (r1l + r1w), 10) and near(r1t - r2t, A.layout.ROW_H + A.layout.ROW_GAP)
+        and r6t - r6h >= ct - ch + 4 and near(r1l + r1w - (bl2 + bw2), 12), "angler layout: six rows inside the card, each with its button at the right")
+    local t1l, t1t, tw = STUB.rect(tabs[1])
+    local t2l = STUB.rect(tabs[2])
+    local t4l = STUB.rect(tabs[5])
+    local ql, qt, qw = STUB.rect(A.qtyBtn)
+    check(#tabs == 5 and tabs[5].label:GetText() == "Guild" and near(t1l - cl, 12) and near(t2l - (t1l + tw), A.layout.TAB_GAP) and near(ql + qw, cl + cw - 12) and near(qt, t1t) and t4l + tw < ql
+        and tabs[1].label:GetText() == "Crew" and tabs[3].label:GetText() == "Perks", "angler layout: Crew, Tackle, Perks and Trophies along the top, Buy at the right")
+    -- crew
+    g.own, g.fish, g.total, g.t = { rod = 10 }, 100, 100, ns.Now()
+    A.tab, A.qty, A.offset = "crew", 1, 0
+    A:Refresh()
+    g.trophies = {}
+    A:Refresh()
+    check(rows[1].name:GetText() == "Fishing Rod" and rows[1].owned:GetText() == "x10" and rows[1].rate:GetText() == "0.4 fish/sec each"
+        and rows[1].next:GetText() == "Doubles at 25" and rows[1].buy.label:GetText() == A.Short(A:Cost(1))
+        and rows[2].owned:GetText() == "" and rows[2].buy.label:GetText() == "120" and rows[6]:IsShown(), "angler: a crew row says what you own, what each catches and what the next costs")
+    g.trophies = {}
+    check(rows[1].buy:IsEnabled() and not rows[2].buy:IsEnabled() and side.fish:GetText() == "100" and side.pearls:GetText() == "none yet"
+        and not side.sell:IsEnabled() and side.pearlHint:GetText():find("Catch 1.00M fish", 1, true) and side.rank:GetText() == "Deckhand"
+        and A.qtyBtn:IsShown() and A.qtyBtn.label:GetText() == "Buy 1" and not A.summary:IsShown() and tabs[1].selected and not tabs[2].selected,
+        "angler: what you can afford is lit, and the card says your rank and how far the first pearl is")
+    STUB.Script(rows[1].buy, "OnClick")
+    check(A:Owned(1) == 11 and g.fish < 100, "angler: the button buys one")
+    STUB.Script(A.qtyBtn, "OnClick")
+    g.fish = 100000
+    A:Refresh()
+    check(A.qty == 10 and A.qtyBtn.label:GetText() == "Buy 10" and rows[1].buy.label:GetText() == "10 for " .. A.Short(A:Cost(1, 10)), "angler: Buy 10 prices ten")
+    STUB.Script(rows[1].buy, "OnClick")
+    check(A:Owned(1) == 21, "angler: and buys ten")
+    STUB.Script(A.qtyBtn, "OnClick")
+    g.fish = 200
+    A:Refresh()
+    local can = A:Affordable(2)
+    check(A.qty == "max" and A.qtyBtn.label:GetText() == "Buy max" and can == 1 and rows[2].buy.label:GetText() == A.Short(A:Cost(2, 1)) and rows[2].buy:IsEnabled()
+        and not rows[3].buy:IsEnabled(), "angler: Buy max prices as many as you can afford (one at least, to show what's next)")
+    STUB.Script(A.qtyBtn, "OnClick")
+    check(A.qty == 1, "angler: (and back to one)")
+    -- the wheel reaches the last two kinds
+    for _ = 1, 12 do STUB.Script(crew, "OnMouseWheel", -1) end
+    check(A.offset == #A.CREW - 6 and rows[6].name:GetText() == "Abyssal Rift" and rows[1].name:GetText() == "Goblin Submarine" and rows[6].buy.label:GetText() == "18.00Q",
+        "angler: the wheel scrolls to the biggest crew, and stops")
+    for _ = 1, 12 do STUB.Script(crew, "OnMouseWheel", 1) end
+    check(A.offset == 0, "angler: (and back)")
+    -- casting
+    g.own, g.fish, g.tackle, g.trophies = { rod = 1 }, 0, {}, {}
+    STUB.Script(side.cast, "OnClick")
+    check(near(g.fish, 1) and side.note:GetText() == "+1", "angler: Cast lands a fish and says so")
+    -- tackle tab
+    g.fish = 150
+    STUB.Script(tabs[2], "OnClick")
+    check(A.tab == "tackle" and tabs[2].selected and not A.qtyBtn:IsShown() and A.summary:IsShown() and A.summary:GetText() == "Resets when you sell"
+        and rows[1].name:GetText() == "Sharp Hooks" and rows[1].rate:GetText() == "Casts catch 2x." and rows[1].buy.label:GetText() == "100"
+        and rows[1].buy:IsEnabled() and rows[2].name:GetText() == "Better Fishing Rod" and rows[2].buy.label:GetText() == "600" and rows[3].name:GetText() == "Better Cast Net"
+        and rows[4].name:GetText() == "Barbed Hooks" and not rows[2].buy:IsEnabled() and rows[1].owned:GetText() == "",
+        "angler: the Tackle tab lists what's for sale, cheapest first")
+    STUB.Script(rows[1].buy, "OnClick")
+    check(A:Has("hooks") and rows[1].name:GetText() == "Better Fishing Rod", "angler: buying one puts it aboard")
+    for _ = 1, 60 do STUB.Script(crew, "OnMouseWheel", -1) end
+    check(rows[6].name:GetText() == "Sharp Hooks" and rows[6].tag:GetText() == "Owned" and not rows[6].buy:IsShown() and rows[6]:GetAlpha() < 1,
+        "angler: (it goes to the bottom of the list, marked)")
+    -- perks tab
+    g.pearls, g.earned = 3, 3
+    STUB.Script(tabs[3], "OnClick")
+    check(A.tab == "perks" and A.offset == 0 and A.summary:GetText() == "3 pearls to spend" and rows[1].name:GetText() == "Head Start"
+        and rows[1].buy.label:GetText() == "2 pearls" and rows[1].buy:IsEnabled() and not rows[2].buy:IsEnabled() and rows[1]:GetAlpha() == 1,
+        "angler: the Perks tab lists what pearls buy")
+    STUB.Script(rows[1].buy, "OnClick")
+    check(A:Perk("start") and g.pearls == 1 and A.summary:GetText() == "1 pearl to spend" and rows[1].tag:GetText() == "Yours forever" and not rows[1].buy:IsShown()
+        and side.pearls:GetText() == "3 earned  (+30%)" and side.rank:GetText() == "Mate", "angler: a perk bought is yours, and the pearls earned still count")
+    -- trophies tab
+    g.trophies = {}
+    g.life, g.casts = 1000, 0
+    STUB.sounds = {}
+    STUB.Script(tabs[4], "OnClick")
+    check(A.tab == "trophies" and A.summary:GetText() == ("%d of 34, +%d%% fish"):format(A:TrophyCount(), A:TrophyCount()) and A:TrophyCount() >= 1 and rows[1].name:GetText() == "First Catch" and rows[1].tag:GetText() == "+1%"
+        and rows[2].tag:GetText() == "" and rows[2]:GetAlpha() < 1 and not rows[1].buy:IsShown() and side.note:GetText():find("Trophy: First Catch", 1, true)
+        and STUB.sounds[#STUB.sounds] == SOUNDKIT.IG_QUEST_LIST_COMPLETE, "angler: a trophy is called out when it's earned, and the Trophies tab shows them")
+    STUB.Script(tabs[1], "OnClick")
+    -- a school on the page
+    A.Random = function() return 0 end
+    g.own, g.tackle, g.t = { rod = 10 }, {}, ns.Now()
+    A.school, A.buff, A.schoolAt = nil, nil, ns.Now()
+    A.note = nil
+    check(not side.school:IsShown() and not side.buff:IsShown(), "angler: no school most of the time")
+    STUB.Script(crew, "OnUpdate", 1.1)
+    check(side.school:IsShown() and side.school.label:GetText() == "School of fish! Grab it", "angler: a school shows as a button while the page is up")
+    STUB.Script(side.school, "OnClick")
+    check(not side.school:IsShown() and side.buff:IsShown() and side.buff:GetText() == "Feeding frenzy: 30s" and side.note:GetText():find("Feeding frenzy!", 1, true)
+        and side.rate:GetText() == per and true or side.rate:GetText():find("/sec", 1, true) ~= nil, "angler: clicking it starts the frenzy, with its time left")
+    check(side.rate:GetText() == ("%.1f/sec"):format(A:Rate() * 7) or side.rate:GetText() == A.Short(A:Rate() * 7) .. "/sec", "angler: (and the catch shown is the frenzied one)")
+    A.buff, A.school = nil, nil
+    A.Random = realRandom
+    -- back after a while
+    g.t = ns.Now() - 3600
+    A.note = nil
+    A:Refresh()
+    check(side.note:GetText():find("while you were gone", 1, true) and g.t == ns.Now(), "angler: coming back says what the crew caught")
+    local before2 = g.fish
+    g.t = ns.Now() - 10
+    A.schoolAt = ns.Now() + 9999
+    STUB.Script(crew, "OnUpdate", 0.5)
+    check(g.fish == before2, "angler: (the page doesn't count every frame)")
+    STUB.Script(crew, "OnUpdate", 0.6)
+    check(g.fish > before2, "angler: the page counts the catch on once a second")
+    -- selling
+    g.total, g.t = 8000000, ns.Now()
+    A:Refresh()
+    check(side.sell:IsEnabled() and side.pearlHint:GetText():find("Sell now for 2 pearls (next one at 27.00M fish)", 1, true), "angler: with pearls to earn, Sell the catch lights up")
+    local had = g.earned
+    STUB.Script(side.sell, "OnClick")
+    check(g.earned == had and side.sell.armed, "angler: selling wants a second click")
+    STUB.Script(side.sell, "OnClick")
+    check(g.earned == had + 2 and g.total == 0 and A:Owned(1) == 25 and A:Owned(2) == 10 and side.note:GetText() == "Sold for 2 pearls. Back out you go.",
+        "angler: and then starts the voyage over (with Head Start's rods)")
+
+    -- the guild's board (Jake: "also a leaderboard")
+    do
+        local Sync = ns.Sync
+        local me = Sync:Me()
+        local store = Sync:Store("angler")
+        check(Sync:GuildName() ~= nil and type(store) == "table" and Sync.collections.angler.code == "v", "angler board: a collection of its own")
+        for k in pairs(store) do store[k] = nil end
+        g = fresh()
+        g.life = 999
+        check(A:Publish() == false and store[me] == nil, "angler board: nobody's on it before a thousand fish")
+        g.life = 5000.7
+        check(A:Publish() == true and store[me].life == 5000 and store[me].earned == 0 and store[me].author == me and store[me].id == me,
+            "angler board: then our lifetime catch and pearls go to the guild, in whole fish")
+        check(A:Publish() == false and A:Publish(true) == false, "angler board: nothing new, nothing sent")
+        g.life = 9000
+        check(A:Publish() == false and store[me].life == 5000, "angler board: not more often than every quarter of an hour")
+        check(A:Publish(true) == true and store[me].life == 9000, "angler board: (a voyage sold goes out at once)")
+        g.life = 12000
+        store[me].t = ns.Now() - A.PUBLISH_EVERY
+        check(A:Publish() == true and store[me].life == 12000, "angler board: and again once the quarter of an hour is up")
+        g.life, g.earned = 123456789012345678901, 7
+        local sent = store[me]
+        check(A:Publish(true) == true and store[me].life == 1.23456789012e20 and tonumber(ns.Sync.Escape(store[me].life)) == store[me].life
+            and Sync.collections.angler.valid({ id = me, author = me, by = me, life = store[me].life, earned = 7 }), "angler board: a huge catch is kept to twelve figures, which is what goes over the wire")
+        g.life = 1e80
+        check(A:Publish(true) == true and store[me].life == A.BOARD_MAX / 10 and store[me].earned == 7, "angler board: a silly number is capped")
+        A.share = false
+        g.earned = 8
+        check(A:Publish(true) == false and store[me].earned == 7, "angler board: sharing can be switched off")
+        A.share = true
+        local valid = Sync.collections.angler.valid
+        local function rec(over)
+            local r = { id = "Ann-Realm", author = "Ann-Realm", by = "Ann-Realm", life = 5000, earned = 2 }
+            for k, v in pairs(over or {}) do r[k] = v end
+            return r
+        end
+        check(valid(rec()) and not valid(rec({ by = "Bob-Realm" })) and not valid(rec({ id = "Bob-Realm" })) and not valid(rec({ life = -1 }))
+            and not valid(rec({ life = 1.5 })) and not valid(rec({ life = A.BOARD_MAX })) and not valid(rec({ earned = -1 }))
+            and not valid(rec({ earned = 0.5 })) and not valid(rec({ earned = 1e6 })), "angler board: only your own record, with whole, sane numbers")
+        local isOwn = false
+        for _, name in ipairs(Sync.OWN) do if name == "angler" then isOwn = true end end
+        check(isOwn, "angler board: the record follows a renamed character")
+        store["Ann-Realm"] = { id = "Ann-Realm", author = "Ann-Realm", life = 9e9, earned = 52, t = 1 }
+        store["Bob-Realm"] = { id = "Bob-Realm", author = "Bob-Realm", life = 9e9, earned = 0, t = 1 }
+        store["Cy-Realm"] = { id = "Cy-Realm", author = "Cy-Realm", life = 1e16, earned = 0, t = 1, deleted = true }
+        g.life, g.earned = 2000, 1
+        A:Publish(true)
+        local lb = A:Leaderboard()
+        check(#lb == 3 and lb[1].author == "Ann-Realm" and lb[2].author == "Bob-Realm" and lb[3].author == me, "angler board: most fish ever first (names break a tie), the deleted left out")
+        check(A.RankOf(0) == "Deckhand" and A.RankOf(1) == "Mate" and A.RankOf(52) == "Captain" and A.RankOf(200) == "Admiral" and A.RankOf(nil) == "Deckhand"
+            and A:Rank() == "Mate", "angler board: anyone's rank comes from their pearls")
+        -- its tab
+        ns.Editor:ShowTab("games")
+        Games:SetMode("angler")
+        STUB.Script(tabs[5], "OnClick")
+        check(A.tab == "guild" and tabs[5].selected and rows[1]:IsShown() and rows[1].name:GetText() == "1. Ann" and rows[1].rate:GetText() == "Captain, 52 pearls"
+            and rows[1].tag:GetText() == "9.00B fish" and rows[1].owned:GetText() == "" and not rows[1].buy:IsShown() and rows[3].owned:GetText() == "you"
+            and rows[3].rate:GetText() == "Mate, 1 pearl" and rows[3].tag:GetText() == "2,000 fish" and not rows[4]:IsShown()
+            and A.summary:IsShown() and A.summary:GetText() == "Most fish ever" and not A.qtyBtn:IsShown() and not A.empty:IsShown(),
+            "angler board: the Guild tab lists everyone, with rank, pearls and fish")
+        check(rows[1].icon:GetTexture() ~= rows[2].icon:GetTexture(), "angler board: (the leader has a pearl for a picture)")
+        for k in pairs(store) do store[k] = nil end
+        A:Refresh()
+        check(not rows[1]:IsShown() and A.empty:IsShown() and A.empty:GetText():find("Catch 1,000 fish", 1, true), "angler board: an empty board says how to get on it")
+        STUB.Script(tabs[1], "OnClick")
+        check(not A.empty:IsShown() and rows[1]:IsShown(), "angler board: (only on its own tab)")
+        -- the page tells the guild as it goes, and when a voyage is sold
+        g = fresh()
+        g.life, g.total, g.t = 5e6, 1e6, ns.Now()
+        STUB.Script(crew, "OnUpdate", 1.1)
+        check(store[me] and store[me].life >= 5e6 and store[me].earned == 0, "angler board: the page publishes as it counts")
+        STUB.Script(side.sell, "OnClick")
+        STUB.Script(side.sell, "OnClick")
+        check(store[me].earned == 1, "angler board: selling publishes the pearl at once")
+        for k in pairs(store) do store[k] = nil end
+    end
+
+    -- the pop-out (Jake: "a pop out menu that we can click to get fish without the addon open")
+    do
+        g = fresh()
+        check(A.pop == nil and side.pop.label:GetText() == "Pop out", "angler pop-out: built when first asked for")
+        A:Refresh()
+        SlashCmdList.POGRAID("fish")
+        local pop = A.pop
+        check(pop ~= nil and pop:IsShown() and pop:GetParent() == UIParent and pop.title == nil and #pop.rows == 5
+            and pop.fish:GetText() == "0" and pop.rate:GetText() == "0.0/sec" and not pop.school:IsShown() and not pop.buff:IsShown(),
+            "angler pop-out: /pog fish opens a small window of its own")
+        local pl, pt, pw, ph = STUB.rect(pop)
+        local cl, ct, cw = STUB.rect(pop.cast)
+        local r1l, r1t, r1w = STUB.rect(pop.rows[1])
+        local r5l, r5t, _, r5h = STUB.rect(pop.rows[5])
+        local _, ft, _, fh = STUB.rect(pop.fish)
+        local fl, _, fw = STUB.rect(pop.fish)
+        local _, ct2, _, ch2 = STUB.rect(pop.cast)
+        local _, rt, _, rh = STUB.rect(pop.rate)
+        -- 0.20.0, second go (Jake: "it looks clunky"): a slim card with no title bar, Cast at the left, the count beside it
+        do
+            local L = A.layout
+            local xl, xt, xw, xh = STUB.rect(pop.close)
+            local ml, mt, mw = STUB.rect(pop.big)
+            local sl, st, sw = STUB.rect(pop.shop)
+            check(near(pw, L.POP_W) and near(pw, 220) and near(ph, A.PopHeight(true)) and near(cl - pl, 8) and near(pt - ct, 8) and near(cw, L.POP_CAST) and near(ch2, L.POP_CAST)
+                and near(fl - pl, L.POP_TEXT_X) and fl >= cl + cw + 8 and ft <= pt - 8 and rt - rh >= pt - L.POP_HEAD and ct - ch2 >= pt - L.POP_HEAD
+                and near(r1l - pl, 8) and near(pl + pw - (r1l + r1w), 8) and r1t <= pt - L.POP_HEAD and r5t - r5h >= pt - ph + 4,
+                "angler pop-out: a slim card: Cast at the left, the count and rate beside it, five rows under the head")
+            check(near(pl + pw - (xl + xw), 6) and near(pt - xt, 6) and near(xw, L.POP_MINI) and near(xh, L.POP_MINI) and near(xl - (ml + mw), 3) and near(mt, xt) and near(mw, L.POP_MINI)
+                and near(ml - (sl + sw), 3) and near(st, xt) and near(sw, L.POP_MINI) and fl + fw <= sl and #pop.controls == 3,
+                "angler pop-out: three small controls in the corner: shop, maximize, shut")
+            local e = pop.cast.edges
+            check(pop.cast.icon:GetTexture() == "Interface\\Icons\\Trade_Fishing" and pop.cast.label:GetText() == "Cast" and pop.cast.label:GetParent() == pop.cast
+                and pop.cast.label.__fontSize == 10 and pop.cast.shade == nil and #e == 4
+                and e[1]:GetHeight() == L.POP_EDGE and e[2]:GetHeight() == L.POP_EDGE and e[3]:GetWidth() == L.POP_EDGE and e[4]:GetWidth() == L.POP_EDGE and L.POP_EDGE == 1
+                and A.CAST_EDGE[1] < 1 and A.CAST_EDGE[2] < 0.82 and e[1].__vertex[1] == 0.6,
+                "angler pop-out: Cast is a fishing icon with a small quiet Cast on it (no dark strip), in a thin muted frame")
+            local dull = e[1].__vertex[3]
+            GameTooltip:Hide()
+            STUB.Script(pop.cast, "OnEnter")
+            check(not GameTooltip.shown and e[1].__vertex[3] > dull and e[4].__vertex[2] == 1, "angler pop-out: under the mouse its frame warms up, with no tooltip (it says Cast on it)")
+            STUB.Script(pop.cast, "OnLeave")
+            check(e[1].__vertex[3] == dull and not GameTooltip.shown, "angler pop-out: (and settles again)")
+            -- the click answers: the icon dips and flashes, and "+1" floats up off it
+            local function shownFloats()
+                local n, first = 0, nil
+                for _, x in ipairs(pop.floats) do if x:IsShown() then n = n + 1 first = first or x end end
+                return n, first
+            end
+            check(shownFloats() == 0 and pop.press == 0 and #pop.floats == L.POP_FLOATS, "angler pop-out: (nothing in the air before a cast)")
+            check(pop.floats[1]:GetParent() == pop.floatLayer and pop.floatLayer:GetParent() == pop and pop.floatLayer:GetFrameLevel() > pop.cast:GetFrameLevel()
+                and pop.floats[1].__fontSize == 15, "angler pop-out: the +1s are drawn on a layer over the Cast icon, a size bigger")
+            STUB.Script(pop.cast, "OnClick")
+            local n, fl1 = shownFloats()
+            local _, y0 = STUB.rect(fl1)
+            check(pop.press == 1 and n == 1 and fl1:GetText() == "+1" and fl1:GetAlpha() == 1, "angler pop-out: a cast presses the icon and floats a +1")
+            STUB.Script(pop, "OnUpdate", L.POP_PRESS / 2)
+            local il, it2, iw = STUB.rect(pop.cast.icon)
+            local _, y1 = STUB.rect(fl1)
+            check(near(pop.press, 0.5) and near(il - cl, 2.5) and near(ct - it2, 2.5) and near(pop.cast.flash:GetAlpha(), 0.225) and y1 > y0 and fl1:GetAlpha() < 1 and fl1:IsShown(),
+                "angler pop-out: the icon dips and flashes, the +1 rises and fades")
+            STUB.Script(pop, "OnUpdate", L.POP_PRESS)
+            il, it2, iw = STUB.rect(pop.cast.icon)
+            check(pop.press == 0 and near(il, cl) and near(it2, ct) and pop.cast.flash:GetAlpha() == 0 and fl1:IsShown(), "angler pop-out: the icon springs back")
+            STUB.Script(pop, "OnUpdate", L.POP_FLOAT_LIFE)
+            check(shownFloats() == 0, "angler pop-out: the +1 is gone in under a second")
+            for _ = 1, L.POP_FLOATS + 3 do STUB.Script(pop.cast, "OnClick") end
+            check(shownFloats() == L.POP_FLOATS and g.casts == L.POP_FLOATS + 4, "angler pop-out: fast clicking keeps six in the air, never more")
+            STUB.Script(pop, "OnUpdate", L.POP_FLOAT_LIFE)
+            -- the count runs up between the seconds
+            g = fresh()
+            g.fish, g.own, g.t = 100, { net = 10 }, ns.Now()
+            A:Refresh()
+            local rate = A:Rate()
+            A.wait = 0.5
+            STUB.Script(pop, "OnUpdate", 0)
+            check(rate == 30 and pop.fish:GetText() == "115" and g.fish == 100, "angler pop-out: the count runs up between the once-a-second counts (the fish in hand don't change)")
+            A.wait = 0
+            STUB.Script(pop, "OnUpdate", 0)
+            check(pop.fish:GetText() == "100", "angler pop-out: (from the last count)")
+            -- the corner controls are faint until the mouse is over the card
+            pop.reveal = 0
+            STUB.Script(pop, "OnUpdate", 0.05)
+            check(near(pop.close:GetAlpha(), 0.35) and near(pop.big:GetAlpha(), 0.35), "angler pop-out: the corner controls sit back")
+            pop.IsMouseOver = function() return true end
+            STUB.Script(pop, "OnUpdate", 0.075)
+            local half = pop.close:GetAlpha()
+            STUB.Script(pop, "OnUpdate", 0.2)
+            check(half > 0.35 and half < 1 and pop.close:GetAlpha() == 1 and pop.shop:GetAlpha() == 1, "angler pop-out: and come up when the mouse is over it")
+            pop.IsMouseOver = nil
+            STUB.Script(pop, "OnUpdate", 0.5)
+            check(near(pop.close:GetAlpha(), 0.35), "angler pop-out: (and sit back again)")
+            g = fresh()
+            A:Refresh()
+        end
+        -- the shop folds away, and the window with it (Jake: "collapse and open the store menu", "compact the menu when the shop is closed")
+        do
+            local L = A.layout
+            STUB.Script(pop.shop, "OnEnter")
+            check(pop.shop.tex:GetTexture() == A.SHOP_ART.open and pop.rule:IsShown() and near(pt - r1t, L.POP_LIST) and A:ShopOpen() and GameTooltip.lines[1] == "Hide the shop",
+                "angler pop-out: the corner's shop button shows a minus while the shop is open")
+            STUB.Script(pop.shop, "OnLeave")
+            STUB.Script(pop.shop, "OnClick")
+            local _, pt2, _, ph2 = STUB.rect(pop)
+            check(not A:ShopOpen() and ns.db.games.anglerShopShut == true and pop.shop.tex:GetTexture() == A.SHOP_ART.shut and not pop.rows[1]:IsShown() and not pop.rows[5]:IsShown()
+                and not pop.rule:IsShown() and near(ph2, A.PopHeight(false)) and ph2 < ph - 100 and near(ph2, L.POP_HEAD) and near(ph2, 64) and near(pt2, pt),
+                "angler pop-out: shut, the rows go and the card shrinks to the count and Cast, its top where it was")
+            STUB.Script(pop.shop, "OnEnter")
+            check(GameTooltip.lines[1] == "Open the shop", "angler pop-out: (its button says so)")
+            STUB.Script(pop.shop, "OnLeave")
+            -- something you can afford behind the folded shop: its button glows gold
+            STUB.Script(pop, "OnUpdate", 0.01)
+            check(not pop.canBuy and pop.shop.tex.__vertex[2] == 1, "angler pop-out: (no glow with nothing to buy)")
+            g.fish = 20
+            A:Refresh()
+            STUB.Script(pop, "OnUpdate", 0.01)
+            check(pop.canBuy and pop.shop.tex.__vertex[2] == 0.82 and pop.shop:GetAlpha() >= 0.6, "angler pop-out: the shop button glows when you can afford something in it")
+            g.fish = 0
+            A:Refresh()
+            STUB.Script(pop, "OnUpdate", 0.01)
+            check(not pop.canBuy and pop.shop.tex.__vertex[2] == 1, "angler pop-out: (and stops when you can't)")
+            STUB.Script(pop.cast, "OnClick")
+            check(g.casts == 1 and pop.fish:GetText() == "1" and not pop.rows[1]:IsShown(), "angler pop-out: (Cast still works with the shop shut)")
+            g.fish, g.total, g.life, g.casts = 0, 0, 0, 0
+            A:TogglePop()
+            A:TogglePop()
+            local _, _, _, ph3 = STUB.rect(pop)
+            check(near(ph3, A.PopHeight(false)) and not pop.rows[1]:IsShown(), "angler pop-out: it stays shut when the pop-out is opened again")
+            STUB.Script(pop.shop, "OnClick")
+            local _, pt4, _, ph4 = STUB.rect(pop)
+            check(A:ShopOpen() and ns.db.games.anglerShopShut == nil and pop.rows[1]:IsShown() and pop.rows[5]:IsShown() and near(ph4, ph) and near(pt4, pt)
+                and pop.shop.tex:GetTexture() == A.SHOP_ART.open, "angler pop-out: and opens again")
+            g.fish = 20
+            A:Refresh()
+            STUB.Script(pop, "OnUpdate", 0.01)
+            check(pop.canBuy and pop.shop.tex.__vertex[2] == 1, "angler pop-out: (no glow while the shop is open: you can see it)")
+            g.fish = 0
+            A:Refresh()
+        end
+        -- cast
+        STUB.sounds = {}
+        STUB.Script(pop.cast, "OnClick")
+        check(g.casts == 1 and g.fish == 1 and pop.fish:GetText() == "1" and STUB.sounds[1] == SOUNDKIT.IG_BACKPACK_COIN_SELECT, "angler pop-out: Cast catches a fish and the count follows")
+        -- buy
+        check(pop.rows[1].name:GetText() == "Fishing Rod" and pop.rows[1].buy.label:GetText() == "15" and not pop.rows[1].buy:IsEnabled()
+            and pop.rows[2].name:GetText() == "Cast Net" and pop.rows[1].icon:GetTexture() == "Interface\\Icons\\" .. A.CREW[1][5],
+            "angler pop-out: the list sells the crew, greyed until you can pay")
+        STUB.Script(pop.rows[1].buy, "OnClick")
+        check(A:Owned(1) == 0, "angler pop-out: (a greyed button buys nothing)")
+        g.fish = 20
+        A:Refresh()
+        STUB.Script(pop.rows[1].buy, "OnClick")
+        check(A:Owned(1) == 1 and g.fish == 5 and pop.rows[1].name:GetText() == "Fishing Rod" and pop.rows[1].count:GetText() == "1" and pop.rows[2].count:GetText() == ""
+            and pop.rows[1].count:GetParent() == pop.rows[1] and pop.rows[1].buy.label:GetText() == "17" and pop.fish:GetText() == "5",
+            "angler pop-out: buying takes one, and the row says how many you have")
+        -- the count is a number on the icon, so a long name can't push it off the row (Jake: "deep sea rig is too long")
+        do
+            local il, it3, iw, ih = STUB.rect(pop.rows[1].icon)
+            local nl2, _, nw = STUB.rect(pop.rows[1].name)
+            local bl2 = STUB.rect(pop.rows[1].buy)
+            local kept = g.own
+            g.own = { rig = 123 }
+            A:Refresh()
+            check(pop.rows[5].name:GetText() == "Fishery" and pop.rows[5].count:GetText() == "", "angler pop-out: (rows without any show no number)")
+            STUB.Script(pop, "OnMouseWheel", -1)
+            check(pop.rows[5].name:GetText() == "Deep Sea Rig" and pop.rows[5].count:GetText() == "123" and nl2 + nw <= bl2 and nl2 >= il + iw + 6,
+                "angler pop-out: a Deep Sea Rig's count shows whole, on its icon, and the name ends before the price")
+            STUB.Script(pop, "OnMouseWheel", 1)
+            g.own = kept
+            A:Refresh()
+        end
+        STUB.Script(pop.rows[1], "OnEnter")
+        check(GameTooltip.shown and GameTooltip.lines[1] == "Fishing Rod" and GameTooltip.lines[2]:find("fish/sec each", 1, true), "angler pop-out: hovering a row says what it does")
+        STUB.Script(pop.rows[1], "OnLeave")
+        -- scroll to the tackle
+        -- Crew / Tackle / Perks over the shop (Jake: "add the tabs for crew, tackle, and perks")
+        do
+            local L = A.layout
+            local t1l, t1t, t1w, t1h = STUB.rect(pop.tabs[1])
+            local t2l = STUB.rect(pop.tabs[2])
+            local t3l, _, t3w = STUB.rect(pop.tabs[3])
+            local ppl, ppt, ppw = STUB.rect(pop)
+            local rr1l, rr1t, rr1w = STUB.rect(pop.rows[1])
+            local _, sst, _, ssh = STUB.rect(pop.shop)
+            check(#pop.tabs == 3 and pop.tabs[1].label:GetText() == "Crew" and pop.tabs[2].label:GetText() == "Tackle" and pop.tabs[3].label:GetText() == "Perks"
+                and pop.tabs[1].selected and not pop.tabs[2].selected and pop.tab == "crew", "angler pop-out: Crew, Tackle and Perks tabs, Crew first")
+            check(near(t1l, rr1l) and near(t3l + t3w, rr1l + rr1w) and near(t2l - (t1l + t1w), L.POP_TAB_GAP) and near(ppt - t1t, L.POP_TAB_Y) and t1t <= ppt - L.POP_HEAD - 4 and sst ~= nil and ssh ~= nil
+                and t1t - t1h >= rr1t + 4 and near(t1w, L.POP_TAB_W), "angler pop-out: the tabs span the list, between the head and the rows")
+            check(#A:PopItems() == #A.CREW and A:PopItems()[1].crew == 1 and #A:PopItems("perks") == #A.PERKS, "angler pop-out: the Crew tab lists the crew")
+            -- perks
+            STUB.Script(pop.tabs[3], "OnClick")
+            check(pop.tab == "perks" and pop.tabs[3].selected and not pop.tabs[1].selected and pop.rows[1].name:GetText() == "Head Start"
+                and pop.rows[1].buy.label:GetText() == "2 pearls" and not pop.rows[1].buy:IsEnabled() and pop.rows[1].tag:GetText() == ""
+                and pop.rows[1].icon:GetTexture() == "Interface\\Icons\\" .. A.PERKS[1][5], "angler pop-out: the Perks tab sells perks for pearls")
+            STUB.Script(pop.rows[1].buy, "OnClick")
+            check(not A:Perk("start"), "angler pop-out: (not without the pearls)")
+            g.pearls, g.earned = 3, 3
+            A:Refresh()
+            STUB.Script(pop.rows[1], "OnEnter")
+            check(GameTooltip.lines[1] == "Head Start" and GameTooltip.lines[2] == A.PERKS[1][3], "angler pop-out: (a perk says its line)")
+            STUB.Script(pop.rows[1], "OnLeave")
+            STUB.Script(pop.rows[1].buy, "OnClick")
+            check(A:Perk("start") and g.pearls == 1 and not pop.rows[1].buy:IsShown() and pop.rows[1].tag:GetText() == "Owned" and pop.rows[2].buy:IsShown()
+                and not pop.rows[2].buy:IsEnabled(), "angler pop-out: a perk bought says Owned")
+            g.pearls, g.earned, g.perks = 0, 0, {}
+            -- the shop shut: no tabs
+            STUB.Script(pop.shop, "OnClick")
+            check(not pop.tabs[1]:IsShown() and not pop.tabs[3]:IsShown(), "angler pop-out: the tabs fold away with the shop")
+            STUB.Script(pop.shop, "OnClick")
+            check(pop.tabs[1]:IsShown() and pop.tab == "perks", "angler pop-out: (and come back on the tab you left)")
+            -- tackle
+            STUB.Script(pop.tabs[2], "OnClick")
+            check(pop.tab == "tackle" and pop.offset == 0 and pop.rows[1].name:GetText() == "Sharp Hooks" and pop.rows[1].buy:IsShown() and pop.rows[1].tag:GetText() == ""
+                and not pop.empty:IsShown(), "angler pop-out: the Tackle tab lists the tackle left to buy")
+        end
+        local items = A:PopItems()
+        check(#items == #A.TACKLE and items[1].tackle[1] == "hooks" and items[2].tackle[1] == "rod2" and items[3].tackle[1] == "net2" and items[4].tackle[1] == "barbs"
+            and items[#items].tackle[1] == "rift3", "angler pop-out: cheapest first")
+        for _ = 1, 60 do STUB.Script(pop, "OnMouseWheel", -1) end
+        check(pop.offset == #items - 5 and pop.rows[5].name:GetText() == "Master Abyssal Rift" and pop.rows[5].buy.label:GetText() == "36.00Qi", "angler pop-out: the wheel scrolls it, and stops at the end")
+        g.fish = 1e20
+        A:Refresh()
+        STUB.Script(pop.rows[5].buy, "OnClick")
+        check(A:Has("rift3") and #A:PopItems() == #items - 1 and pop.rows[5].name:GetText() ~= "Master Abyssal Rift" and pop.rows[5]:IsShown(),
+            "angler pop-out: tackle bought leaves the list")
+        STUB.Script(pop.rows[5], "OnEnter")
+        check(GameTooltip.lines[1] == pop.rows[5].it.tackle[2] and GameTooltip.lines[2] == pop.rows[5].it.tackle[3], "angler pop-out: (tackle says its line)")
+        STUB.Script(pop.rows[5], "OnLeave")
+        for _ = 1, 60 do STUB.Script(pop, "OnMouseWheel", 1) end
+        check(pop.offset == 0, "angler pop-out: (and back to the top)")
+        local kept = g.tackle
+        g.tackle = {}
+        for _, tk in ipairs(A.TACKLE) do g.tackle[tk[1]] = true end
+        A:Refresh()
+        check(not pop.rows[1]:IsShown() and pop.empty:IsShown() and pop.empty:GetText() == "All the tackle is aboard.", "angler pop-out: with all the tackle bought the tab says so")
+        g.tackle = kept
+        STUB.Script(pop.tabs[1], "OnClick")
+        check(pop.tab == "crew" and not pop.empty:IsShown() and pop.rows[1].name:GetText():find("Fishing Rod", 1, true), "angler pop-out: (back to the crew)")
+        -- a school
+        A.school = { kind = "haul", till = ns.Now() + 10 }
+        A:Refresh()
+        local scl, sct, scw, sch = STUB.rect(pop.school)
+        local kl, kt, kw, kh = STUB.rect(pop.cast)
+        local wl, _, ww = STUB.rect(pop)
+        STUB.Script(pop, "OnUpdate", 0.01)
+        check(pop.school:GetAlpha() >= 0.7 and pop.school:GetAlpha() <= 1, "angler pop-out: (a school breathes)")
+        check(pop.school:IsShown() and side.school:IsShown() and not pop.buff:IsShown() and not pop.rate:IsShown() and pop.school.label:GetText() == "School! Grab it"
+            and near(scl, kl + kw + 10) and near(scl + scw, wl + ww - 8) and near(sct - sch, kt - kh), "angler pop-out: a school shows on it too, beside Cast where the rate was")
+        local before = g.fish
+        STUB.Script(pop.school, "OnClick")
+        check(A.school == nil and g.fish > before and not pop.school:IsShown() and pop.rate:IsShown() and g.schools == 1, "angler pop-out: and can be caught from it")
+        A.buff = { kind = "frenzy", till = ns.Now() + 30 }
+        A:Refresh()
+        check(pop.buff:IsShown() and pop.buff:GetText() == "Feeding frenzy: 30s" and pop.rate:GetText() == side.rate:GetText(), "angler pop-out: a frenzy shows its time left")
+        A.buff = nil
+        -- it keeps the time itself with the main window off the page
+        A.wait = 0
+        STUB.Script(pop, "OnUpdate", 0.5)
+        check(A.wait == 0, "angler pop-out: (with the page up, the page keeps the time)")
+        ns.Editor:ShowTab("home")
+        check(not crew:IsVisible() and pop:IsShown(), "angler pop-out: it stays up when the page is left")
+        g.fish, g.t = 1000, ns.Now() - 10 -- (a sane number: next to the 1e20 above a few fish more wouldn't show)
+        before = g.fish
+        STUB.Script(pop, "OnUpdate", 0.5)
+        check(g.fish == before, "angler pop-out: (not every frame)")
+        STUB.Script(pop, "OnUpdate", 0.6)
+        check(g.fish > before and pop.fish:GetText() == A.Short(g.fish), "angler pop-out: and counts the catch on once a second by itself")
+        -- a school arriving chimes
+        A.school, A.schoolAt = nil, ns.Now() - 1
+        STUB.sounds = {}
+        STUB.Script(pop, "OnUpdate", 1.1)
+        check(A.school ~= nil and pop.school:IsShown() and STUB.sounds[1] == SOUNDKIT.TELL_MESSAGE, "angler pop-out: a school arriving shows and chimes")
+        STUB.sounds = {}
+        STUB.Script(pop, "OnUpdate", 1.1)
+        check(STUB.sounds[1] == nil, "angler pop-out: (once)")
+        A.school = nil
+        -- maximize: the big page, the pop-out put away
+        do
+            local xl, xt, xw = STUB.rect(pop.close)
+            local ml, mt, mw = STUB.rect(pop.big)
+            check(near(ml + mw, xl - 3) and near(mt, xt) and near(mw, xw) and pop.big.tex ~= nil, "angler pop-out: a maximize button sits just left of the X")
+            STUB.Script(pop.big, "OnEnter")
+            check(GameTooltip.shown and GameTooltip.lines[1] == "Open the full Angler page", "angler pop-out: (it says what it does)")
+            STUB.Script(pop.big, "OnLeave")
+            check(not crew:IsVisible() and pop:IsShown(), "angler pop-out: (the page is away, the pop-out up)")
+            STUB.Script(pop.big, "OnClick")
+            check(crew:IsVisible() and Games.mode == "angler" and ns.Editor.currentTab == "games" and not pop:IsShown(), "angler pop-out: maximize opens Angler's page and puts the pop-out away")
+            A:TogglePop()
+            Games:SetMode("wowdle")
+            STUB.Script(pop.big, "OnClick")
+            check(ns.Editor.frame:IsShown() and Games.mode == "angler" and crew:IsVisible() and not pop:IsShown(), "angler pop-out: (from another game too, without shutting the window)")
+            ns.Editor.frame:Hide()
+            A:TogglePop()
+            STUB.Script(pop.big, "OnClick")
+            check(ns.Editor.frame:IsShown() and crew:IsVisible(), "angler pop-out: (and with the window shut)")
+            ns.Editor:ShowTab("home")
+            A:TogglePop()
+        end
+        -- shut, open
+        STUB.Script(pop.close, "OnClick")
+        check(not pop:IsShown(), "angler pop-out: the X shuts it")
+        A:Refresh()
+        check(A:TogglePop() == true and pop:IsShown() and A.pop == pop and A:TogglePop() == false and not pop:IsShown(), "angler pop-out: it opens and shuts, the same window each time")
+        ns.Editor:ShowTab("games")
+        Games:SetMode("angler")
+        STUB.Script(side.pop, "OnClick")
+        check(pop:IsShown(), "angler pop-out: Pop out on the page opens it")
+        STUB.Script(side.pop, "OnClick")
+        check(not pop:IsShown(), "angler pop-out: (and shuts it)")
+        local _, st = STUB.rect(side)
+        local sl, _, sw = STUB.rect(side)
+        local bl, bt, bw, bh = STUB.rect(side.pop)
+        local rl = STUB.rect(side.rank)
+        local tl, _, tw = STUB.rect(side.title)
+        check(near(sl + sw - (bl + bw), 12) and rl >= tl + tw and bt <= st and bt - bh >= st - A.layout.HEAD_H, "angler pop-out: its button sits at the right of the card's head, the rank beside the title")
+    end
+
+    -- updated and reloaded without a restart: no Angler yet, and nothing breaks
+    local real = ns.Angler
+    ns.Angler = nil
+    STUB.printed = {}
+    SlashCmdList.POGRAID("fish")
+    check(#STUB.printed == 1 and STUB.printed[1]:find("/pog opens the window", 1, true), "angler: (nor does /pog fish)")
+    STUB.printed = {}
+    Games:SetMode("angler")
+    SlashCmdList.POGRAID("angler")
+    check(#STUB.printed == 1 and STUB.printed[1]:find("/pog opens the window", 1, true), "angler: before the restart its command is just unknown, and its tab does nothing")
+    ns.Angler = real
+    fresh()
+    ns.db.games.angler = nil
     Games:SetMode("wowdle")
     ns.Editor:ShowTab("home")
 end

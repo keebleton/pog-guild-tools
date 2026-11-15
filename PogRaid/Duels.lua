@@ -440,10 +440,10 @@ function Duels:Refresh()
         status = ("Waiting for %s to answer..."):format(colorName(self.outgoing.opp))
     elseif self.agreed then
         if self.agreed.challenger == me() then
-            status = ("%s agreed. Send the duel:"):format(colorName(self.agreed.opp))
+            status = ("%s is in. Send the duel:"):format(colorName(self.agreed.opp))
             canSend = true
         else
-            status = ("Ranked duel agreed with %s. Accept their duel when it comes."):format(colorName(self.agreed.opp))
+            status = ("You're on with %s. Accept their duel when it pops up."):format(colorName(self.agreed.opp))
         end
     end
     card.status:SetText(status)
@@ -545,7 +545,7 @@ function Popup:Ask(from, id, t)
     if not self.frame then self:Build() end
     local ask = { from = from, id = id, t = t }
     self.current = ask
-    self.frame.text:SetText(("%s (%d) challenges you to a ranked duel"):format(colorName(from),
+    self.frame.text:SetText(("%s (%d) wants a ranked duel"):format(colorName(from),
         math.floor(Duels:Rating(from) + 0.5)))
     local was = self.frame:IsShown()
     self.frame:Show()

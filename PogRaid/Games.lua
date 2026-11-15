@@ -27,7 +27,7 @@ local MAX_CELL = 40
 -- floats (UI experiment). LB_W is its narrowest (Expert).
 local LB_W = 240
 local GAME_W = INNER_W - LB_W - GAP
-local LEVEL_W = 78 -- a difficulty button (96 until a sixth game's tab needed the room)
+local LEVEL_W = 110 -- the difficulty button: ONE, a drop-down (three side by side until a seventh game's tab ran under them)
 Games.layout = { LB_W = LB_W, GAME_W = GAME_W, STATUS_Y = STATUS_Y, LEVEL_W = LEVEL_W }
 
 local SAPPER_ICON = "Interface\\Icons\\Spell_Fire_SelfDestruct"
@@ -44,6 +44,7 @@ Games.MODES = {
     { key = "lode", label = "Poggle", w = 70 },
     { key = "siege", label = "Siege", w = 60 },
     { key = "duels", label = "Ranked Duels", w = 112 },
+    { key = "angler", label = "Angler", w = 64 },
 }
 
 Games.LEVELS = {
@@ -264,8 +265,23 @@ local function fmtBest(s)
 end
 Games.FormatBest = fmtBest
 
+-- The difficulty menu: the three levels, the one being played in gold.
+function Games:LevelMenu()
+    local out = {}
+    for _, lv in ipairs(Games.LEVELS) do
+        out[#out + 1] = { text = ("%s  (%dx%d)"):format(lv.label, lv.cols, lv.rows), func = function() self:NewGame(lv.key) end,
+            color = lv.key == self.level and { 1, 0.82, 0.2 } or nil }
+    end
+    return out
+end
+
 function Games:Build(page)
     self.page = page
+    -- Angler.lua is new in 0.20: after an update and a /reload (not a restart) the game
+    -- hasn't loaded it yet, so its tab waits for the restart
+    for i = #Games.MODES, 1, -1 do
+        if Games.MODES[i].key == "angler" and not ns.Angler then table.remove(Games.MODES, i) end
+    end
 
     -- which game: tabs along the top left; the game's own controls sit on the right
     self.modeTabs = {}
@@ -278,14 +294,9 @@ function Games:Build(page)
         self.modeTabs[m.key] = t
         tx = tx + t:GetWidth() + (UI.classic and UI.SUBTAB_GAP or 4)
     end
-    self.levelButtons = {}
-    local x = FRAME_W - PAD - (3 * LEVEL_W + 2 * 4)
-    for _, lv in ipairs(Games.LEVELS) do
-        local b = UI.Button(page, lv.label, LEVEL_W, BAR_H, function() self:NewGame(lv.key) end)
-        b:SetPoint("TOPLEFT", x, -ROW1_Y)
-        self.levelButtons[lv.key] = b
-        x = x + LEVEL_W + 4
-    end
+    -- Sapper Sweeper's difficulty: the level you're on, and a menu of the three
+    self.levelBtn = UI.Button(page, "", LEVEL_W, BAR_H, function(b) UI.ShowMenu(b, self:LevelMenu()) end)
+    self.levelBtn:SetPoint("TOPLEFT", FRAME_W - PAD - LEVEL_W, -ROW1_Y)
 
     -- status bar: sappers left | new game | timer
     local bar = CreateFrame("Frame", nil, page)
@@ -340,7 +351,7 @@ function Games:Build(page)
     self:BuildScores(page)
     -- the other games each get a full-page view under the tabs
     self.views = {}
-    for key, mod in pairs({ duels = ns.Duels, gems = ns.Gems, wowdle = ns.Wowdle, lode = ns.Lode, siege = ns.Siege }) do
+    for key, mod in pairs({ duels = ns.Duels, gems = ns.Gems, wowdle = ns.Wowdle, lode = ns.Lode, siege = ns.Siege, angler = ns.Angler }) do
         local v = CreateFrame("Frame", nil, page)
         v:SetAllPoints()
         v:Hide()
@@ -358,7 +369,7 @@ function Games:SetMode(mode)
     G().mode = mode
     local sweeper = mode == "sweeper"
     for key, t in pairs(self.modeTabs) do t:SetSelected(key == mode) end
-    for _, b in pairs(self.levelButtons) do b:SetShown(sweeper) end
+    self.levelBtn:SetShown(sweeper)
     for key, v in pairs(self.views) do v:SetShown(key == mode) end
     if sweeper then
         self.scores:Show()
@@ -372,8 +383,8 @@ function Games:SetMode(mode)
         self.bar:Hide()
         self.board:Hide()
         self.bar.message:Hide()
-        local mod = ({ duels = ns.Duels, gems = ns.Gems, wowdle = ns.Wowdle, lode = ns.Lode, siege = ns.Siege })[mode]
-        mod:Refresh()
+        local mod = ({ duels = ns.Duels, gems = ns.Gems, wowdle = ns.Wowdle, lode = ns.Lode, siege = ns.Siege, angler = ns.Angler })[mode]
+        if mod then mod:Refresh() end
     end
 end
 
@@ -529,7 +540,7 @@ function Games:NewGame(key)
     self.game = Sweeper.New(lv.cols, lv.rows, lv.mines)
     self.started, self.finished = nil, nil
     self.newBest, self.newRank = nil, nil
-    for k, b in pairs(self.levelButtons) do b:SetSelected(k == lv.key) end
+    self.levelBtn:SetLabel(lv.label)
 
     -- size cells to fit the window, centre the board
     local cell = math.min(math.floor((GAME_W - 4) / lv.cols), math.floor((BOARD_MAX_H - 4) / lv.rows), MAX_CELL)

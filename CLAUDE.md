@@ -188,6 +188,30 @@ launchers and plain-English steps. Read this whole file before changing anything
   made, once per `KILL_EVERY` 5 min per target; `koskills` collection (code "j", id = author, `n`, `last` = the latest
   victim's name, `perRecord`): `Kos:OnKills` pops up "X got Y" once per new count, fresh ones only. `Kos:Hunters`.
   Not proven in game yet: that PARTY_KILL fires for player kills in the open world.
+- 0.20.0 Angler (`Angler.lua`, `ns.Angler`; Jake picked "the idle game" from a brainstorm, then: "take a deep dive
+  into cookie clicker and other successful idle games ... flesh it out", "also a type of prestige system"). Our own
+  game with the genre's mechanics, never another game's names or content. Games tab mode "angler" (last tab,
+  `/pog angler`). Local only: no Sync collection.
+  * No ticking: `db.games.angler = { fish, total (this voyage), life, own, tackle, trophies, perks, pearls (in hand),
+    earned (pearls ever), casts, schools, voyages, t }`; `Angler:Settle(now)` counts the catch from `t` to now on
+    every Refresh, Buy, Cast and Sell. A gap over `AWAY_AFTER` 60 s is "away": `AwayRate()` (0.5, tackle and a perk
+    raise it, 1 at most) for `AwayCap()` (8 h, 16, 24).
+  * Crew (`Angler.CREW`, 8): price x1.15 each (`Price`, `Cost(i, n)`, `Affordable`), a kind doubles at 10/25/50/100.
+    `Buy(i, n)` with n = 1, 10 or "max" (`Angler.qty`, the Buy button cycles).
+  * Schools (the reason to keep the page open): `Angler:Watch` (from the page's once-a-second update only) shows one
+    `SCHOOL_GAP` 120-300 s after the last for `SCHOOL_SHOWS` 15 s; `CatchSchool` gives a frenzy (`Angler.buff`, x7 for
+    30 s, counted by Settle for the part of a stretch it covered), a haul (600 s of catch) or a spree (casts x20 for
+    20 s). Session state only. `Angler.Random` is the dice (tests replace it).
+  * Tackle (`Angler.TACKLE`, 12, one-off, gone with the voyage), trophies (`Angler.TROPHIES`, 19, +1% each for good,
+    `Angler:Award` on Refresh), perks (`Angler.PERKS`, 7, bought with pearls in hand, kept for good; `Outfit` applies
+    the two that start a voyage). `Bonus()` = pearls EARNED x trophies x tackle: spending pearls never lowers it.
+  * Prestige: `Sell` (confirm click) gives `Angler.Pearls(total)` = cube root of total / 1e6 (a square root gave ~500
+    pearls for one long voyage) and empties fish, total, crew, tackle. `Rank()` from pearls earned.
+  * Screen: four tabs over one six-row list (`Angler:Items`, `FillRow`, the wheel scrolls), the catch card beside it.
+  * Pacing (scratch `angler_sim.py`, a greedy player): first pearl after ~18 min catching schools, ~33 without; a new
+    crew kind every 10-25 min; all eight in ~1.5 h with schools. Not played by a person yet: retune from feedback.
+  A new file: the tab is dropped from `Games.MODES` until the game restarts (`Games:Build`). Not seen in game yet
+  (layout, icons: crew and tackle pictures are item IDs, trophies and perks are icon paths that may not exist).
 - 0.19.0: Motherlode is called **Poggle** wherever a player sees it (the guild's name for it; Jake: "let's change the
   name to Poggle"): the Games tab, the card title, the start screen, `/pog poggle`, README, CHANGELOG. Everything
   inside keeps "lode" (`Lode.lua`, `ns.Lode`, the tab key, `db.games.lode`, the `lode` collection), and
@@ -195,7 +219,8 @@ launchers and plain-English steps. Read this whole file before changing anything
 - 0.19.0 Motherlode 2 (Jake: "people are really loving motherlode ... make it a really good game", with the guild's
   feedback). What changed in `Lode.Run`, and why:
   * Pockets are gone (guildies: "too much RNG", missing the x5 "can feel pretty bad"). Ore banks as mined
-    (`Run:Land`). A mine cart (`run.cart`, `Lode.CART_W` 80, `CART_SPEED` 150, moved by `Run:MoveCart` only while a
+    (`Run:Land`). SUPERSEDED in 0.20.0, see "Poggle 3" below: the cart is a bucket that never stops and has no
+    limit, and every upgrade is a class spell. As it was in 0.19.0: a mine cart (`run.cart`, `Lode.CART_W` 80, `CART_SPEED` 150, moved by `Run:MoveCart` only while a
     bomb flies) gives the bomb back when it lands in it: `Lode.CATCHES` 3 a floor (`Run:CatchesLeft`, shown on the cart).
   * No dead ends ("you will never be able to go to the next stage even if you have pegs left"): after a shot,
     `Run:Spent()` (ore + `Potential()` < quota AND half the pegs or fewer left, `CAVE_AT`) brings `Run:CaveIn()`, a
@@ -216,6 +241,56 @@ launchers and plain-English steps. Read this whole file before changing anything
     floors, careful play 9-10, every class ends. `QUOTA` 450 x 1.5 unchanged. Rogue looks strongest. Retune from play.
   * Tests: the 0.16.9 block switches the cart and cave-ins off (`Lode.CART_W = -1`, `Lode.CAVE_IN = false`) because it
     watches one peg at a time; the 0.19.0 block covers the new rules and the picker.
+  * Poggle 3 (0.20.0, unreleased with Angler; Jake: "people werent vibing with the minecart mechanic", "the
+    upgrades you get offered are all talents/spells from the classes", "make the ball the corresponding class color"):
+    - The bucket (still `run.cart` / `CART_W` / `MoveCart` in the code, "bucket" to players) slides at `CART_SPEED`
+      all the time: `Run:Tick` during a shot, `Run:Idle(dt)` from `Lode:Update` while aiming (not behind the class
+      picker). It keeps its place between floors. No limit a floor (`Lode.CATCHES` and `Run:CatchesLeft` are gone);
+      still one bomb back a shot through `Run:GiveBomb`. The Lodestone (`magnet`) is gone: it was the runaway.
+    - `Lode.SPELLS[class]` = rows `{ key, spell name, line, max, icon name }`. The key is what the rules ask
+      `Run:Has` about, and two classes share a key under different spell names (spare = Battle Shout / Presence of
+      Mind / Thistle Tea / Rapid Fire). `Lode.Spell(class, key)`, `Lode.Spells(class)`, `Lode.UpgradeIcon(key, class)`
+      ("Interface\\Icons\\<name>"). `Lode.UPGRADES`, `Lode.UPGRADE` and `Lode.UPGRADE_ITEMS` are gone. Icons are
+      named, not looked up by item id: item ids point at other items on Forever (Angler's first icons were wrong).
+    - A run without a class has no spells. Nobody plays one, but the old tests do: they set `Lode.SPELLS.none`
+      (one of each key) at the top of the first lode block, and the classes block takes it away while it checks.
+    - Hunter's perk: bucket 1.5x and `Run:LongAim()` (the aim line twice as long). Class colours are
+      `Lode.CLASS[k].color`; `Lode:Tint()` (from Refresh) paints the bombs, glow, sparks and mortar glow.
+    - Later the same day (Jake: "let's get rid of the abilities that are the same across classes"): a key now
+      belongs to ONE class (a test checks it). Warrior 8, Mage 8, Rogue 8, Hunter 7. Ten new effects:
+      `heroic` (first bomb of a floor x2, `run.floorShots`), `clap` (`Run:Land` mines within `Lode.CLAP_R` of where
+      the bomb lands), `stand` (once a run, `Lode.STAND` bombs when you run out, in `Run:EndShot`), `sheep` (first
+      ore peg of a shot pays as gold, `run.sheeped`), `missiles` (`Run:Split(ball, true)`: a third bomb),
+      `vanish` (once a floor a shot that mined nothing comes back), `seal` (lucky ore x3), `freeze` (the bucket
+      doesn't move in `Run:Tick`), `sting` (a peg hit again pays half), `pet` (`Lode.PET` ore pegs dug per copy in
+      `Run:NextFloor`). Balance script (`lode_sim3.py`): random 0-2 floors, careful 8-11 for every class.
+  * Angler's pop-out and board (0.20.0): `Angler:TogglePop()` (`/pog fish`, "Pop out" on the side card) builds
+    `PogRaidAnglerPop` once: count, rate, Cast, the school button, and five scrolling rows from `Angler:PopItems()`
+    (crew, then tackle not aboard, cheapest first). Its OnUpdate calls `Angler:Update` only while the page isn't
+    visible, so the catch is counted once a second by whichever is up. `Angler:Refresh` now runs for either.
+    The board is collection `angler` (code `v`, own records: `life` whole fish capped under `BOARD_MAX` 1e14,
+    `earned` pearls). `Angler:Publish(now)` from the tick (at most every `PUBLISH_EVERY` 900 s, only when
+    changed, not under `BOARD_MIN` 1000 fish) and at once on a sale. `Angler:Leaderboard()` is the fifth tab,
+    "Guild". Free collection codes left: x y z.
+  * Angler's long game (0.20.0; Jake: "make the game feel long and challenging to complete ... aim for longevity"):
+    14 crew (sub, murloc, tide, kraken, storm, rift added: each about 15x the price for 8x the catch),
+    milestones to 300, 46 tackle (12 + 6 late + `Angler.MARKS`: "Better"/"Master" per crew, keys `rod2`, `rod3`,
+    x2 for that kind in `Angler:Each`), 12 perks (friends 50, ghooks 100, room 250, wright 500, call 1000),
+    ranks to Tide King (10,000 pearls), 34 trophies, `Short` up to "Dc". The pacing script (`angler_sim.py 1 12`):
+    a 12-hour first voyage reaches the 11th crew; the last three need pearls from repeat voyages. Perks were
+    all made stronger the same day (`Angler.START`, `LEGS`, `LEGS_PRICE`, `TIRELESS_LONG`, `BLOOD`...).
+    The pop-out is a slim card with no title bar (`Angler:PopFrame` every frame: the icon dips, "+N" floats
+    from `f.floatLayer`, the count runs up between seconds; corner controls fade in under the mouse).
+  * Congrats (0.20.0, Home.lua): clicking a level-up line in Activity or the level pop-up whispers
+    `settings.grats` (`Home:Grats`). Unset, the first click opens `UI.Prompt` with "gz" typed in, then sends.
+    Once per name and level a session (`Home.gratsed`). The Congrats button in Activity's head changes it.
+    Jake hasn't said whether he'd rather it went to guild chat: it's a whisper.
+  * Poggle class perks after the balance script (10 careful runs each, about 10 floors): Warrior 2 bombs and
+    +50% ore (`Lode.WARRIOR_ORE`), Mage 3 extra crystals that blow up (`Run:Nova`, `Lode.MAGE_CRYSTALS`),
+    Rogue gold x2 and luck, Hunter two bombs a shot (`Run:Volley`) and the long aim line. New run needs no
+    confirmation and opens the class picker even mid-shot (the shot waits behind it).
+  * Sapper Sweeper's difficulty is ONE drop-down (`Games.levelBtn`, `Games:LevelMenu`): seven game tabs left no
+    room for three buttons. An eighth game's tab will need the tab row looked at again.
   Not seen in game yet: the cart's look, the class tiles (class pictures come from the character-creation sheet with
   `CLASS_ICON_TCOORDS`), the upgrade icons' item IDs (`Lode.UPGRADE_ITEMS`), and how the cave-in reads on screen.
 - 0.18.1 (Jake, from a poster a guildie made reading "<Kraken Skulls>"): `Kos.Show(name)` drops angle brackets wherever
