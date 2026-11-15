@@ -10432,7 +10432,15 @@ do
         g.own, g.perks = { kraken = 1 }, {}
         local c0, p5 = A:CastValue(), A:Price(1, 5)
         g.perks = { ghooks = true }
-        check(A:CastValue() == c0 * 10, "angler long game: Golden Hooks makes a cast ten times")
+        check(A:CastValue() == c0 * 3 and A.GHOOKS == 3, "angler long game: Golden Hooks makes a cast three times")
+        -- a cast carries the bonuses once, however many pearls there are (twice, it snowballed)
+        g.perks, g.own, g.tackle, g.trophies = {}, { kraken = 1 }, {}, {}
+        g.earned = 0
+        local plainCast, plainRate = A:CastValue(), A:Rate()
+        g.earned = 100
+        check(near(A:Bonus(), 6) and near(A:Rate(), plainRate * 6) and near(A:CastValue(), plainCast * 6) and near(A:CastValue() / A:Rate(), A.CAST_SHARE),
+            "angler long game: a hundred pearls make a cast six times, as they do the crew (not thirty-six)")
+        g.earned = 0
         g.perks = { wright = true }
         check(A:Price(1, 5) == math.floor(15 * 1.13 ^ 5 + 0.5) and A:Price(1, 5) < p5 and A:Price(1, 0) == 15, "angler long game: Shipwright slows how fast crew gets dearer")
         g.perks = { call = true }
@@ -10538,17 +10546,27 @@ do
 
     -- prestige: pearls, perks, rank
     g = fresh()
-    check(A.Pearls(999999) == 0 and A.Pearls(1000000) == 1 and A.Pearls(7999999) == 1 and A.Pearls(8000000) == 2 and A.Pearls(27e6) == 3 and A.Pearls(1e9) == 10
-        and A.Pearls(-5) == 0 and A.PearlAt(1) == 1000000 and A.PearlAt(3) == 27000000,
-        "angler prestige: a million fish is one pearl, eight million two, twenty-seven million three")
+    -- (0.20.2, Jake: "the pearls scaling in angler is wayyyy too overpowered": a fifth root of the fish caught in ALL, where it was a cube root of each voyage's)
+    check(A.Pearls(999999) == 0 and A.Pearls(1000000) == 1 and A.Pearls(31999999) == 1 and A.Pearls(32000000) == 2 and A.Pearls(243e6) == 3 and A.Pearls(1e11) == 10
+        and A.Pearls(7e14) == 58 and A.Pearls(-5) == 0 and A.Pearls(nil) == 0 and A.PearlAt(1) == 1000000 and A.PearlAt(3) == 243000000 and A.PEARL_ROOT == 5,
+        "angler prestige: a million fish in all is one pearl, 32 million two, 243 million three, and a twelve-hour voyage's 700 trillion is 58 (not 888)")
     g.own, g.fish, g.total, g.tackle, g.t = { rod = 3 }, 500, 500, { hooks = true }, ns.Now()
     check(A:Sell() == false and g.fish == 500 and A:Owned(1) == 3, "angler prestige: a voyage too small to earn a pearl can't be sold")
-    g.total, g.life = 8000000, 8000000
+    g.total, g.life = 32000000, 32000000
+    check(A:PearlsNow() == 2, "angler prestige: (32 million fish in all are worth two)")
     A.buff = { kind = "frenzy", from = ns.Now(), till = ns.Now() + 30 }
     check(A:Sell() == 2 and g.pearls == 2 and g.earned == 2 and g.fish == 0 and g.total == 0 and A:Owned(1) == 0 and not A:Has("hooks")
-        and g.life == 8000000 and g.voyages == 1 and A.buff == nil, "angler prestige: selling starts the voyage over (crew, tackle), keeps the pearls")
+        and g.life == 32000000 and g.voyages == 1 and A.buff == nil, "angler prestige: selling starts the voyage over (crew, tackle), keeps the pearls")
+    -- selling again pays only for new ground: the fish caught in all, less the pearls already earned
+    g.total, g.life = 32000000, 64000000
+    check(A:PearlsNow() == 0 and A:Sell() == false and g.total == 32000000 and g.voyages == 1,
+        "angler prestige: a second voyage as long as the first earns nothing more (it did, and that was the snowball)")
+    g.life = 243000000
+    check(A:PearlsNow() == 1 and A:Sell() == 1 and g.earned == 3 and g.pearls == 3 and g.life == 243000000, "angler prestige: the third pearl comes at 243 million in all")
+    g.earned, g.pearls, g.voyages = 2, 2, 1
     g.own = { rod = 1 }
-    check(near(A:Bonus(), 1.2) and near(A:Rate(), 0.2 * 1.2) and near(A:CastValue(), 1.2), "angler prestige: each pearl earned is 10% more of everything")
+    check(near(A:Bonus(), 1.1) and near(A:Rate(), 0.2 * 1.1) and near(A:CastValue(), 1.1) and A.PEARL_BONUS == 0.05,
+        "angler prestige: each pearl earned is 5% more of everything (10% until 0.20.2: too strong)")
     check(A:Rank() == "Mate", "angler prestige: a pearl makes a Mate of a Deckhand")
     g.earned = 0
     check(A:Rank() == "Deckhand", "angler prestige: (who starts as one)")
@@ -10557,7 +10575,7 @@ do
     -- perks: bought with pearls in hand, kept for good; the bonus is from pearls EARNED
     g.earned, g.pearls, g.own = 2, 2, {}
     check(A:BuyPerk("legs") == false and A:BuyPerk("nonsense") == false, "angler prestige: a perk costs pearls")
-    check(A:BuyPerk("start") == true and g.pearls == 0 and g.earned == 2 and A:Perk("start") and near(A:Bonus(), 1.2) and A:Owned(1) == 25 and A:Owned(2) == 10
+    check(A:BuyPerk("start") == true and g.pearls == 0 and g.earned == 2 and A:Perk("start") and near(A:Bonus(), 1.1) and A:Owned(1) == 25 and A:Owned(2) == 10
         and A:Owned(3) == 0 and A:BuyPerk("start") == false and A.PERK.start[3]:find("25 Fishing Rods and 10 Cast Nets", 1, true),
         "angler prestige: Head Start is 25 rods and 10 nets now and every voyage, and spending pearls keeps their bonus")
     g.own = { rod = 40 }
@@ -10576,7 +10594,7 @@ do
     g.fish = 12500
     check(A:BuyTackle("hold") == true and g.fish == 0 and A:BuyTackle("lanterns") == false, "angler prestige: (that's what is paid)")
     g.tackle.hold = nil
-    check(A:Price(1, 0) == math.floor(15 * 0.75 + 0.5) and A:FrenzyMult() == 15 and A:PearlBonus() == 0.15 and A:AwayRate() == 0.75 and A:AwayCap() == 16 * 3600,
+    check(A:Price(1, 0) == math.floor(15 * 0.75 + 0.5) and A:FrenzyMult() == 15 and A:PearlBonus() == 0.08 and A:AwayRate() == 0.75 and A:AwayCap() == 16 * 3600,
         "angler prestige: cheaper crew, a bigger frenzy, brighter pearls, and a crew that fishes faster and twice as long while away")
     g.tackle.cold = true
     check(A:AwayCap() == 48 * 3600, "angler prestige: (twice as long as the hold allows, whatever the hold)")
@@ -10602,14 +10620,27 @@ do
     check(A:Watch(t0).till == t0 + 2 * A.SCHOOL_SHOWS, "angler prestige: Keen Lookout keeps a school twice as long")
     check(A:CatchSchool(t0):find("15x fish", 1, true), "angler prestige: (and the frenzy says fifteen times)")
     A.Random = realRandom
-    g.total = 1000000
-    A:Sell()
+    g.total, g.life = 1000000, A.PearlAt(g.earned + 1)
+    check(A:Sell() == 1, "angler prestige: (a pearl's worth of new fish)")
     check(A:Owned(1) == 25 and A:Owned(2) == 10 and A:Has("hooks") and A:Has("barbs") and A:Has("charts") and not A:Has("shift") and A:Perk("bulk"),
         "angler prestige: perks outlast a voyage, and outfit the next")
     for _, k in ipairs(A.PERKS) do check(#k[3] <= 58, "angler prestige: " .. k[2] .. "'s line fits its row") end
     -- an old save from before perks: pearls in hand count as earned
-    ns.db.games.angler = { fish = 0, total = 0, life = 0, own = {}, pearls = 3, t = ns.Now() }
-    check(A.Saved().earned == 3 and near(A:Bonus(), 1.3), "angler prestige: a save from before perks keeps its pearls' worth")
+    ns.db.games.angler = { fish = 0, total = 0, life = 243000000, own = {}, pearls = 3, t = ns.Now() }
+    check(A.Saved().earned == 3 and A.Saved().pearls == 3 and near(A:Bonus(), 1.15), "angler prestige: a save from before perks keeps its pearls' worth")
+    -- a save from the first pearl rule (0.20.0, 0.20.1): hundreds of pearls for fish now worth three
+    ns.db.games.angler = { fish = 5, total = 9, life = 1e9, own = { rod = 2 }, pearls = 100, earned = 500, perks = { start = true, legs = true }, t = ns.Now() }
+    local old = A.Saved()
+    check(A.Pearls(1e9) == 3 and old.earned == 3 and old.pearls == 0 and old.perks.start and old.perks.legs and old.rule == A.PEARL_RULE and old.life == 1e9 and old.own.rod == 2,
+        "angler prestige: a save from the first rule keeps the pearls its fish are worth now, and every perk it bought")
+    old.earned, old.pearls = 50, 40
+    check(A.Saved().earned == 50 and A.Saved().pearls == 40, "angler prestige: (once: it isn't done again)")
+    ns.db.games.angler = { fish = 0, total = 0, life = 1e11, own = {}, pearls = 4, earned = 6, t = ns.Now() }
+    check(A.Saved().earned == 6 and A.Saved().pearls == 4, "angler prestige: (a save with no more than its fish are worth is left alone)")
+    ns.db.games.angler = { fish = 0, total = 0, life = 1e11, own = {}, pearls = 30, earned = 40, t = ns.Now() }
+    check(A.Saved().earned == 10 and A.Saved().pearls == 0, "angler prestige: (what was spent stays spent: 10 fair, 10 spent, none in hand)")
+    ns.db.games.angler = { fish = 0, total = 0, life = 1e11, own = {}, pearls = 38, earned = 40, t = ns.Now() }
+    check(A.Saved().earned == 10 and A.Saved().pearls == 8, "angler prestige: (and what wasn't is still in hand)")
 
     -- the screen
     g = fresh()
@@ -10646,7 +10677,7 @@ do
         and rows[2].owned:GetText() == "" and rows[2].buy.label:GetText() == "120" and rows[6]:IsShown(), "angler: a crew row says what you own, what each catches and what the next costs")
     g.trophies = {}
     check(rows[1].buy:IsEnabled() and not rows[2].buy:IsEnabled() and side.fish:GetText() == "100" and side.pearls:GetText() == "none yet"
-        and not side.sell:IsEnabled() and side.pearlHint:GetText():find("Catch 1.00M fish", 1, true) and side.rank:GetText() == "Deckhand"
+        and not side.sell:IsEnabled() and side.pearlHint:GetText():find("Your next pearl comes at 1.00M fish all-time. You're at", 1, true) and side.rank:GetText() == "Deckhand"
         and A.qtyBtn:IsShown() and A.qtyBtn.label:GetText() == "Buy 1" and not A.summary:IsShown() and tabs[1].selected and not tabs[2].selected,
         "angler: what you can afford is lit, and the card says your rank and how far the first pearl is")
     STUB.Script(rows[1].buy, "OnClick")
@@ -10696,7 +10727,7 @@ do
         "angler: the Perks tab lists what pearls buy")
     STUB.Script(rows[1].buy, "OnClick")
     check(A:Perk("start") and g.pearls == 1 and A.summary:GetText() == "1 pearl to spend" and rows[1].tag:GetText() == "Yours forever" and not rows[1].buy:IsShown()
-        and side.pearls:GetText() == "3 earned  (+30%)" and side.rank:GetText() == "Mate", "angler: a perk bought is yours, and the pearls earned still count")
+        and side.pearls:GetText() == "3 earned  (+15%)" and side.rank:GetText() == "Mate", "angler: a perk bought is yours, and the pearls earned still count")
     -- trophies tab
     g.trophies = {}
     g.life, g.casts = 1000, 0
@@ -10733,9 +10764,10 @@ do
     STUB.Script(crew, "OnUpdate", 0.6)
     check(g.fish > before2, "angler: the page counts the catch on once a second")
     -- selling
-    g.total, g.t = 8000000, ns.Now()
+    g.total, g.life, g.t = 8000000, A.PearlAt(g.earned + 2), ns.Now()
     A:Refresh()
-    check(side.sell:IsEnabled() and side.pearlHint:GetText():find("Sell now for 2 pearls (next one at 27.00M fish)", 1, true), "angler: with pearls to earn, Sell the catch lights up")
+    check(side.sell:IsEnabled() and side.pearlHint:GetText():find("Sell now for 2 pearls. The next comes at " .. A.Short(A.PearlAt(g.earned + 3)) .. " fish all-time.", 1, true),
+        "angler: with pearls to earn, Sell the catch lights up and says where the next one is")
     local had = g.earned
     STUB.Script(side.sell, "OnClick")
     check(g.earned == had and side.sell.armed, "angler: selling wants a second click")

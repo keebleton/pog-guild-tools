@@ -1,4 +1,13 @@
-# Pog Guild Tools 0.20.1
+# Pog Guild Tools 0.20.2
+
+- **Angler: pearls were far too strong, so they've been reworked.** It was possible to snowball to the end in a few hours.
+  - Pearls now come from the fish you've caught in all, not from each voyage on its own, so selling again only pays for new ground.
+  - They're much harder to earn: 1 at a million fish, 2 at 32 million, 3 at 243 million, 10 at 100 billion.
+  - Each pearl is worth 5% more fish (was 10%). Pearl Lustre makes that 8%.
+  - Casting no longer counts your bonuses twice, and Golden Hooks is 3x (was 10x).
+  - **Your pearls will drop** to what your lifetime fish are worth under the new rule. You keep every perk you bought.
+
+New in 0.20.1:
 
 - **Angler:** the pop-out can buy crew ten at a time, or as many as you can afford. Its x1 button, at the end of the tab row, switches between x1, x10 and max.
 - **Angler:** the pop-out's fish count now steps once a second, like the page. It was changing too fast to read.
@@ -13,7 +22,7 @@ New in 0.20.0:
   - **Trophies:** 34 goals, each worth 1% more fish for good. The last ones take a long time.
   - **Pop-out:** /pog fish (or Pop out on the page) opens a small card you can leave up with the addon shut: cast, catch schools, and buy crew, tackle and perks from a little shop you can fold away. Every cast pops a "+" off the icon.
   - **Guild board:** the Guild tab ranks everyone by the most fish ever caught, with their rank and pearls.
-  - **Pearls and perks:** sell the catch to start the voyage over for pearls. Every pearl you've ever earned is 10% more fish for good, and you spend pearls on twelve perks that last through every voyage, from 2 pearls to 1,000. Your rank climbs from Deckhand to Tide King.
+  - **Pearls and perks:** sell the catch to start the voyage over for pearls. Every pearl you've ever earned is 5% more fish for good, and you spend pearls on twelve perks that last through every voyage, from 2 pearls to 1,000. Your rank climbs from Deckhand to Tide King.
 - **Poggle, from your feedback:**
   - **The mine cart is now a bucket.** It slides back and forth along the bottom all the time, so you can time your shot. Land a bomb in it and you get the bomb back, every time, with no limit a floor.
   - **Every upgrade is a class spell.** Each class has seven or eight spells and talents of its own, with the spell's icon, and no two classes share one. Warriors get Cleave, Execute, Thunder Clap and Last Stand. Mages get Arcane Explosion, Polymorph and Arcane Missiles. Rogues get Ambush, Vanish and Seal Fate. Hunters get Multi-Shot, Freezing Trap and Call Pet.

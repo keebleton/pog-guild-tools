@@ -51,8 +51,10 @@ Angler.AWAY_AFTER = 60                  -- seconds uncounted before it's "while 
 Angler.AWAY_RATE = 0.5                  -- the crew works at half speed without you
 Angler.AWAY_CAP = 8 * 3600              -- and for eight hours at most
 Angler.CAST_SHARE = 0.05                -- a cast lands this share of a second's catch (1 fish at least)
-Angler.PEARL_AT = 1000000               -- a voyage's fish for the first pearl (then 8 times that for two, 27 for three)
-Angler.PEARL_BONUS = 0.10
+Angler.PEARL_AT = 1000000               -- fish caught in all for the first pearl
+Angler.PEARL_ROOT = 5                   -- ...and the n'th takes n^5 times that
+Angler.PEARL_RULE = 2                   -- (which rule a save's pearls were earned under: see G)
+Angler.PEARL_BONUS = 0.05                -- what every pearl ever earned adds to every catch (10% until 0.20.2: "holding pearls seems too overpowered")
 Angler.TROPHY_BONUS = 0.01
 Angler.QTYS = { 1, 10, "max" }
 
@@ -112,10 +114,10 @@ Angler.PERKS = {
     { "tireless", "Tireless Crew", "Offline, crew fishes 25% faster and for twice as long.", 12, "Ability_Rogue_Sprint" },
     { "twin", "Blood in the Water", "Feeding frenzies are 15x, not 7x.", 15, "Ability_Racial_BloodRage" },
     { "bulk", "Bulk Deals", "Crew costs 25% less.", 20, "INV_Misc_Coin_02" },
-    { "lustre", "Pearl Lustre", "Each pearl is worth 15%, not 10%.", 30, "INV_Misc_Gem_Pearl_01" },
+    { "lustre", "Pearl Lustre", "Each pearl is worth 8%, not 5%.", 30, "INV_Misc_Gem_Pearl_01" },
     -- the long game: these take many voyages to afford
     { "friends", "Old Friends", "Also start every voyage with 10 Rowboats and 10 Trawlers.", 50, "INV_Misc_Spyglass_02" },
-    { "ghooks", "Golden Hooks", "Casts catch 10x.", 100, "INV_Misc_Hook_01" },
+    { "ghooks", "Golden Hooks", "Casts catch 3x.", 100, "INV_Misc_Hook_01" },
     { "room", "Trophy Room", "Trophies are worth 2% each, not 1%.", 250, "INV_Misc_Fish_13" },
     { "wright", "Shipwright", "Each crew costs 13% more than the last, not 15%.", 500, "Trade_Engineering" },
     { "call", "Call of the Deep", "All crew catch twice as much.", 1000, "Spell_Shadow_Possession" },
@@ -125,12 +127,13 @@ Angler.PERKS = {
 Angler.START = { rod = 25, net = 10 }           -- Head Start: about five minutes of a fresh voyage
 Angler.FRIENDS = { boat = 10, trawl = 10 }      -- Old Friends
 Angler.WRIGHT = 1.13                            -- Shipwright's growth
+Angler.GHOOKS = 3                               -- Golden Hooks (10 at first: a click then out-fished the crew)
 Angler.LEGS = { "hooks", "barbs", "charts" }    -- Sea Legs' tackle
 Angler.LEGS_PRICE = 0.5                         -- ...and what tackle then costs
 Angler.LOOKOUT_OFTEN = 1.5
 Angler.TIRELESS_LONG = 2
 Angler.BULK_PRICE = 0.75
-Angler.LUSTRE = 0.15
+Angler.LUSTRE = 0.08
 Angler.BLOOD = 15
 Angler.PERK = {}
 for _, k in ipairs(Angler.PERKS) do Angler.PERK[k[1]] = k end
@@ -147,6 +150,17 @@ local function G()
     end
     g.tackle, g.trophies, g.perks = g.tackle or {}, g.trophies or {}, g.perks or {}
     g.earned = g.earned or g.pearls -- pearls ever earned (pearls = the ones still in hand)
+    g.life = g.life or 0
+    -- A save from the first rule (0.20.0 and 0.20.1) has far more pearls than its fish are worth now: it
+    -- keeps what the new rule gives for those fish, and every perk it bought. Once.
+    if g.rule ~= Angler.PEARL_RULE then
+        g.rule = Angler.PEARL_RULE
+        local fair = Angler.Pearls(g.life)
+        if g.earned > fair then
+            local spent = g.earned - g.pearls
+            g.earned, g.pearls = fair, math.max(0, fair - spent)
+        end
+    end
     g.casts, g.schools, g.voyages = g.casts or 0, g.schools or 0, g.voyages or 0
     return g
 end
@@ -356,11 +370,16 @@ function Angler:Settle(now)
 end
 
 function Angler:CastValue()
-    local v = math.max(1, math.floor(self:Rate() * Angler.CAST_SHARE + 0.5)) * self:Bonus()
+    -- A share of a second's catch, a fish at least, with the bonuses on it ONCE. (Until 0.20.2 the share was
+    -- taken of the catch with its bonuses already on, and the bonuses put on again: with a few dozen pearls a
+    -- click was worth minutes of the crew's work, and the pacing script snowballed from there. Jake found it
+    -- by playing: "i managed to snowball to victory quite quickly".)
+    local bonus = self:Bonus()
+    local v = math.max(1, math.floor(self:Rate() / bonus * Angler.CAST_SHARE + 0.5)) * bonus
     for _, key in ipairs({ "hooks", "barbs", "lure", "golden" }) do
         if self:Has(key) then v = v * 2 end
     end
-    if self:Perk("ghooks") then v = v * 10 end
+    if self:Perk("ghooks") then v = v * Angler.GHOOKS end
     if self:Buff("spree") then v = v * Angler.SPREE end
     return v
 end
@@ -405,24 +424,33 @@ function Angler:BuyTackle(key)
     return true
 end
 
--- Pearls a voyage of `total` fish is worth: 1 at a million, 2 at eight, 3 at
--- twenty-seven (the cube root). A square root gave a three-hour first voyage
--- some 500 pearls, the whole prestige ladder in one go (the pacing script).
-function Angler.Pearls(total)
-    return math.floor((math.max(0, total or 0) / Angler.PEARL_AT) ^ (1 / 3) + 1e-9)
+-- Pearls, second rule (0.20.2; Jake, a day after 0.20.0: "the pearls scaling in angler is wayyyy too
+-- overpowered. i managed to snowball to victory quite quickly"). They were worked out from each voyage on
+-- its own, by a cube root: a long voyage paid hundreds (88 times the fish, for good), and the next voyage,
+-- that much faster, paid hundreds more. Now, as in Cookie Clicker:
+--   * they come from the fish caught in ALL (g.life, never reset), so selling pays only for new ground:
+--     the pearls that many fish are worth, less the ones already earned
+--   * by a fifth root: 1 at a million fish, 2 at 32 million, 3 at 243 million, 10 at 100 billion, 58 at the
+--     700 trillion a twelve-hour first voyage reaches (the cube root gave 888)
+function Angler.Pearls(life)
+    return math.floor((math.max(0, life or 0) / Angler.PEARL_AT) ^ (1 / Angler.PEARL_ROOT) + 1e-9)
 end
 
--- The fish a voyage needs for its `n`th pearl.
-function Angler.PearlAt(n) return Angler.PEARL_AT * n ^ 3 end
+-- The fish, in all, that the `n`th pearl takes.
+function Angler.PearlAt(n) return Angler.PEARL_AT * n ^ Angler.PEARL_ROOT end
 
-function Angler:PearlsNow() return Angler.Pearls(G().total) end
+-- What selling now would pay.
+function Angler:PearlsNow()
+    local g = G()
+    return math.max(0, Angler.Pearls(g.life) - g.earned)
+end
 
 -- Sell the catch: the voyage starts over (fish, crew, tackle); pearls and
 -- trophies stay for good.
 function Angler:Sell()
     self:Settle()
     local g = G()
-    local pearls = Angler.Pearls(g.total)
+    local pearls = self:PearlsNow()
     if pearls < 1 then return false end
     g.pearls, g.earned = g.pearls + pearls, g.earned + pearls
     g.fish, g.total, g.own, g.tackle = 0, 0, {}, {}
@@ -1409,11 +1437,11 @@ function Angler:Refresh()
     local pearls = self:PearlsNow()
     s.pearls:SetText(g.earned > 0 and ("%d earned  (+%d%%)"):format(g.earned, math.floor(g.earned * self:PearlBonus() * 100 + 0.5)) or "none yet")
     if pearls >= 1 then
-        s.pearlHint:SetText(("Sell now for %d pearl%s (next one at %s fish). Crew and tackle reset, but pearls boost your fish forever and buy perks.")
-            :format(pearls, pearls == 1 and "" or "s", Angler.Short(Angler.PearlAt(pearls + 1))))
+        s.pearlHint:SetText(("Sell now for %d pearl%s. The next comes at %s fish all-time. Crew and tackle reset; pearls boost fish forever and buy perks.")
+            :format(pearls, pearls == 1 and "" or "s", Angler.Short(Angler.PearlAt(g.earned + pearls + 1))))
     else
-        s.pearlHint:SetText(("Catch %s fish this voyage for your first pearl. You're at %s.")
-            :format(Angler.Short(Angler.PearlAt(1)), Angler.Short(g.total)))
+        s.pearlHint:SetText(("Your next pearl comes at %s fish all-time. You're at %s.")
+            :format(Angler.Short(Angler.PearlAt(g.earned + 1)), Angler.Short(g.life)))
     end
     s.sell:SetEnabledState(pearls >= 1)
 end
