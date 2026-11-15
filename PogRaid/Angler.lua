@@ -583,7 +583,8 @@ local HEAD_H, ROW_H, ROW_GAP, ROWS = 34, 80, 8, 6
 local ICON, BUY_W, BUY_H = 44, 118, 26
 local TAB_W, TAB_H, TAB_GAP = 78, 22, 6
 local POP_W, POP_HEAD, POP_ROWS, POP_ROW_H, POP_ROW_GAP, POP_LIST = 220, 64, 5, 26, 3, 94 -- the pop-out
-local POP_TAB_Y, POP_TAB_W, POP_TAB_H, POP_TAB_GAP = 70, 64, 18, 6 -- Crew / Tackle / Perks over its shop
+local POP_TAB_Y, POP_TAB_W, POP_TAB_H, POP_TAB_GAP = 70, 50, 18, 6
+local POP_QTY_W = POP_W - 16 - 3 * (POP_TAB_W + POP_TAB_GAP) -- x1 / x10 / max, at the end of the tab row -- Crew / Tackle / Perks over its shop
 Angler.POP_TABS = { { "crew", "Crew" }, { "tackle", "Tackle" }, { "perks", "Perks" } }
 local POP_CAST, POP_MINI, POP_BUY_W, POP_TEXT_X = 48, 16, 66, 66 -- Cast is a square fishing icon at the left, the count beside it
 local POP_EDGE = 1 -- the frame round Cast
@@ -596,14 +597,14 @@ Angler.TABS = { { "crew", "Crew" }, { "tackle", "Tackle" }, { "perks", "Perks" }
 Angler.layout = { W = W, H = H, SIDE_X = SIDE_X, SIDE_W = SIDE_W, ROW_H = ROW_H, ROW_GAP = ROW_GAP, HEAD_H = HEAD_H, BUY_W = BUY_W,
     ROWS = ROWS, TAB_W = TAB_W, TAB_GAP = TAB_GAP, POP_W = POP_W, POP_LIST = POP_LIST, POP_ROWS = POP_ROWS,
     POP_ROW_H = POP_ROW_H, POP_ROW_GAP = POP_ROW_GAP, POP_HEAD = POP_HEAD, POP_TAB_Y = POP_TAB_Y, POP_MINI = POP_MINI,
-    POP_TAB_W = POP_TAB_W, POP_TAB_GAP = POP_TAB_GAP, POP_CAST = POP_CAST, POP_TEXT_X = POP_TEXT_X, POP_FLOATS = POP_FLOATS,
+    POP_TAB_W = POP_TAB_W, POP_TAB_GAP = POP_TAB_GAP, POP_QTY_W = POP_QTY_W, POP_CAST = POP_CAST, POP_TEXT_X = POP_TEXT_X, POP_FLOATS = POP_FLOATS,
     POP_FLOAT_LIFE = POP_FLOAT_LIFE, POP_PRESS = POP_PRESS, POP_EDGE = POP_EDGE }
 
 local function per(n) return n < 10 and ("%.1f"):format(n) or Angler.Short(n) end
 
 function Angler:Build(view, top)
     self.view = view
-    self.tab, self.qty, self.offset = "crew", 1, 0
+    self.tab, self.qty, self.offset = "crew", self.qty or 1, 0
     local crew = CreateFrame("Frame", nil, view)
     crew:SetPoint("TOPLEFT", PAD, -top)
     crew:SetSize(W, H)
@@ -628,9 +629,7 @@ function Angler:Build(view, top)
         self.tabs[i] = b
     end
     self.qtyBtn = UI.Button(crew, "Buy 1", TAB_W, TAB_H, function()
-        local at = 1
-        for i, q in ipairs(Angler.QTYS) do if q == self.qty then at = i end end
-        self.qty = Angler.QTYS[at % #Angler.QTYS + 1]
+        self:NextQty()
         self:Refresh()
     end)
     self.qtyBtn:SetPoint("RIGHT", crew, "TOPRIGHT", -12, -UI.HeadMid(HEAD_H))
@@ -762,6 +761,14 @@ function Angler:Build(view, top)
     self.side = s
 end
 
+-- One, ten, as many as you can afford, and round again.
+function Angler:NextQty()
+    local at = 1
+    for i, q in ipairs(Angler.QTYS) do if q == (self.qty or 1) then at = i end end
+    self.qty = Angler.QTYS[at % #Angler.QTYS + 1]
+    return self.qty
+end
+
 -- A row's button: buy crew (one, ten or the lot) or a piece of tackle.
 function Angler:RowClick(row)
     local ok
@@ -819,8 +826,8 @@ end
 -- The pop-out, second go (Jake: "it looks clunky ... as clean and satisfying as possible ... smooth, polished
 -- and dopamine inducing"). No title bar and no stone frame: a slim dark card, the Cast icon, the count beside
 -- it, and three small controls in the corner that stay faint until the mouse is over the card. What makes a
--- clicker feel good is that every click answers: the icon dips and flashes, a "+12" floats up off it, and the
--- count runs up between the seconds instead of jumping once a second (Angler:PopFrame, every frame).
+-- clicker feel good is that every click answers: the icon dips and flashes and a "+12" floats up off it
+-- (Angler:PopFrame, every frame).
 local function mini(parent, tip, onClick)
     local b = CreateFrame("Button", nil, parent)
     b:SetSize(POP_MINI, POP_MINI)
@@ -980,6 +987,14 @@ function Angler:BuildPop()
         if UI.Unred then UI.Unred(b) end
         f.tabs[i] = b
     end
+    -- how many crew a click buys: one, ten or all you can afford (Jake, the day 0.20.0 went out: "we might
+    -- need to implement a buy 10 button"; the page had one, the pop-out bought one at a time). It's the
+    -- page's setting too: change it in either.
+    f.qty = UI.Button(f, "x1", POP_QTY_W, POP_TAB_H, function()
+        self:NextQty()
+        self:Refresh()
+    end)
+    f.qty:SetPoint("TOPRIGHT", -8, -POP_TAB_Y)
     f.empty = UI.Text(f, 11)
     f.empty:SetPoint("TOP", 0, -(POP_LIST + 10))
     f.empty:SetTextColor(DIM[1], DIM[2], DIM[3])
@@ -1008,7 +1023,7 @@ function Angler:BuildPop()
         row.name:SetWordWrap(false)
         row.buy = UI.Button(row, "", POP_BUY_W, 20, function()
             local it = row.it
-            local ok = it and (it.crew and self:Buy(it.crew, 1) or it.tackle and self:BuyTackle(it.tackle[1]) or it.perk and self:BuyPerk(it.perk[1]))
+            local ok = it and (it.crew and self:Buy(it.crew, self.qty or 1) or it.tackle and self:BuyTackle(it.tackle[1]) or it.perk and self:BuyPerk(it.perk[1]))
             if ok then
                 ns.Sound("IG_BACKPACK_COIN_SELECT")
                 self:Refresh()
@@ -1075,10 +1090,9 @@ function Angler:PopFrame(elapsed)
     local f = self.pop
     if not f or not f:IsShown() then return end
     f.clock = (f.clock or 0) + elapsed
-    -- the count runs up between the once-a-second counts
-    local g, now = G(), ns.Now()
-    local rate = self:Rate() * (self:Buff("frenzy", now) and self:FrenzyMult() or 1)
-    f.fish:SetText(Angler.Short(g.fish + rate * math.min(1, self.wait or 0)))
+    -- (the count steps once a second, as the page's does. It ran up every frame here for a day: the last
+    --  digits were a blur. Jake: "the decimal on the popout ends up going way too fast. looks better in the
+    --  non popout menu")
     -- the icon springs back
     if f.press > 0 then
         f.press = math.max(0, f.press - elapsed / POP_PRESS)
@@ -1194,6 +1208,8 @@ function Angler:RefreshPop()
         b:SetShown(open)
         b:SetSelected(b.key == f.tab)
     end
+    f.qty:SetShown(open and f.tab == "crew")
+    f.qty:SetLabel(self.qty == "max" and "max" or ("x" .. (self.qty or 1)))
     local items = open and self:PopItems() or {}
     f.empty:SetShown(open and f.tab == "tackle" and items[1] == nil)
     f.offset = math.max(0, math.min(f.offset or 0, #items - POP_ROWS))
@@ -1216,7 +1232,9 @@ function Angler:RefreshPop()
                 row.buy:SetEnabledState(g.pearls >= k[4])
             end
         elseif it and it.crew then
-            local c, owned, cost = Angler.CREW[it.crew], self:Owned(it.crew), self:Cost(it.crew, 1)
+            local qty = self.qty or 1
+            local c, owned = Angler.CREW[it.crew], self:Owned(it.crew)
+            local cost = self:Cost(it.crew, qty == "max" and math.max(1, self:Affordable(it.crew)) or qty)
             row.icon:SetTexture("Interface\\Icons\\" .. c[5])
             row.name:SetText(c[2])
             row.count:SetText(owned > 0 and tostring(owned) or "")

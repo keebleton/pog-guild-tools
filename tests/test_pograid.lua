@@ -10896,10 +10896,10 @@ do
             local rate = A:Rate()
             A.wait = 0.5
             STUB.Script(pop, "OnUpdate", 0)
-            check(rate == 30 and pop.fish:GetText() == "115" and g.fish == 100, "angler pop-out: the count runs up between the once-a-second counts (the fish in hand don't change)")
+            check(rate == 30 and pop.fish:GetText() == "100" and g.fish == 100, "angler pop-out: the count holds still between the once-a-second counts (running every frame, its last digits were a blur)")
             A.wait = 0
             STUB.Script(pop, "OnUpdate", 0)
-            check(pop.fish:GetText() == "100", "angler pop-out: (from the last count)")
+            check(pop.fish:GetText() == "100" and pop.fish:GetText() == side.fish:GetText(), "angler pop-out: (the same number as the page)")
             -- the corner controls are faint until the mouse is over the card
             pop.reveal = 0
             STUB.Script(pop, "OnUpdate", 0.05)
@@ -11006,11 +11006,36 @@ do
             local _, sst, _, ssh = STUB.rect(pop.shop)
             check(#pop.tabs == 3 and pop.tabs[1].label:GetText() == "Crew" and pop.tabs[2].label:GetText() == "Tackle" and pop.tabs[3].label:GetText() == "Perks"
                 and pop.tabs[1].selected and not pop.tabs[2].selected and pop.tab == "crew", "angler pop-out: Crew, Tackle and Perks tabs, Crew first")
-            check(near(t1l, rr1l) and near(t3l + t3w, rr1l + rr1w) and near(t2l - (t1l + t1w), L.POP_TAB_GAP) and near(ppt - t1t, L.POP_TAB_Y) and t1t <= ppt - L.POP_HEAD - 4 and sst ~= nil and ssh ~= nil
+            local ql, qt, qw = STUB.rect(pop.qty)
+            check(near(ql + qw, rr1l + rr1w) and near(ql - (t3l + t3w), L.POP_TAB_GAP) and near(qt, t1t) and near(qw, L.POP_QTY_W) and qw >= 30 and pop.qty:IsShown()
+                and pop.qty.label:GetText() == "x1", "angler pop-out: an x1 button ends the tab row")
+            -- buy ten, or all you can afford (Jake: "we might need to implement a buy 10 button")
+            do
+                local keep = { g.fish, g.own }
+                g.fish, g.own = 1000, {}
+                A:Refresh()
+                STUB.Script(pop.qty, "OnClick")
+                check(A.qty == 10 and pop.qty.label:GetText() == "x10" and pop.rows[1].buy.label:GetText() == A.Short(A:Cost(1, 10)) and A.qtyBtn.label:GetText() == "Buy 10",
+                    "angler pop-out: x10 prices ten (and the page's Buy button follows)")
+                STUB.Script(pop.rows[1].buy, "OnClick")
+                check(A:Owned(1) == 10 and pop.rows[1].count:GetText() == "10", "angler pop-out: and a click buys ten")
+                STUB.Script(pop.qty, "OnClick")
+                local can = A:Affordable(1)
+                check(A.qty == "max" and pop.qty.label:GetText() == "max" and can > 1 and pop.rows[1].buy.label:GetText() == A.Short(A:Cost(1, can)), "angler pop-out: max prices all you can afford")
+                STUB.Script(pop.rows[1].buy, "OnClick")
+                check(A:Owned(1) == 10 + can and A:Affordable(1) == 0 and pop.rows[1].buy.label:GetText() == A.Short(A:Cost(1, 1)) and not pop.rows[1].buy:IsEnabled(),
+                    "angler pop-out: and buys them (then shows the price of the next one, greyed)")
+                STUB.Script(pop.qty, "OnClick")
+                check(A.qty == 1 and pop.qty.label:GetText() == "x1", "angler pop-out: and round to one again")
+                g.fish, g.own = keep[1], keep[2]
+                A:Refresh()
+            end
+            check(near(t1l, rr1l) and t3l + t3w < ql and near(t2l - (t1l + t1w), L.POP_TAB_GAP) and near(ppt - t1t, L.POP_TAB_Y) and t1t <= ppt - L.POP_HEAD - 4 and sst ~= nil and ssh ~= nil
                 and t1t - t1h >= rr1t + 4 and near(t1w, L.POP_TAB_W), "angler pop-out: the tabs span the list, between the head and the rows")
             check(#A:PopItems() == #A.CREW and A:PopItems()[1].crew == 1 and #A:PopItems("perks") == #A.PERKS, "angler pop-out: the Crew tab lists the crew")
             -- perks
             STUB.Script(pop.tabs[3], "OnClick")
+            check(not pop.qty:IsShown(), "angler pop-out: (the x1 button is for crew: it's away on the other tabs)")
             check(pop.tab == "perks" and pop.tabs[3].selected and not pop.tabs[1].selected and pop.rows[1].name:GetText() == "Head Start"
                 and pop.rows[1].buy.label:GetText() == "2 pearls" and not pop.rows[1].buy:IsEnabled() and pop.rows[1].tag:GetText() == ""
                 and pop.rows[1].icon:GetTexture() == "Interface\\Icons\\" .. A.PERKS[1][5], "angler pop-out: the Perks tab sells perks for pearls")

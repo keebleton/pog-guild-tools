@@ -1,4 +1,9 @@
-# Pog Guild Tools 0.20.0
+# Pog Guild Tools 0.20.1
+
+- **Angler:** the pop-out can buy crew ten at a time, or as many as you can afford. Its x1 button, at the end of the tab row, switches between x1, x10 and max.
+- **Angler:** the pop-out's fish count now steps once a second, like the page. It was changing too fast to read.
+
+New in 0.20.0:
 
 - **New game: Angler.** An idle fishing game on the Games tab (or /pog angler). Restart the game after updating to see its tab. It's built to last: expect weeks, not an evening.
   - **Crew** catch fish every second, even with the window closed and while you're logged off (at half speed, up to eight hours). Fourteen kinds, from a Fishing Rod to an Abyssal Rift. Owning 10, 25, 50, 100 and every 50th after that of one kind doubles what that kind catches. Buy one, ten or as many as you can afford.
@@ -6,7 +11,7 @@
   - **Schools of fish** show up every few minutes for a few seconds. Click one for a feeding frenzy, a lucky haul or a casting spree.
   - **Tackle:** 46 one-off upgrades, including a Better and a Master upgrade for every kind of crew.
   - **Trophies:** 34 goals, each worth 1% more fish for good. The last ones take a long time.
-  - **Pop-out:** /pog fish (or Pop out on the page) opens a small card you can leave up with the addon shut: cast, catch schools, and buy crew, tackle and perks from a little shop you can fold away. Every cast pops a "+" off the icon and the count ticks up as you watch.
+  - **Pop-out:** /pog fish (or Pop out on the page) opens a small card you can leave up with the addon shut: cast, catch schools, and buy crew, tackle and perks from a little shop you can fold away. Every cast pops a "+" off the icon.
   - **Guild board:** the Guild tab ranks everyone by the most fish ever caught, with their rank and pearls.
   - **Pearls and perks:** sell the catch to start the voyage over for pearls. Every pearl you've ever earned is 10% more fish for good, and you spend pearls on twelve perks that last through every voyage, from 2 pearls to 1,000. Your rank climbs from Deckhand to Tide King.
 - **Poggle, from your feedback:**
