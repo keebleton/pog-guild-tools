@@ -216,6 +216,13 @@ launchers and plain-English steps. Read this whole file before changing anything
   name to Poggle"): the Games tab, the card title, the start screen, `/pog poggle`, README, CHANGELOG. Everything
   inside keeps "lode" (`Lode.lua`, `ns.Lode`, the tab key, `db.games.lode`, the `lode` collection), and
   `/pog motherlode` and `/pog lode` still work. These notes say Motherlode for the same reason.
+- Wiping a game's board for everyone (Jake asked for both): nobody can delete someone else's record, so the board
+  moves to a NEW collection and the old one is dropped, and a `WIPE` number in the save clears each player's own
+  progress the first time they load it (raise it to wipe again). 0.20.2 Angler: `anglers`, code x (was `angler`, v),
+  `Angler.WIPE`, clears everything. 0.20.3 Poggle: `lodes`, code y (was `lode`, m), `Lode.WIPE`, clears bests and
+  runs, keeps the class. Poggle bests and boards are per class since 0.20.3 (Jake: "class specific"): `Lode:Best(class)`,
+  record id `author:class`, `Lode:Leaderboard(class)`, tabs `overlay.scoreTabs`, `Lode:ScoreClass()`. Angler pearls since 0.20.2 come from lifetime fish (fifth root, 5% each). Only code z is
+  free now; v and m must not be reused while old versions are about.
 - 0.19.0 Motherlode 2 (Jake: "people are really loving motherlode ... make it a really good game", with the guild's
   feedback). What changed in `Lode.Run`, and why:
   * Pockets are gone (guildies: "too much RNG", missing the x5 "can feel pretty bad"). Ore banks as mined

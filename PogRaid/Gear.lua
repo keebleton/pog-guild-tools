@@ -243,7 +243,9 @@ function Gear.Link(id)
         local ok, q = pcall(C_Item.GetItemQualityByID, id)
         if ok then quality = q end
     end
-    if not name and C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, id) end
+    -- Not all there yet (someone else's gear we've never seen): ask for it, whatever part we do have. A name
+    -- without its quality used to be left at that, and drawn white for good.
+    if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, id) end
     return ns.Wishlist.MakeLink(id, name or "Loading...", quality)
 end
 
@@ -426,13 +428,19 @@ ns.On("PLAYER_EQUIPMENT_CHANGED", function()
         P:RefreshCharacter()
     end
 end)
--- items load in bursts: refresh once they settle, and only while the window is open
+-- items load in bursts: refresh once they settle, and only what's open: the inspect window, and the gear icons
+-- on a profile (Jake, 0.20.3: "shoe knee's krol blade shows white and not purple outline": an item we'd never
+-- seen was drawn before the client knew its quality, and the profile was never drawn again when it arrived).
 local loadPending
 ns.On("ITEM_DATA_LOAD_RESULT", function()
-    if loadPending or not (Gear.window and Gear.window:IsShown()) then return end
+    local P = ns.Profiles
+    local win = Gear.window and Gear.window:IsShown()
+    local prof = P and P.charCard and P.charCard:IsVisible() and P.charFor
+    if loadPending or not (win or prof) then return end
     loadPending = true
     C_Timer.After(0.3, function()
         loadPending = nil
-        Gear:RefreshWindow()
+        if Gear.window and Gear.window:IsShown() then Gear:RefreshWindow() end
+        if P and P.charCard and P.charCard:IsVisible() and P.charFor then P:RefreshCharacter() end
     end)
 end)

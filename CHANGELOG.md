@@ -1,4 +1,10 @@
-# Pog Guild Tools 0.20.2
+# Pog Guild Tools 0.20.3
+
+- **Poggle: every class has its own hiscores.** The board has a tab for Warrior, Mage, Rogue and Hunter, and it opens on the class you're playing. Your best is kept per class too.
+- **Poggle: the hiscores have been reset.** Everyone's best run is cleared and the boards start empty, so we all start level with the new classes.
+- **Profiles:** gear icons now get their rarity colour even for items your game hasn't seen before. They could stay white (a purple weapon with a white outline).
+
+New in 0.20.2:
 
 - **Angler: pearls were far too strong, so they've been reworked.** It was possible to snowball to the end in a few hours.
   - Pearls now come from the fish you've caught in all, not from each voyage on its own, so selling again only pays for new ground.

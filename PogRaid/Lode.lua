@@ -54,7 +54,8 @@ Lode.PEGS, Lode.GOLD, Lode.KEGS, Lode.CRYSTALS = 46, 5, 3, 2
 -- The first floor's quota and how it grows. Tuned by playing a few hundred runs headless (a scratch script: one
 -- that clicks at random, one that tries a few aims and takes the best). Retune from Jake's playtesting.
 Lode.QUOTA, Lode.QUOTA_GROWTH = 450, 1.5
-Lode.share = true           -- our best run is shared with the guild (the "lode" collection below)
+Lode.WIPE = 1               -- (which wipe a save has had: see G)
+Lode.share = true           -- our best run is shared with the guild (the "lodes" collection below)
 
 -- the seam changes every two floors: { item (for its icon), name, icon if the item isn't known }
 Lode.ORES = {
@@ -636,54 +637,77 @@ end
 ------------------------------------------------------------------------
 local function G()
     ns.db.games = ns.db.games or { best = {} }
-    ns.db.games.lode = ns.db.games.lode or { depth = 0, ore = 0, runs = 0 }
-    return ns.db.games.lode
+    ns.db.games.lode = ns.db.games.lode or { bests = {}, runs = 0, wipe = Lode.WIPE }
+    local g = ns.db.games.lode
+    -- The wipe (Jake, for 0.20.3: "lets reset the poggle hiscores in next version"): a best from before it is
+    -- forgotten, and the runs counted with it, so the board starts level after the class rework. The class last
+    -- picked is kept. Lode.WIPE says which wipe a save has had; raise it to do it again.
+    if g.wipe ~= Lode.WIPE then g.bests, g.runs, g.wipe = {}, 0, Lode.WIPE end
+    -- (a best is kept for each class since 0.20.3: the one best of a save from before that isn't any class's)
+    g.bests = g.bests or {}
+    g.depth, g.ore = nil, nil
+    return g
 end
 Lode.Saved = G
 
--- A run is over: counted, and kept if it's our deepest (most ore breaks a tie).
+-- Our best with a class: { depth, ore } (Jake, 0.20.3: "let's make the poggle leaderboard class specific". The
+-- classes play too differently to share a board: a Rogue's ore isn't a Warrior's.) A run without a class, which
+-- only the tests make, has a best of its own that's never shared.
+function Lode:Best(class)
+    local g = G()
+    local key = Lode.CLASS[class or ""] and class or "none"
+    g.bests[key] = g.bests[key] or { depth = 0, ore = 0 }
+    return g.bests[key]
+end
+
+-- A run is over: counted, and kept if it's our deepest with its class (most ore breaks a tie).
 function Lode:Finish(run)
     local g = G()
     g.runs = g.runs + 1
-    if run.cleared > g.depth or (run.cleared == g.depth and run.total > g.ore) then
-        g.depth, g.ore = run.cleared, run.total
-        self:Publish()
+    local b = self:Best(run.class)
+    if run.cleared > b.depth or (run.cleared == b.depth and run.total > b.ore) then
+        b.depth, b.ore = run.cleared, run.total
+        self:Publish(run.class)
         return true
     end
     return false
 end
 
--- The guild's hiscores: one record a player, their deepest run (Jake: "add a
+-- The guild's hiscores: one record a player and class, their deepest run with it (Jake: "add a
 -- hiscore"). A new kind of record costs something while the guild is on
 -- mixed versions: an addon older than 0.16.9 can't file it and asks for it
 -- again at every check-in (a few small messages every ten minutes while old
 -- and new are online together), until it updates. Jake's call to have the
 -- board now; Lode.share = false turns the writing off again.
+-- ("lodes", code y: it was "lode", code m, until the wipe. A new collection is the only way to empty the board
+--  for everyone at once: nobody can delete someone else's record. As with Angler's "anglers", code x.)
 ns.Sync:Register({
-    name = "lode", code = "m", order = 4,
-    fields = { "depth", "ore" },
+    name = "lodes", code = "y", order = 4,
+    fields = { "class", "depth", "ore" },
     numeric = { depth = true, ore = true },
     valid = function(rec)
-        return rec.by == rec.author and rec.id == rec.author and rec.depth ~= nil and rec.depth >= 0 and rec.depth <= 999
+        return rec.by == rec.author and Lode.CLASS[rec.class or ""] ~= nil and rec.id == rec.author .. ":" .. rec.class
+            and rec.depth ~= nil and rec.depth >= 0 and rec.depth <= 999
             and rec.depth == math.floor(rec.depth) and rec.ore ~= nil and rec.ore >= 0 and rec.ore < 1e9
     end,
     onChange = function() Lode:Refresh() end,
 })
 
-function Lode:Publish()
-    if not Lode.share or not ns.Sync:GuildName() then return false end
-    local g, me = G(), ns.Sync:Me()
-    local cur = (ns.Sync:Store("lode") or {})[me]
+function Lode:Publish(class)
+    if not Lode.share or not Lode.CLASS[class or ""] or not ns.Sync:GuildName() then return false end
+    local g, me = self:Best(class), ns.Sync:Me()
+    local id = me .. ":" .. class
+    local cur = (ns.Sync:Store("lodes") or {})[id]
     if cur and not cur.deleted and (cur.depth > g.depth or (cur.depth == g.depth and cur.ore >= g.ore)) then return false end
-    ns.Sync:Write("lode", { id = me, author = me, t = ns.Now(), depth = g.depth, ore = math.floor(g.ore) })
+    ns.Sync:Write("lodes", { id = id, author = me, t = ns.Now(), class = class, depth = g.depth, ore = math.floor(g.ore) })
     return true
 end
 
--- Deepest first, then most ore.
-function Lode:Leaderboard()
+-- A class's board: deepest first, then most ore.
+function Lode:Leaderboard(class)
     local out = {}
-    for _, rec in pairs(ns.Sync:Store("lode") or {}) do
-        if not rec.deleted then out[#out + 1] = rec end
+    for _, rec in pairs(ns.Sync:Store("lodes") or {}) do
+        if not rec.deleted and rec.class == class then out[#out + 1] = rec end
     end
     table.sort(out, function(a, b)
         if a.depth ~= b.depth then return a.depth > b.depth end
@@ -717,6 +741,7 @@ local APPEAR, STAGGER = 0.25, 0.4 -- a new floor's pegs fade in, the top rows fi
 local LIT_GLOW, IDLE_GLOW = 0.5, 0.22 -- a hit peg's halo; the slow pulse of gold, kegs and crystals
 local FOOT_H = 70               -- the run card's foot: our best, Hiscores and New run
 local SCORE_ROWS, SCORE_W, SCORE_TOP = 8, 340, 322 -- the guild's hiscores on the board's overlay
+local SCORE_TAB_W, SCORE_TAB_H, SCORE_TAB_GAP = 82, 22, 4 -- a tab a class over them (4 x 82 + 3 x 4 = SCORE_W)
 local LEGEND_H = 100            -- "Pegs" and its four rows above it
 -- Aiming far to one side takes the mouse off the board, and off the window
 -- (Jake): while a bomb is waiting, a click this far outside still drops it.
@@ -729,7 +754,8 @@ Lode.ART = { "Talent trees", "Shaman: Enhancement" } -- the board's backdrop: ea
 Lode.ART_ALPHA = 0.45           -- fainter than a page's so the pegs read
 Lode.layout = { SIDE_X = SIDE_X, SIDE_W = SIDE_W, HEAD_H = HEAD_H, TILE_W = TILE_W, TILE_H = TILE_H, TILE_GAP = TILE_GAP,
     CATCH = CATCH, TRAIL = TRAIL, POP = POP, FADE = FADE, APPEAR = APPEAR, STAGGER = STAGGER, LIT_GLOW = LIT_GLOW,
-    IDLE_GLOW = IDLE_GLOW, FOOT_H = FOOT_H, LEGEND_H = LEGEND_H, SCORE_ROWS = SCORE_ROWS, SCORE_W = SCORE_W, SCORE_TOP = SCORE_TOP }
+    IDLE_GLOW = IDLE_GLOW, FOOT_H = FOOT_H, LEGEND_H = LEGEND_H, SCORE_ROWS = SCORE_ROWS, SCORE_W = SCORE_W, SCORE_TOP = SCORE_TOP,
+    SCORE_TAB_W = SCORE_TAB_W, SCORE_TAB_H = SCORE_TAB_H, SCORE_TAB_GAP = SCORE_TAB_GAP }
 
 local function commas(n)
     local s = tostring(math.floor(n + 0.5))
@@ -1007,7 +1033,9 @@ function Lode:Build(view, top, height)
 
     self:BuildSide(view, top, height)
     self:BuildOverlays(board)
-    if G().depth > 0 or G().ore > 0 then self:Publish() end
+    for _, c in ipairs(Lode.CLASSES) do
+        if G().bests[c[1]] then self:Publish(c[1]) end -- (a best made while sharing was off, or out of a guild)
+    end
 end
 
 -- The run, beside the board. From the top: the floor (big) and the seam's
@@ -1199,9 +1227,21 @@ function Lode:BuildOverlays(board)
     o.start:SetPoint("TOP", o.sub, "BOTTOM", 0, -18)
     -- the guild's hiscores: deepest run first. Up before a run, after one, and when asked for.
     o.scoreTitle = UI.Text(o, 13)
-    o.scoreTitle:SetPoint("TOP", 0, -(SCORE_TOP - 24))
+    o.scoreTitle:SetPoint("TOP", 0, -(SCORE_TOP - 6 - SCORE_TAB_H - 24))
     o.scoreTitle:SetText("Guild hiscores")
     o.scoreTitle:SetTextColor(GOLD[1], GOLD[2], GOLD[3])
+    -- a board a class: the tabs pick whose (the class being played, until one is clicked)
+    o.scoreTabs = {}
+    for i, c in ipairs(Lode.CLASSES) do
+        local t = UI.Button(o, c[2], SCORE_TAB_W, SCORE_TAB_H, function()
+            self.scoreClass = c[1]
+            self:Refresh()
+        end)
+        t:SetPoint("TOPLEFT", (Lode.W - SCORE_W) / 2 + (i - 1) * (SCORE_TAB_W + SCORE_TAB_GAP), -(SCORE_TOP - 6 - SCORE_TAB_H))
+        UI.Unred(t)
+        t.key = c[1]
+        o.scoreTabs[i] = t
+    end
     o.scores = {}
     for i = 1, SCORE_ROWS do
         local row = CreateFrame("Frame", nil, o)
@@ -1338,6 +1378,7 @@ function Lode:NewRun(seed, class)
         return
     end
     G().class = Lode.CLASS[class] and class or nil
+    self.scoreClass = nil -- (the board goes back to the class being played)
     self.run = Run.New(seed or (math.floor(GetTime() * 1000) % 2147483646 + math.random(1, 100000)), class)
     self.newBest, self.showScores, self.picking = nil, nil, nil
     self.message:SetText("")
@@ -1731,7 +1772,16 @@ end
 function Lode:RefreshSide()
     local s, run = self.side, self.run
     local g = G()
-    s.best:SetText(g.runs > 0 and ("Best: floor %d, %s ore"):format(g.depth, commas(g.ore)) or "No runs yet")
+    -- our best with the class being played (the last one played, between runs)
+    local class = run and run.class or (not run and g.class) or nil
+    local b, cname = self:Best(class), Lode.CLASS[class or ""] and Lode.CLASS[class][2]
+    if g.runs == 0 then
+        s.best:SetText("No runs yet")
+    elseif cname and b.depth == 0 and b.ore == 0 then
+        s.best:SetText(("No %s best yet"):format(cname))
+    else
+        s.best:SetText(("%s: floor %d, %s ore"):format(cname and (cname .. " best") or "Best", b.depth, commas(b.ore)))
+    end
     local floor = run and run.floor or 1
     s.seam:SetText(run and (Lode.Ore(floor)[2] .. " seam" .. (run.class and (", " .. Lode.CLASS[run.class][2]) or "")) or "")
     s.floor:SetText(run and tostring(floor) or "")
@@ -1789,10 +1839,16 @@ function Lode:RefreshSide()
     s.scoresBtn:SetSelected(self.showScores == true)
 end
 
+-- Whose board is up: the tab clicked, else the class being played or last played (NewRun saves it), else the first.
+function Lode:ScoreClass()
+    local c = self.scoreClass or G().class
+    return Lode.CLASS[c or ""] and c or Lode.CLASSES[1][1]
+end
+
 -- The guild's hiscores for the overlay: the top rows, and ours on the last
 -- one if we're further down than that. { rank, rec } each.
 function Lode:ScoreRows()
-    local board, me = self:Leaderboard(), ns.Sync:Me()
+    local board, me = self:Leaderboard(self:ScoreClass()), ns.Sync:Me()
     local rows, mine = {}, nil
     for i, rec in ipairs(board) do
         if i <= SCORE_ROWS then rows[i] = { rank = i, rec = rec } end
@@ -1821,7 +1877,13 @@ function Lode:RefreshOverlay()
     local rows = scores and self:ScoreRows() or {}
     local me = ns.Sync:Me()
     o.scoreTitle:SetShown(scores)
+    local shown = self:ScoreClass()
+    for _, t in ipairs(o.scoreTabs) do
+        t:SetShown(scores)
+        t:SetSelected(t.key == shown)
+    end
     o.noScores:SetShown(scores and rows[1] == nil)
+    o.noScores:SetText(("No %s scores yet. Be the first."):format(Lode.CLASS[shown][2]))
     for i, row in ipairs(o.scores) do
         local it = rows[i]
         row:SetShown(it ~= nil)
@@ -1862,7 +1924,7 @@ function Lode:RefreshOverlay()
         o.sub:SetText("Pick an upgrade.")
     elseif peek then
         o.title:SetText("Hiscores")
-        o.sub:SetText("Deepest floor cleared, then most ore.")
+        o.sub:SetText("Deepest floor cleared, then most ore. Each class has its own board.")
         o.start:SetLabel("Back")
     elseif state == "over" then
         o.title:SetText(self.newBest and "New best!" or "Out of bombs")

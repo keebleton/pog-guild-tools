@@ -3470,6 +3470,34 @@ do
     STUB.worn = { [1] = 5001, [2] = 5002 }
     STUB.Fire("PLAYER_EQUIPMENT_CHANGED", 2)
     check(c.mini[2].link and c.mini[2].link:find("Hitem:5002", 1, true), "layout: changing gear updates them straight away")
+    -- an item the client hasn't loaded yet (Jake: "shoe knee's krol blade shows white and not purple outline"):
+    -- white for now, asked for, and its own colour once it arrives
+    do
+        local hadItem = C_Item
+        C_Item = C_Item or {}
+        local I = C_Item
+        local info, qual, nameBy, req = I.GetItemInfo, I.GetItemQualityByID, I.GetItemNameByID, I.RequestLoadItemDataByID
+        local asked, loaded = {}, false
+        I.GetItemInfo = function(id)
+            if id == 5001 and loaded then return "Krol Blade", STUB.Link(5001, "Krol Blade", "a335ee"), 4, 60 end
+        end
+        I.GetItemNameByID = function(id) return id == 5001 and "Krol Blade" or nil end -- (the name is known, the rest isn't)
+        I.GetItemQualityByID = function() return nil end
+        I.RequestLoadItemDataByID = function(id) asked[id] = true end
+        STUB.worn = { [1] = 5001 }
+        P:RefreshCharacter()
+        check(c.mini[1].border.__color[1] == 1 and c.mini[1].border.__color[2] == 1 and asked[5001] == true,
+            "gear colour: an item the client hasn't loaded is white for now, and asked for (even with its name known)")
+        loaded = true
+        STUB.Fire("ITEM_DATA_LOAD_RESULT", 5001, true)
+        STUB.Fire("ITEM_DATA_LOAD_RESULT", 5001, true)
+        check(c.mini[1].border.__color[1] == 1, "gear colour: (items load in bursts: not redrawn for each)")
+        STUB.Advance(1)
+        check(math.abs(c.mini[1].border.__color[1] - 0.64) < 0.01 and math.abs(c.mini[1].border.__color[3] - 0.93) < 0.01
+            and c.mini[1].link:find("Krol Blade", 1, true), "gear colour: and purple once it arrives, on the profile")
+        I.GetItemInfo, I.GetItemQualityByID, I.GetItemNameByID, I.RequestLoadItemDataByID = info, qual, nameBy, req
+        C_Item = hadItem
+    end
     STUB.worn = wornBefore
     P:Open(viewed)
 
@@ -7145,23 +7173,62 @@ do
         fly(r)
         check(r.state == "over" and r.cleared == 0 and r:Fire(0) == false, "lode: out of bombs short of the quota ends the run")
         ns.db.games.lode = nil
-        check(Lode:Finish(r) == false and Lode.Saved().runs == 1 and Lode.Saved().depth == 0, "lode: a run that cleared nothing is counted, not a best")
+        check(Lode:Finish(r) == false and Lode.Saved().runs == 1 and Lode:Best().depth == 0, "lode: a run that cleared nothing is counted, not a best")
         check(Lode:Finish({ cleared = 3, total = 900 }) == true and Lode:Finish({ cleared = 3, total = 800 }) == false
             and Lode:Finish({ cleared = 3, total = 1000 }) == true and Lode:Finish({ cleared = 2, total = 99999 }) == false
-            and Lode.Saved().depth == 3 and Lode.Saved().ore == 1000 and Lode.Saved().runs == 5,
+            and Lode:Best().depth == 3 and Lode:Best().ore == 1000 and Lode.Saved().runs == 5,
             "lode: the deepest run is kept, more ore breaking a tie")
+    end
+
+    -- the wipe (Jake: "lets reset the poggle hiscores in next version"): a best from before it is forgotten, once
+    do
+        local keep = ns.db.games.lode
+        ns.db.games.lode = { depth = 14, ore = 52000, runs = 31, class = "mage" }
+        local w = Lode.Saved()
+        check(w.depth == nil and w.ore == nil and next(w.bests) == nil and w.runs == 0 and w.class == "mage" and w.wipe == Lode.WIPE and Lode.WIPE == 1 and ns.db.games.lode == w,
+            "lode wipe: a best from before the wipe is forgotten, and its runs (the class last picked is kept)")
+        check(Lode:Finish({ cleared = 2, total = 300 }) == true and Lode:Best().depth == 2 and Lode:Best().ore == 300 and Lode.Saved().runs == 1,
+            "lode wipe: once: a run made afterwards is kept")
+        ns.db.games.lode = nil
+        check(Lode.Saved().wipe == Lode.WIPE and Lode:Best().depth == 0, "lode wipe: (a new save has had it)")
+        ns.db.games.lode = keep
+        -- a save from 0.20.3 before the class boards (only ever on Jake's machine): its one best isn't any class's
+        local before = ns.db.games.lode
+        ns.db.games.lode = { depth = 6, ore = 900, runs = 4, wipe = Lode.WIPE }
+        check(Lode.Saved().depth == nil and Lode.Saved().runs == 4 and Lode:Best("mage").depth == 0, "lode wipe: (a best from before the class boards is dropped)")
+        ns.db.games.lode = before
+    end
+
+    -- a best for each class (Jake: "let's make the poggle leaderboard class specific")
+    do
+        local keep = ns.db.games.lode
+        ns.db.games.lode = nil
+        local old = Lode.share
+        Lode.share = false
+        check(Lode:Finish({ cleared = 4, total = 800, class = "mage" }) == true and Lode:Finish({ cleared = 2, total = 100, class = "rogue" }) == true
+            and Lode:Finish({ cleared = 3, total = 9999, class = "mage" }) == false and Lode:Finish({ cleared = 2, total = 150, class = "rogue" }) == true
+            and Lode:Best("mage").depth == 4 and Lode:Best("mage").ore == 800 and Lode:Best("rogue").depth == 2 and Lode:Best("rogue").ore == 150
+            and Lode:Best("warrior").depth == 0 and Lode:Best().depth == 0 and Lode:Best("druid") == Lode:Best() and Lode.Saved().runs == 4,
+            "lode classes: a best is kept for each class, a run with one class not counting against another")
+        Lode.share = old
+        ns.db.games.lode = keep
     end
 
     -- the guild's deepest runs: understood from this version, not shared until it's turned on
     do
         local me = Sync:Me()
-        local def = Sync.collections.lode
-        check(def ~= nil and def.code == "m" and Lode.share == true and count(Sync:Store("lode")) == 1 and Sync:Store("lode")[me]
-            and Sync:Store("lode")[me].depth == 3 and Sync:Store("lode")[me].ore == 1000 and Lode:Publish() == false,
-            "lode: our best run is shared with the guild as it's made, once")
+        local mine = me .. ":mage"
+        local def = Sync.collections.lodes
+        check(count(Sync:Store("lodes")) == 0 and Lode:Publish() == false and Lode:Publish("druid") == false and count(Sync:Store("lodes")) == 0,
+            "lode: a run without a class isn't shared")
+        check(Lode:Finish({ cleared = 3, total = 1000, class = "mage" }) == true, "lode: (a Mage's best)")
+        check(def ~= nil and def.code == "y" and Sync.collections.lode == nil and Lode.share == true and count(Sync:Store("lodes")) == 1 and Sync:Store("lodes")[mine]
+            and Sync:Store("lodes")[mine].depth == 3 and Sync:Store("lodes")[mine].ore == 1000 and Sync:Store("lodes")[mine].class == "mage"
+            and Lode:Publish("mage") == false,
+            "lode: our best run with a class is shared with the guild as it's made, once")
         local now = ns.Now()
         local function rec(who, depth, ore, extra)
-            local r = { id = who, rev = now, by = who, author = who, t = now, depth = depth, ore = ore }
+            local r = { id = who .. ":mage", rev = now, by = who, author = who, t = now, class = "mage", depth = depth, ore = ore }
             for k, v in pairs(extra or {}) do r[k] = v end
             return r
         end
@@ -7169,18 +7236,27 @@ do
             and Sync:Apply(def, rec("Raider05-Realm", 9, 100)), "lode: other addons' scores are taken")
         check(not Sync:Apply(def, rec("Raider06-Realm", 2, 5, { by = "Raider07-Realm" })) and not Sync:Apply(def, rec("Raider06-Realm", -1, 5))
             and not Sync:Apply(def, rec("Raider06-Realm", 2.5, 5)) and not Sync:Apply(def, rec("Raider06-Realm", 1000, 5))
-            and not Sync:Apply(def, rec("Raider06-Realm", 2, -1)) and not Sync:Apply(def, rec("Raider06-Realm", 2, 5, { id = "Raider06-Realm:x" })),
+            and not Sync:Apply(def, rec("Raider06-Realm", 2, -1)) and not Sync:Apply(def, rec("Raider06-Realm", 2, 5, { id = "Raider06-Realm:x" }))
+            and not Sync:Apply(def, rec("Raider06-Realm", 2, 5, { id = "Raider06-Realm" })) and not Sync:Apply(def, rec("Raider06-Realm", 2, 5, { class = "rogue" }))
+            and not Sync:Apply(def, rec("Raider06-Realm", 2, 5, { class = "druid", id = "Raider06-Realm:druid" })),
             "lode: someone else's, or one that makes no sense, is refused")
         Lode.share = false
-        Lode.Saved().ore = 2000
-        check(Lode:Publish() == false and Sync:Store("lode")[me].ore == 1000, "lode: (with sharing switched off nothing is written)")
+        Lode:Best("mage").ore = 2000
+        check(Lode:Publish("mage") == false and Sync:Store("lodes")[mine].ore == 1000, "lode: (with sharing switched off nothing is written)")
         Lode.share = true
-        check(Lode:Publish() == true and Sync:Store("lode")[me].depth == 3 and Sync:Store("lode")[me].ore == 2000 and Lode:Publish() == false,
+        check(Lode:Publish("mage") == true and Sync:Store("lodes")[mine].depth == 3 and Sync:Store("lodes")[mine].ore == 2000 and Lode:Publish("mage") == false,
             "lode: a better best replaces it")
-        local board = Lode:Leaderboard()
+        local board = Lode:Leaderboard("mage")
         check(#board == 4 and board[1].author == "Raider05-Realm" and board[2].author == "Raider04-Realm" and board[3].author == "Raider03-Realm"
             and board[4].author == me, "lode: deepest first, then most ore")
-        for id in pairs(Sync:Store("lode")) do Sync:Store("lode")[id] = nil end
+        -- another class is another record, on another board
+        check(Lode:Finish({ cleared = 1, total = 50, class = "hunter" }) == true and count(Sync:Store("lodes")) == 5
+            and Sync:Store("lodes")[me .. ":hunter"].depth == 1 and Sync:Store("lodes")[mine].depth == 3
+            and #Lode:Leaderboard("hunter") == 1 and Lode:Leaderboard("hunter")[1].author == me and #Lode:Leaderboard("mage") == 4
+            and #Lode:Leaderboard("warrior") == 0 and #Lode:Leaderboard() == 0,
+            "lode classes: each class has a record and a board of its own")
+        Lode.Saved().bests.mage, Lode.Saved().bests.hunter = nil, nil
+        for id in pairs(Sync:Store("lodes")) do Sync:Store("lodes")[id] = nil end
         Sync.index = nil
         STUB.sent = {}
     end
@@ -7384,7 +7460,7 @@ do
         end
         check(run.state == "over" and o:IsShown() and o.title:GetText() == "New best!" and o.start:IsShown() and o.start.label:GetText() == "New run"
             and o.sub:GetText() == "Cleared 1 floor, 10 ore mined. Floor 2 needed 680." and not o.tiles[1]:IsShown()
-            and Lode.Saved().runs == 1 and Lode.Saved().depth == 1 and side.best:GetText() == "Best: floor 1, 10 ore",
+            and Lode.Saved().runs == 1 and Lode:Best().depth == 1 and side.best:GetText() == "Best: floor 1, 10 ore",
             "lode: the run over, how it went, and our best kept")
         startRun(o)
         check(Lode.run ~= run and Lode.run.state == "aim" and not o:IsShown() and Lode.message:GetText() == "", "lode: New run from there starts again")
@@ -7400,7 +7476,7 @@ do
             STUB.Script(board, "OnUpdate", 0.02)
         end
         check(run.state == "over" and o.title:GetText() == "Out of bombs" and o.sub:GetText():find("Cleared 0 floors", 1, true)
-            and Lode.Saved().runs == 2 and Lode.Saved().depth == 1, "lode: a run that isn't our deepest says so")
+            and Lode.Saved().runs == 2 and Lode:Best().depth == 1, "lode: a run that isn't our deepest says so")
         -- how it looks and feels (0.16.9, Jake: "more visually appealing", "the ball could be brighter"): a mine behind
         -- the board, a glowing bomb with sparks, numbers floating off what's mined, pops, blasts and a peg count
         do
@@ -7681,7 +7757,7 @@ do
         -- middle of one from the Hiscores button
         do
             local L = Lode.layout
-            local store = Sync:Store("lode")
+            local store = Sync:Store("lodes")
             for id in pairs(store) do store[id] = nil end
             Sync.index = nil
             Lode.run = nil
@@ -7691,9 +7767,15 @@ do
                 and not o.scores[1]:IsShown() and #o.scores == L.SCORE_ROWS and not side.scoresBtn:IsEnabled(),
                 "hiscores: before a run the board has the guild's, or says there are none yet")
             local now = ns.Now()
-            local function score(who, depth, ore)
-                return Sync:Apply(Sync.collections.lode, { id = who, rev = now, by = who, author = who, t = now, depth = depth, ore = ore })
+            local function score(who, depth, ore, class)
+                return Sync:Apply(Sync.collections.lodes, { id = who .. ":" .. (class or "warrior"), rev = now, by = who, author = who, t = now,
+                    class = class or "warrior", depth = depth, ore = ore })
             end
+            local tabs = o.scoreTabs
+            check(#tabs == #Lode.CLASSES and tabs[1]:IsShown() and tabs[1].label:GetText() == "Warrior" and tabs[4].label:GetText() == "Hunter"
+                and tabs[1].selected == true and not tabs[2].selected and Lode:ScoreClass() == "warrior" and not tabs[1].red
+                and o.noScores:GetText() == "No Warrior scores yet. Be the first.",
+                "class boards: a tab a class over the list, the first one up before anything's been played")
             score("Raider03-Realm", 6, 4000)
             score("Raider04-Realm", 6, 5200)
             score("Raider05-Realm", 9, 100)
@@ -7713,9 +7795,23 @@ do
                 and r8t - r8h >= bt - bh + Lode.POCKET_H + 20, "hiscores: the list sits under Start run, centred, clear of the pockets")
             -- our own best goes on it as it's made, marked
             local me = Sync:Me()
-            local wasBest = Lode:Finish({ cleared = 7, total = 3000 })
-            check(wasBest == true and Lode.Saved().depth == 7, "hiscores: (a new best of ours)")
-            check(store[me] ~= nil and store[me].depth == 7 and store[me].ore == 3000, "hiscores: a new best of ours is shared")
+            -- the tabs: laid out over the list, edge to edge with it, and each its own board
+            local t1l, t1t, t1w, t1h = STUB.rect(tabs[1])
+            local t2l = STUB.rect(tabs[2])
+            local t4l, _, t4w = STUB.rect(tabs[4])
+            check(near(t1l, r1l) and near(t4l + t4w, r1l + r1w) and near(t2l - (t1l + t1w), L.SCORE_TAB_GAP) and t1w == L.SCORE_TAB_W and t1h == L.SCORE_TAB_H
+                and near((t1t - t1h) - r1t, 6) and ttl > t1t, "class boards: the tabs span the list, between its title and its first row")
+            score("Raider06-Realm", 4, 700, "mage")
+            check(sc[1].name:GetText() == "Raider05" and sc[3]:IsShown() and not sc[4]:IsShown(), "class boards: a Mage's score isn't on the Warriors' board")
+            STUB.Script(tabs[2], "OnClick")
+            check(Lode:ScoreClass() == "mage" and tabs[2].selected == true and not tabs[1].selected and sc[1].name:GetText() == "Raider06"
+                and sc[1].floor:GetText() == "floor 4" and not sc[2]:IsShown() and not o.noScores:IsShown(), "class boards: its tab shows the Mages' board")
+            STUB.Script(tabs[3], "OnClick")
+            check(o.noScores:IsShown() and o.noScores:GetText() == "No Rogue scores yet. Be the first." and not sc[1]:IsShown(), "class boards: (and an empty one says whose)")
+            STUB.Script(tabs[1], "OnClick")
+            local wasBest = Lode:Finish({ cleared = 7, total = 3000, class = "warrior" })
+            check(wasBest == true and Lode:Best("warrior").depth == 7, "hiscores: (a new best of ours)")
+            check(store[me .. ":warrior"] ~= nil and store[me .. ":warrior"].depth == 7 and store[me .. ":warrior"].ore == 3000, "hiscores: a new best of ours is shared")
             Lode:Refresh()
             check(sc[2].name:GetText() == "Jake" and sc[2].rank:GetText() == "2." and sc[2].floor:GetText() == "floor 7" and sc[2].mine:IsShown()
                 and not sc[1].mine:IsShown() and sc[3].name:GetText() == "Raider04", "hiscores: and shows in its place, marked as ours")
@@ -7765,6 +7861,23 @@ do
             end
             check(hr.state == "over" and o:IsShown() and o.scoreTitle:IsShown() and sc[8].name:GetText() == "Jake" and o.start.label:GetText() == "New run",
                 "hiscores: and they're up again when the run ends")
+            -- the board follows the class being played, and the card's foot says our best with it
+            STUB.Script(tabs[4], "OnClick")
+            Lode:NewRun(7, "mage")
+            STUB.Script(side.scoresBtn, "OnClick")
+            check(Lode.scoreClass == nil and Lode:ScoreClass() == "mage" and tabs[2].selected == true and sc[1].name:GetText() == "Raider06"
+                and o.sub:GetText():find("Each class has its own board", 1, true) and side.best:GetText() == "No Mage best yet",
+                "class boards: a run's board is its class's, and the card says there's no best with it yet")
+            STUB.Script(side.scoresBtn, "OnClick")
+            Lode:Finish({ cleared = 2, total = 640, class = "mage" })
+            Lode:Refresh()
+            check(side.best:GetText() == "Mage best: floor 2, 640 ore", "class boards: the card's best is the class's")
+            Lode:NewRun(8, "warrior")
+            check(side.best:GetText() == "Warrior best: floor 7, 3,000 ore" and not tabs[1]:IsShown(), "class boards: (each class its own; no tabs with the board away)")
+            Lode.run = nil
+            Lode:Refresh()
+            check(Lode:ScoreClass() == "warrior" and side.best:GetText() == "Warrior best: floor 7, 3,000 ore" and tabs[1]:IsShown() and tabs[1].selected == true,
+                "class boards: between runs it's the class last played")
             for id in pairs(store) do store[id] = nil end
             Sync.index = nil
             STUB.sent = {}
