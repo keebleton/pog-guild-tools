@@ -6989,7 +6989,14 @@ do
         check(a.state == "flying" and plain(snap) and snap.rand == nil and snap.events == nil and snap.class == "mage" and snap.upgrades.rich == 2
             and snap.upgrades ~= a.upgrades and #snap.pegs == #a.pegs and snap.pegs[1] ~= a.pegs[1] and snap.rng.s == a.rng.s and #snap.balls == #a.balls,
             "saved runs: a run is copied as plain data, with a bomb in the air, and none of it the run's own tables")
-        local b = Lode.Thaw(snap, Lode.Run)
+        -- (as the saved file gives it back: a table met twice is two tables)
+        local function flat(v)
+            if type(v) ~= "table" then return v end
+            local out = {}
+            for k, x in pairs(v) do out[k] = flat(x) end
+            return out
+        end
+        local b = Lode.Thaw(flat(snap), Lode.Run)
         check(getmetatable(b) == Lode.Run and b ~= snap and b.pegs ~= snap.pegs and type(b.rand) == "function" and b.events and #b.events == 0 and b.dirty == true
             and b:Has("rich") == 2 and b:Is("mage"), "saved runs: and comes back a run, a copy of what was saved")
         play(a, 3000)
@@ -9092,6 +9099,37 @@ do
                 "saved runs: back in game the Siege run is picked up, the ball on the paddle again and no life lost")
             Siege:Refresh()
             check(not o:IsShown(), "saved runs: and it's on the board, ready to serve")
+            -- out of the saved file a brick met twice is two bricks (Jake: "bricks are not disappearing when hit")
+            do
+                local function flat(v)
+                    if type(v) ~= "table" then return v end
+                    local out = {}
+                    for k, x in pairs(v) do out[k] = flat(x) end
+                    return out
+                end
+                Siege.Saved().run = flat(kept())
+                check(kept().run.grid[kept().run.bricks[1].r][kept().run.bricks[1].c] ~= kept().run.bricks[1], "saved runs: (the saved file's bricks, apart)")
+                Siege.run = nil
+                check(Siege:Resume() == true, "saved runs: a Siege run out of the saved file is picked up")
+                local r, one, cells = Siege.run, true, 0
+                for _, k in ipairs(r.bricks) do
+                    if r.grid[k.r][k.c] ~= k then one = false end
+                end
+                for row = 1, Siege.ROWS do
+                    for _ in pairs(r.grid[row]) do cells = cells + 1 end
+                end
+                check(one and cells == #r.bricks, "saved runs: and each brick on the board is the one the ball hits")
+                local before = r.left
+                r:Launch()
+                for _ = 1, 20000 do
+                    if r.left < before or r.state ~= "play" then break end
+                    r:Step(0.02, r.balls[1] and r.balls[1].x or 300)
+                end
+                local gone = 0
+                for _, k in ipairs(r.bricks) do if k.gone then gone = gone + 1 end end
+                check(r.left < before and gone == before - r.left, "saved runs: so a brick the ball breaks is gone from the board")
+                Siege:Keep()
+            end
             kept().v = "0.0.1"
             Siege.run = nil
             check(Siege:Resume() == false and kept() == nil, "saved runs: a Siege run from another version of the addon is dropped")

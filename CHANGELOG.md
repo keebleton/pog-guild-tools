@@ -1,4 +1,8 @@
-# Pog Guild Tools 0.20.4
+# Pog Guild Tools 0.20.5
+
+- **Siege:** in a run picked up after logging back in, bricks stayed on screen after the ball broke them. Fixed.
+
+New in 0.20.4:
 
 - **Poggle and Siege: your run is saved.** Log out, `/reload` or get disconnected, and the run is waiting where you left it when you open the game again.
   - In Siege the ball goes back on the paddle, so you never come back to a ball already falling.

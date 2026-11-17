@@ -842,6 +842,13 @@ function Siege:Resume()
         g.run = nil
         return false
     end
+    -- The saved file writes a table out wherever it's met, so the bricks by row and column come back as copies of
+    -- the ones in the list: a ball would break one and the board would go on drawing the other. One brick again.
+    run.grid = {}
+    for r = 1, ROWS do run.grid[r] = {} end
+    for _, k in ipairs(run.bricks) do
+        if type(k) == "table" and run.grid[k.r] then run.grid[k.r][k.c] = k end
+    end
     if run.state == "play" then
         run.pickups = {}
         run:Serve()
