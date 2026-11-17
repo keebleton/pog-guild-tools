@@ -441,7 +441,8 @@ Siege.Run = Run
 
 function Run.New(seed)
     -- `events` is what has happened since someone last looked: the screen shows them and empties the list
-    local run = setmetatable({ seed = seed, rand = Lode.Rng(seed), stage = 0, cleared = 0, score = 0, lives = Siege.LIVES,
+    local rng = {}
+    local run = setmetatable({ seed = seed, rand = Lode.Rng(seed, rng), rng = rng, stage = 0, cleared = 0, score = 0, lives = Siege.LIVES,
         upgrades = {}, balls = {}, pickups = {}, events = {}, paddleX = W / 2, wide = 0, net = 0, idle = 0, side = 1,
         pace = 1, state = "serve" }, Run)
     run:NextStage()
@@ -820,6 +821,37 @@ function Siege:Finish(run)
     end
     return false
 end
+
+-- The run being played is kept in the saved file as it goes, like Poggle's (Lode.Freeze: Jake, "people are
+-- losing runs to logging out or dcing"), so logging out, a /reload or a disconnect doesn't lose it.
+function Siege:Keep()
+    local run = self.run
+    self.keepClock = 0
+    if not ns.db then return end
+    G().run = run and run.state ~= "over" and { v = ns.VERSION, run = Lode.Freeze(run) } or nil
+end
+
+-- Pick the kept run up again (the first time the page is drawn). A ball that was in play is back on the paddle, and
+-- whatever was falling is gone: nobody comes back to a ball already on its way down.
+function Siege:Resume()
+    local g = G()
+    if self.run or type(g.run) ~= "table" then return false end
+    local ok, run = false, nil
+    if g.run.v == ns.VERSION then ok, run = pcall(Lode.Thaw, g.run.run, Run) end
+    if not ok or not run or run.state == "over" or type(run.bricks) ~= "table" then
+        g.run = nil
+        return false
+    end
+    if run.state == "play" then
+        run.pickups = {}
+        run:Serve()
+    end
+    self.run = run
+    return true
+end
+ns.On("PLAYER_LOGOUT", function()
+    if Siege.view and ns.db then Siege:Keep() end
+end)
 
 ns.Sync:Register({
     name = "siege", code = "b", order = 4,
@@ -1316,6 +1348,7 @@ end
 function Siege:NewRun(seed)
     self.run = Run.New(seed or (math.floor(GetTime() * 1000) % 2147483646 + math.random(1, 100000)))
     self.newBest, self.showScores = nil, nil
+    self:Keep()
     self:Refresh()
 end
 
@@ -1341,6 +1374,7 @@ function Siege:Pick(i)
     local run = self.run
     if run and run:Choose(i) then
         ns.Sound("IG_CHARACTER_INFO_TAB")
+        self:Keep()
         self:Refresh()
     end
 end
@@ -1465,6 +1499,7 @@ function Siege:Update(elapsed)
             if run.state == "over" and was ~= "over" then
                 self.newBest = self:Finish(run)
                 run.dirty = true
+                self:Keep()
             end
             for i, b in ipairs(run.balls) do
                 local art = self.ballArt[i]
@@ -1476,6 +1511,8 @@ function Siege:Update(elapsed)
             self:Draw()
         end
         if run.dirty then self:Refresh() end
+        self.keepClock = (self.keepClock or 0) + (elapsed or 0)
+        if self.keepClock >= Lode.KEEP_EVERY then self:Keep() end
     end
     self:StepEffects(elapsed or 0)
 end
@@ -1726,6 +1763,11 @@ end
 
 function Siege:Refresh()
     if not self.view then return end
+    -- (the first time the page is drawn: a run kept from before we logged out is picked up)
+    if not self.resumed then
+        self.resumed = true
+        self:Resume()
+    end
     local run = self.run
     if run then run.dirty = nil end
     local serving = run ~= nil and run.state == "serve" and not self.showScores

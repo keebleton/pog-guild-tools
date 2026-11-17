@@ -1,4 +1,11 @@
-# Pog Guild Tools 0.20.3
+# Pog Guild Tools 0.20.4
+
+- **Poggle and Siege: your run is saved.** Log out, `/reload` or get disconnected, and the run is waiting where you left it when you open the game again.
+  - In Siege the ball goes back on the paddle, so you never come back to a ball already falling.
+  - A run is dropped if the addon updates in between, because the rules may have changed.
+  - If the game itself crashes, the run can still be lost. WoW only saves addon data on the way out.
+
+New in 0.20.3:
 
 - **Poggle: every class has its own hiscores.** The board has a tab for Warrior, Mage, Rogue and Hunter, and it opens on the class you're playing. Your best is kept per class too.
 - **Poggle: the hiscores have been reset.** Everyone's best run is cleared and the boards start empty, so we all start level with the new classes.

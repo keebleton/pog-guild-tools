@@ -6946,6 +6946,83 @@ do
         end
         check(same and differs and inRange, "lode: the same seed rolls the same dice, between 0 and 1")
         check(Lode.Rng(0)() ~= nil and Lode.Rng(-5)() < 1 and Lode.Rng("x")() < 1, "lode: any seed will do")
+        -- where it has got to is in its box, and another carries on from there (saved runs)
+        local box = {}
+        local g1 = Lode.Rng(42, box)
+        g1() g1() g1()
+        local g2 = Lode.Rng(nil, { s = box.s })
+        local same = type(box.s) == "number"
+        for _ = 1, 20 do if g1() ~= g2() then same = false end end
+        check(same, "saved runs: a generator carries on from where another had got to")
+        check(Lode.Rng(42, { s = 999 })() == Lode.Rng(42)() and Lode.Rng(nil, { s = "x" })() == Lode.Rng(1)(), "saved runs: (a seed starts it over; a box with nothing in it starts at the start)")
+    end
+
+    -- a run as plain data and back (Jake: "can we save progress on the games? people are losing runs to logging out or dcing")
+    do
+        local function plain(v, seen)
+            seen = seen or {}
+            if type(v) == "function" or type(v) == "userdata" then return false end
+            if type(v) ~= "table" or seen[v] then return true end
+            seen[v] = true
+            if getmetatable(v) then return false end
+            for k, x in pairs(v) do
+                if not plain(k, seen) or not plain(x, seen) then return false end
+            end
+            return true
+        end
+        local function play(r, steps)
+            for _ = 1, steps do
+                if r.state ~= "flying" then break end
+                r:Step(0.02)
+            end
+        end
+        local function gone(r)
+            local n = 0
+            for _, q in ipairs(r.pegs) do if q.gone then n = n + 1 end end
+            return n
+        end
+        local a = Lode.Run.New(77, "mage")
+        a.upgrades.rich, a.quota = 2, 1e9 -- (no floor cleared: shot after shot)
+        a:Fire(0.35)
+        play(a, 25) -- (a bomb in the air)
+        local snap = Lode.Freeze(a)
+        check(a.state == "flying" and plain(snap) and snap.rand == nil and snap.events == nil and snap.class == "mage" and snap.upgrades.rich == 2
+            and snap.upgrades ~= a.upgrades and #snap.pegs == #a.pegs and snap.pegs[1] ~= a.pegs[1] and snap.rng.s == a.rng.s and #snap.balls == #a.balls,
+            "saved runs: a run is copied as plain data, with a bomb in the air, and none of it the run's own tables")
+        local b = Lode.Thaw(snap, Lode.Run)
+        check(getmetatable(b) == Lode.Run and b ~= snap and b.pegs ~= snap.pegs and type(b.rand) == "function" and b.events and #b.events == 0 and b.dirty == true
+            and b:Has("rich") == 2 and b:Is("mage"), "saved runs: and comes back a run, a copy of what was saved")
+        play(a, 3000)
+        play(b, 3000)
+        local same = a.state == b.state and a.ore == b.ore and a.total == b.total and a.bombs == b.bombs and gone(a) == gone(b) and a.rng.s == b.rng.s
+        for _ = 1, 3 do
+            if a.state == "aim" and b.state == "aim" then
+                a:Fire(-0.5)
+                b:Fire(-0.5)
+                play(a, 3000)
+                play(b, 3000)
+            end
+            same = same and a.state == b.state and a.ore == b.ore and a.total == b.total and a.bombs == b.bombs and gone(a) == gone(b) and a.rng.s == b.rng.s
+        end
+        check(same and a.shots >= 2 and gone(a) > 0, "saved runs: it plays on exactly as the run it was saved from does, shot for shot")
+        check(snap.state == "flying" and snap.shots == 1, "saved runs: (what was saved is left as it was)")
+        local shared = { 1 }
+        local two = Lode.Freeze({ state = "aim", one = shared, other = { shared }, fn = function() end })
+        check(two.one == two.other[1] and two.one ~= shared and two.one[1] == 1 and two.fn == nil, "saved runs: (a table met twice is still one table in the copy)")
+        check(Lode.Thaw(nil, Lode.Run) == nil and Lode.Thaw({}, Lode.Run) == nil and Lode.Thaw({ state = "aim" }, Lode.Run) == nil, "saved runs: (nothing sensible saved, nothing back)")
+        -- Siege's go the same way
+        local sa = ns.Siege.Run.New(5)
+        sa:Launch()
+        for _ = 1, 40 do sa:Step(0.02, 300) end
+        local ss = Lode.Freeze(sa)
+        local sb = Lode.Thaw(ss, ns.Siege.Run)
+        check(plain(ss) and getmetatable(sb) == ns.Siege.Run and sb.state == sa.state and #sb.bricks == #sa.bricks and sb.bricks ~= sa.bricks, "saved runs: a Siege run too")
+        for _ = 1, 400 do
+            sa:Step(0.02, 300)
+            sb:Step(0.02, 300)
+        end
+        check(sa.state == sb.state and sa.score == sb.score and sa.left == sb.left and sa.lives == sb.lives and sa.rng.s == sb.rng.s
+            and sa.balls[1] and sb.balls[1] and sa.balls[1].x == sb.balls[1].x, "saved runs: and it plays on exactly the same")
     end
 
     -- quotas climb; the seam changes every two floors
@@ -7878,6 +7955,80 @@ do
             Lode:Refresh()
             check(Lode:ScoreClass() == "warrior" and side.best:GetText() == "Warrior best: floor 7, 3,000 ore" and tabs[1]:IsShown() and tabs[1].selected == true,
                 "class boards: between runs it's the class last played")
+            -- a run is kept through a logout or a disconnect (Jake: "people are losing runs to logging out or dcing")
+            do
+                local function kept() return Lode.Saved().run end
+                Lode:NewRun(11, "rogue")
+                local kr = Lode.run
+                check(type(kept()) == "table" and kept().v == ns.VERSION and kept().run.class == "rogue" and kept().run.rand == nil and kept().run.pegs ~= kr.pegs,
+                    "saved runs: a Poggle run is kept as it starts")
+                kr.upgrades.rich, kr.total = 2, 555
+                STUB.Script(board, "OnUpdate", 0.5)
+                check(kept().run.total ~= 555, "saved runs: (not every frame)")
+                STUB.Script(board, "OnUpdate", 0.6)
+                check(kept().run.total == 555 and kept().run.upgrades.rich == 2 and Lode.KEEP_EVERY == 1, "saved runs: and again every second it's up")
+                kr.total = 600
+                local guild = ns.db.guild
+                STUB.Fire("PLAYER_LOGOUT")
+                ns.db.guild = guild
+                check(kept().run.total == 600, "saved runs: and on the way out")
+                check(Lode:Resume() == false and Lode.run == kr, "saved runs: (nothing to pick up with a run already up)")
+                -- logged back in: the page is built with no run, and picks it up
+                local n = 0
+                for _, q in ipairs(kr.pegs) do if not q.gone then n = n + 1 end end
+                Lode.run = nil
+                Lode.message:SetText("")
+                check(Lode.resumed == true, "saved runs: (the page looks for a kept run once, the first time it's drawn)")
+                Lode.resumed = nil
+                Lode:Refresh() -- (the page drawn for the first time after logging in)
+                check(Lode.resumed == true and Lode.run ~= nil and Lode.run ~= kr and Lode.message:GetText() == "Picked up where you left off."
+                    and Lode.run.total == 600 and not o:IsShown(), "saved runs: opening Poggle after logging in picks the run up")
+                Lode.run = nil
+                Lode:Refresh()
+                check(Lode.run == nil and o:IsShown(), "saved runs: (only then: a run put away later stays away)")
+                Lode.message:SetText("")
+                check(Lode:Resume() == true and Lode.run ~= kr and getmetatable(Lode.run) == Lode.Run and Lode.run.class == "rogue" and Lode.run.total == 600
+                    and Lode.run:Has("rich") == 2 and Lode.run:PegsLeft() == n and Lode.run.bombs == kr.bombs and Lode.run.state == "aim"
+                    and Lode.message:GetText() == "Picked up where you left off.", "saved runs: back in game the run is picked up where it was")
+                Lode:Refresh()
+                check(not o:IsShown() and side.floor:GetText() == "1" and side.best:GetText() == "No Rogue best yet", "saved runs: and it's on the board, ready to aim")
+                -- a turn of the run is kept at once: an upgrade picked
+                local pr = Lode.run
+                pr.state, pr.offers, pr.cleared = "choose", { Lode.Spells("rogue")[1][1], Lode.Spells("rogue")[2][1], Lode.Spells("rogue")[3][1] }, 1
+                Lode:Refresh()
+                STUB.Script(o.tiles[1], "OnClick")
+                check(pr.state == "aim" and pr.floor == 2 and kept().run.floor == 2 and kept().run.upgrades[Lode.Spells("rogue")[1][1]] == 1, "saved runs: an upgrade picked is kept at once")
+                -- one from another version isn't picked up: the rules may have moved
+                kept().v = "0.0.1"
+                Lode.run = nil
+                check(Lode:Resume() == false and kept() == nil and Lode.run == nil, "saved runs: a run from another version of the addon is dropped")
+                Lode.Saved().run = { v = ns.VERSION, run = { state = "aim" } }
+                check(Lode:Resume() == false and kept() == nil, "saved runs: (and one that makes no sense)")
+                -- a run that ends isn't kept
+                Lode:NewRun(12, "mage")
+                local er = Lode.run
+                er.pegs = {}
+                er.bombs = 1
+                er.dirty = true
+                STUB.Script(board, "OnUpdate", 0.016)
+                check(kept() ~= nil, "saved runs: (a run under way)")
+                STUB.Script(board, "OnClick")
+                for _ = 1, 3000 do
+                    if er.state ~= "flying" then break end
+                    STUB.Script(board, "OnUpdate", 0.02)
+                end
+                check(er.state == "over" and kept() == nil, "saved runs: a run that's over isn't kept")
+                Lode.run = nil
+                check(Lode:Resume() == false, "saved runs: (so there's nothing to pick up)")
+                -- the wipe takes a kept run with it
+                Lode:NewRun(13, "mage")
+                Lode.Saved().wipe = 0
+                check(Lode.Saved().run == nil, "saved runs: (a wipe takes the kept run too)")
+                Lode.run = nil
+                Lode.Saved().bests.mage, Lode.Saved().bests.rogue = nil, nil
+                Lode.Saved().class = "warrior"
+                Lode:Refresh()
+            end
             for id in pairs(store) do store[id] = nil end
             Sync.index = nil
             STUB.sent = {}
@@ -8906,6 +9057,46 @@ do
         for _ = 1, 20 do STUB.Script(board, "OnUpdate", 0.02) end
         check(r.state == "over" and o.title:GetText() == "Out of lives" and o.sub:GetText():find("Broke 0 walls", 1, true) and Siege.Saved().runs == 2
             and Siege.Saved().stage == 1, "siege: a run that isn't our best says so")
+        -- a run is kept through a logout or a disconnect, like Poggle's
+        do
+            local function kept() return Siege.Saved().run end
+            check(kept() == nil, "saved runs: a Siege run that's over isn't kept")
+            Siege:NewRun(21)
+            local kr = Siege.run
+            check(type(kept()) == "table" and kept().v == ns.VERSION and kept().run.state == "serve" and kept().run.rand == nil, "saved runs: a Siege run is kept as it starts")
+            kr.score, kr.lives = 777, 2
+            for _ = 1, 30 do STUB.Script(board, "OnUpdate", 0.02) end
+            check(kept().run.score ~= 777, "saved runs: (not every frame)")
+            for _ = 1, 25 do STUB.Script(board, "OnUpdate", 0.02) end
+            check(kept().run.score == 777 and kept().run.lives == 2, "saved runs: and again every second it's up")
+            -- a ball in play, a pickup falling: back in game the ball is on the paddle and nothing is falling
+            STUB.Script(board, "OnClick")
+            kr.pickups = { { x = 100, y = 100, kind = Siege.PICKUPS[1][1] } }
+            kr.score = 800
+            local left, stage = kr.left, kr.stage
+            local guild = ns.db.guild
+            STUB.Fire("PLAYER_LOGOUT")
+            ns.db.guild = guild
+            check(kr.state == "play" and kept().run.state == "play" and kept().run.score == 800, "saved runs: kept on the way out, ball in the air")
+            check(Siege:Resume() == false, "saved runs: (nothing to pick up with a run already up)")
+            Siege.run = nil
+            Siege.resumed = nil
+            Siege:Refresh() -- (the page drawn for the first time after logging in)
+            check(Siege.resumed == true and Siege.run ~= nil and Siege.run ~= kr and Siege.run.score == 800 and not o:IsShown(),
+                "saved runs: opening Siege after logging in picks the run up")
+            Siege.run = nil
+            Siege:Refresh()
+            check(Siege.run == nil, "saved runs: (only then)")
+            check(Siege:Resume() == true and Siege.run ~= kr and getmetatable(Siege.run) == Siege.Run and Siege.run.state == "serve" and Siege.run.score == 800
+                and Siege.run.lives == 2 and Siege.run.stage == stage and Siege.run.left == left and #Siege.run.pickups == 0 and Siege.run.balls[1].stuck == 0,
+                "saved runs: back in game the Siege run is picked up, the ball on the paddle again and no life lost")
+            Siege:Refresh()
+            check(not o:IsShown(), "saved runs: and it's on the board, ready to serve")
+            kept().v = "0.0.1"
+            Siege.run = nil
+            check(Siege:Resume() == false and kept() == nil, "saved runs: a Siege run from another version of the addon is dropped")
+            Siege:Refresh()
+        end
 
         local store = Sync:Store("siege")
         for id in pairs(store) do store[id] = nil end

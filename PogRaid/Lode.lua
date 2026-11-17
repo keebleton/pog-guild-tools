@@ -155,14 +155,57 @@ Lode.SPREAD = math.rad(5)   -- a Hunter's two bombs, this far either side of the
 ------------------------------------------------------------------------
 -- Rules (no UI)
 ------------------------------------------------------------------------
--- A seeded generator (Park-Miller): the same seed gives the same run.
-function Lode.Rng(seed)
-    local s = math.floor(tonumber(seed) or 1) % 2147483647
-    if s <= 0 then s = s + 2147483646 end
-    return function()
-        s = (s * 16807) % 2147483647
-        return (s - 1) / 2147483646
+-- A seeded generator (Park-Miller): the same seed gives the same run. Where it has got to is kept in `box`
+-- (box.s), so a run can be saved and picked up: Lode.Rng(nil, box) carries on from a box that's been somewhere.
+function Lode.Rng(seed, box)
+    box = box or {}
+    if seed ~= nil or type(box.s) ~= "number" then
+        local s = math.floor(tonumber(seed) or 1) % 2147483647
+        if s <= 0 then s = s + 2147483646 end
+        box.s = s
     end
+    return function()
+        box.s = (box.s * 16807) % 2147483647
+        return (box.s - 1) / 2147483646
+    end
+end
+
+-- A run as plain data, for the saved file (Jake, 0.20.4: "can we save progress on the games? people are losing
+-- runs to logging out or dcing"): a copy of all of it but what can't be saved or isn't the run (the generator's
+-- function, what the screen has yet to show). Tables met twice stay one table (a bomb and the peg it's on).
+-- Poggle's and Siege's runs both go through here.
+Lode.KEEP_EVERY = 1         -- seconds between copies while a run is up (a disconnect loses at most that)
+local SKIP = { rand = true, events = true, dirty = true }
+local function copy(v, seen)
+    if type(v) ~= "table" then return v end
+    if seen[v] then return seen[v] end
+    local out = {}
+    seen[v] = out
+    for k, x in pairs(v) do
+        local t = type(x)
+        if t ~= "function" and t ~= "userdata" and t ~= "thread" and (type(k) == "string" or type(k) == "number") then
+            out[k] = copy(x, seen)
+        end
+    end
+    return out
+end
+function Lode.Freeze(run)
+    local out, seen = {}, {}
+    seen[run] = out
+    for k, x in pairs(run) do
+        local t = type(x)
+        if not SKIP[k] and t ~= "function" and t ~= "userdata" and t ~= "thread" then out[k] = copy(x, seen) end
+    end
+    return out
+end
+
+-- And back: a run of class `Run` from what Freeze made (a copy: the saved one isn't the one being played).
+function Lode.Thaw(saved, Run)
+    if type(saved) ~= "table" or type(saved.rng) ~= "table" or type(saved.state) ~= "string" then return nil end
+    local run = setmetatable(Lode.Freeze(saved), Run)
+    run.rand = Lode.Rng(nil, run.rng)
+    run.events, run.dirty = {}, true
+    return run
 end
 
 function Lode.Quota(floor)
@@ -220,7 +263,8 @@ Lode.Run = Run
 function Run.New(seed, class)
     -- `events` is what has happened since someone last looked (a peg mined, a keg gone up, a bomb landed):
     -- the screen shows them and empties the list; the rules never read it
-    local run = setmetatable({ seed = seed, rand = Lode.Rng(seed), floor = 0, total = 0, cleared = 0, shots = 0,
+    local rng = {}
+    local run = setmetatable({ seed = seed, rand = Lode.Rng(seed, rng), rng = rng, floor = 0, total = 0, cleared = 0, shots = 0,
         class = Lode.CLASS[class] and class or nil,
         upgrades = {}, carried = 0, balls = {}, events = {}, state = "aim" }, Run)
     run:NextFloor()
@@ -642,7 +686,7 @@ local function G()
     -- The wipe (Jake, for 0.20.3: "lets reset the poggle hiscores in next version"): a best from before it is
     -- forgotten, and the runs counted with it, so the board starts level after the class rework. The class last
     -- picked is kept. Lode.WIPE says which wipe a save has had; raise it to do it again.
-    if g.wipe ~= Lode.WIPE then g.bests, g.runs, g.wipe = {}, 0, Lode.WIPE end
+    if g.wipe ~= Lode.WIPE then g.bests, g.runs, g.run, g.wipe = {}, 0, nil, Lode.WIPE end
     -- (a best is kept for each class since 0.20.3: the one best of a save from before that isn't any class's)
     g.bests = g.bests or {}
     g.depth, g.ore = nil, nil
@@ -672,6 +716,34 @@ function Lode:Finish(run)
     end
     return false
 end
+
+-- The run being played is kept in the saved file as it goes (every KEEP_EVERY seconds, and at each turn of it),
+-- so logging out, a /reload or a disconnect doesn't lose it. (The game only writes the file on the way out: a
+-- crash still loses it.) A run that's over isn't kept. It's kept for the version that made it: the rules move.
+function Lode:Keep()
+    local run = self.run
+    self.keepClock = 0
+    if not ns.db then return end
+    G().run = run and run.state ~= "over" and { v = ns.VERSION, run = Lode.Freeze(run) } or nil
+end
+
+-- Pick the kept run up again (the first time the page is drawn). True if there was one.
+function Lode:Resume()
+    local g = G()
+    if self.run or type(g.run) ~= "table" then return false end
+    local ok, run = false, nil
+    if g.run.v == ns.VERSION then ok, run = pcall(Lode.Thaw, g.run.run, Run) end
+    if not ok or not run or run.state == "over" or type(run.pegs) ~= "table" then
+        g.run = nil
+        return false
+    end
+    self.run = run
+    if self.message then self.message:SetText("Picked up where you left off.") end
+    return true
+end
+ns.On("PLAYER_LOGOUT", function()
+    if Lode.view and ns.db then Lode:Keep() end
+end)
 
 -- The guild's hiscores: one record a player and class, their deepest run with it (Jake: "add a
 -- hiscore"). A new kind of record costs something while the guild is on
@@ -1382,6 +1454,7 @@ function Lode:NewRun(seed, class)
     self.run = Run.New(seed or (math.floor(GetTime() * 1000) % 2147483646 + math.random(1, 100000)), class)
     self.newBest, self.showScores, self.picking = nil, nil, nil
     self.message:SetText("")
+    self:Keep()
     self:Refresh()
 end
 
@@ -1411,6 +1484,7 @@ function Lode:Pick(i)
     if run and run:Choose(i) then
         ns.Sound("IG_CHARACTER_INFO_TAB")
         self.message:SetText("")
+        self:Keep()
         self:Refresh()
     end
 end
@@ -1606,6 +1680,8 @@ function Lode:Update(elapsed)
             self:DrawAim()
         end
         if run.dirty then self:Refresh() end
+        self.keepClock = (self.keepClock or 0) + (elapsed or 0)
+        if self.keepClock >= Lode.KEEP_EVERY then self:Keep() end
     end
     self:StepEffects(elapsed or 0)
 end
@@ -1631,6 +1707,7 @@ function Lode:ShotOver()
         self.newBest = self:Finish(run)
         run.dirty = true -- (sharing a new best redraws the page before we know it was one)
     end
+    self:Keep()
 end
 
 -- The barrel points where the bomb will go (`angle` from straight down).
@@ -1936,6 +2013,11 @@ end
 
 function Lode:Refresh()
     if not self.view then return end
+    -- (the first time the page is drawn: a run kept from before we logged out is picked up)
+    if not self.resumed then
+        self.resumed = true
+        self:Resume()
+    end
     local run = self.run
     if run then run.dirty = nil end
     self:Tint()

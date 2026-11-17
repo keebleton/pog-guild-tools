@@ -223,6 +223,12 @@ launchers and plain-English steps. Read this whole file before changing anything
   runs, keeps the class. Poggle bests and boards are per class since 0.20.3 (Jake: "class specific"): `Lode:Best(class)`,
   record id `author:class`, `Lode:Leaderboard(class)`, tabs `overlay.scoreTabs`, `Lode:ScoreClass()`. Angler pearls since 0.20.2 come from lifetime fish (fifth root, 5% each). Only code z is
   free now; v and m must not be reused while old versions are about.
+- 0.20.4 saved runs (Jake: "people are losing runs to logging out or dcing"): Poggle and Siege keep the run in
+  `db.games.<game>.run = { v = ns.VERSION, run = Lode.Freeze(run) }` every `Lode.KEEP_EVERY` second, at each turn
+  (new run, shot over, upgrade picked) and on PLAYER_LOGOUT; `:Resume()` when the page is built (`Lode.Thaw`).
+  `Lode.Rng(seed, box)` keeps its state in `run.rng.s` so the copy plays on identically. A Siege ball in play goes
+  back on the paddle. Dropped on a version change. Gems and Wowdle already saved; Sapper is timed, so it is not.
+  When polling GitHub for a release, poll once a minute at most: every 10 s used up the hourly API limit.
 - 0.19.0 Motherlode 2 (Jake: "people are really loving motherlode ... make it a really good game", with the guild's
   feedback). What changed in `Lode.Run`, and why:
   * Pockets are gone (guildies: "too much RNG", missing the x5 "can feel pretty bad"). Ore banks as mined
