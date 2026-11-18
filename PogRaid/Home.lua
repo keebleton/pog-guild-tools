@@ -851,8 +851,39 @@ end
 ------------------------------------------------------------------------
 -- Group finder
 ------------------------------------------------------------------------
+-- Open the chat box on a whisper to `name`. The game's own way (ChatFrame_SendTell) types "/w name " and reads it
+-- back, which goes wrong on Forever's surnames ("Flyne Lee": the box opened on whatever chat was last used, Jake:
+-- "opens up last chat, whatever it was"). So the box is put on the whisper directly, and typing is the fallback.
+local function tellBox(target)
+    local util = ChatFrameUtil
+    local choose = ChatEdit_ChooseBoxForSend or (util and util.ChooseBoxForSend)
+    local activate = ChatEdit_ActivateChat or (util and util.ActivateChat)
+    if not choose or not activate then return false end
+    local box = choose()
+    if not box then return false end
+    activate(box)
+    if box.SetChatType and box.SetTellTarget then
+        box:SetChatType("WHISPER")
+        box:SetTellTarget(target)
+    else
+        box:SetAttribute("chatType", "WHISPER")
+        box:SetAttribute("tellTarget", target)
+    end
+    box:SetText("")
+    if box.UpdateHeader then
+        box:UpdateHeader()
+    elseif ChatEdit_UpdateHeader then
+        ChatEdit_UpdateHeader(box)
+    else
+        return false
+    end
+    return true
+end
+
 local function whisper(name)
     local target = Ambiguate(name, "none")
+    local ok, done = pcall(tellBox, target)
+    if ok and done then return end
     if ChatFrame_SendTell then
         ChatFrame_SendTell(target)
     elseif ChatFrameUtil and ChatFrameUtil.SendTell then

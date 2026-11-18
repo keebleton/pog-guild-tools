@@ -1835,6 +1835,40 @@ do
     end
     Home.Whisper("Raider02-Realm")
     check(told == "Raider02", "lfg: whisper opens a tell to the poster")
+    -- with the chat box to hand it's put on the whisper directly: a surname survives (Jake: "the whisper function isnt
+    -- working on online now. opens up last chat, whatever it was")
+    do
+        local box = CreateFrame("EditBox")
+        local active, header
+        told = nil
+        box.SetChatType, box.SetTellTarget, box.UpdateHeader = false, false, false -- (the older game's box has none of these)
+        ChatEdit_ChooseBoxForSend = function() return box end
+        ChatEdit_ActivateChat = function(b) active = b end
+        ChatEdit_UpdateHeader = function(b) header = b end
+        box:SetText("half a line")
+        Home.Whisper("Flyne Lee")
+        check(active == box and header == box and box.__attr.chatType == "WHISPER" and box.__attr.tellTarget == "Flyne Lee"
+            and box:GetText() == "" and told == nil, "whisper: the chat box is put on a whisper to the full name, surname and all")
+        Home.Whisper("Raider02-Realm")
+        check(box.__attr.tellTarget == "Raider02", "whisper: (the realm comes off)")
+        -- the newer game's boxes do it themselves
+        local kind, who, drawn
+        box.SetChatType = function(_, v) kind = v end
+        box.SetTellTarget = function(_, v) who = v end
+        box.UpdateHeader = function() drawn = true end
+        header = nil
+        Home.Whisper("Flyne Lee")
+        check(kind == "WHISPER" and who == "Flyne Lee" and drawn and header == nil, "whisper: (or by the box's own methods)")
+        -- no box to be had, or it goes wrong: the game's own way
+        ChatEdit_ChooseBoxForSend = function() return nil end
+        Home.Whisper("Flyne Lee")
+        check(told == "Flyne Lee", "whisper: with no chat box it falls back to the game's own tell")
+        told = nil
+        ChatEdit_ChooseBoxForSend = function() error("no") end
+        Home.Whisper("Flyne Lee")
+        check(told == "Flyne Lee", "whisper: (and if the box goes wrong)")
+        ChatEdit_ChooseBoxForSend, ChatEdit_ActivateChat, ChatEdit_UpdateHeader = nil, nil, nil
+    end
     local theirs = ns.Sync:Store("lfg")["Mira-1-1"]
     check(Social:RequestJoin(theirs) and STUB.sent[#STUB.sent].text == "JMira-1-1" and STUB.sent[#STUB.sent].target == "Raider02",
         "join: request whispered to the poster")

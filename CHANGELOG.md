@@ -1,4 +1,8 @@
-# Pog Guild Tools 0.20.5
+# Pog Guild Tools 0.20.6
+
+- **Whisper:** picking Whisper on someone (Online now, profiles, group finder, crafters) now opens a whisper to them. It could open whatever chat you last used instead.
+
+New in 0.20.5:
 
 - **Siege:** in a run picked up after logging back in, bricks stayed on screen after the ball broke them. Fixed.
 
