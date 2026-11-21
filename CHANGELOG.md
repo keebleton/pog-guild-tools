@@ -1,4 +1,8 @@
-# Pog Guild Tools 0.20.8
+# Pog Guild Tools 0.20.9
+
+- **Pop-ups: up to three at once.** Level-ups, new groups, chat lines and kudos now stack one above the other instead of queueing up one at a time. When one goes, the rest drop down.
+
+New in 0.20.8:
 
 - **Congrats:** clicking a level-up pop-up now says your congrats in guild chat. It used to whisper them. Clicking a level-up in Activity is still a whisper, since that line can be hours old.
 

@@ -72,6 +72,9 @@ end
 -- Group toast: a guildie just posted a group. A small note fades in above
 -- the chat box ("Flyne is forming a group for Deadmines"); click it to ask
 -- to join, right-click to dismiss. Fades out on its own unless hovered.
+-- Up to Toast.STACK are up at once, one above the other, the oldest at the
+-- bottom (Jake, 0.20.9: "can we make them show more at the same time").
+-- When one goes, the ones above it drop down into the gap.
 ------------------------------------------------------------------------
 local Toast = {}
 ns.GroupToast = Toast
@@ -81,8 +84,11 @@ Toast.FADE_IN = 0.3
 Toast.FADE_OUT = 0.6
 Toast.FRESH = 120     -- only listings posted this recently (not ones caught up on at login)
 Toast.MIN_W, Toast.MAX_W = 300, 420   -- grows with its text; past the widest, the line wraps
+Toast.STACK, Toast.GAP = 3, 4         -- how many at once, and the space between them
 local TEXT_X, TEXT_R = 50, 12
 Toast.seen = {}
+Toast.frames = {}                     -- the pop-ups, as they're first needed (Toast.frame is the first)
+Toast.count = 0                       -- (pop-ups shown so far: the order they sit in)
 
 local function colorName(name)
     local p = ns.db.guild.players[name]
@@ -92,18 +98,65 @@ local function colorName(name)
     return short
 end
 
-function Toast:Build()
-    local f = CreateFrame("Button", "PogRaidGroupToast", UIParent)
+-- Where the bottom pop-up sits: above the chat box, where the game's own friend toasts show.
+local function place(f, up)
+    local chat = DEFAULT_CHAT_FRAME
+    f:ClearAllPoints()
+    if chat and chat.GetObjectType then
+        f:SetPoint("BOTTOMLEFT", chat, "TOPLEFT", 0, 40 + up)
+    else
+        f:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 30, 260 + up)
+    end
+end
+
+-- The pop-ups that are up, oldest first.
+function Toast:Shown()
+    local up = {}
+    for _, f in ipairs(self.frames) do
+        if f:IsShown() then up[#up + 1] = f end
+    end
+    table.sort(up, function(a, b) return (a.seq or 0) < (b.seq or 0) end)
+    return up
+end
+
+-- One above the other, the oldest at the bottom.
+function Toast:Layout()
+    local y = 0
+    for _, f in ipairs(self:Shown()) do
+        place(f, y)
+        y = y + math.floor(f:GetHeight() + 0.5) + Toast.GAP
+    end
+end
+
+-- A pop-up nothing is using (built if there's room for another), or nil when they're all up.
+function Toast:Free()
+    for i = 1, Toast.STACK do
+        local f = self.frames[i]
+        if not f then return self:Build(i) end
+        if not f:IsShown() then return f end
+    end
+    return nil
+end
+
+-- Put `f` up as the newest.
+function Toast:Raise(f)
+    self.count = self.count + 1
+    f.seq = self.count
+    f.age, f.stay, f.hover = 0, Toast.SHOW, false
+    f:SetAlpha(0)
+    f:Show()
+    self:Layout()
+end
+
+function Toast:Build(i)
+    i = i or 1
+    if self.frames[i] then return self.frames[i] end
+    for n = 1, i - 1 do self:Build(n) end
+    local f = CreateFrame("Button", i == 1 and "PogRaidGroupToast" or ("PogRaidGroupToast" .. i), UIParent)
     f:SetSize(300, 50)
     f:SetFrameStrata("DIALOG")
     f:SetClampedToScreen(true)
-    -- above the chat box, where the game's own friend toasts show
-    local chat = DEFAULT_CHAT_FRAME
-    if chat and chat.GetObjectType then
-        f:SetPoint("BOTTOMLEFT", chat, "TOPLEFT", 0, 40)
-    else
-        f:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 30, 260)
-    end
+    place(f, 0)
     UI.Panel(f, { 0.05, 0.06, 0.07, 0.95 }, UI.ACCENT)
     UI.Window(f, "tooltip")
     local hl = f:CreateTexture(nil, "HIGHLIGHT")
@@ -123,17 +176,21 @@ function Toast:Build()
     f.sub:SetWordWrap(false)
     f.sub:SetTextColor(0.6, 0.6, 0.65)
     f:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    f:SetScript("OnClick", function(_, button) self:Click(button) end)
+    f:SetScript("OnClick", function(_, button) self:Click(button, f) end)
     f:SetScript("OnEnter", function() f.hover = true end)
     f:SetScript("OnLeave", function() f.hover = false end)
-    f:SetScript("OnUpdate", function(_, elapsed) self:Step(elapsed) end)
+    f:SetScript("OnUpdate", function(_, elapsed) self:Step(elapsed, f) end)
     f:Hide()
-    self.frame = f
+    -- (however it goes, the ones above drop into its place)
+    f:SetScript("OnHide", function() self:Layout() end)
+    self.frames[i] = f
+    if i == 1 then self.frame = f end
+    return f
 end
 
 -- Fade in, stay (longer while hovered), fade out.
-function Toast:Step(elapsed)
-    local f = self.frame
+function Toast:Step(elapsed, f)
+    f = f or self.frame
     f.age = f.age + (elapsed or 0)
     if f.hover and f.age > Toast.FADE_IN then f.age = math.min(f.age, f.stay) end
     if f.age < Toast.FADE_IN then
@@ -143,13 +200,15 @@ function Toast:Step(elapsed)
     elseif f.age < f.stay + Toast.FADE_OUT then
         f:SetAlpha(1 - (f.age - f.stay) / Toast.FADE_OUT)
     else
-        self:Dismiss()
+        self:Dismiss(f)
     end
 end
 
 -- Gone; the next waiting note (if any) takes its place.
-function Toast:Dismiss()
-    self.frame:Hide()
+function Toast:Dismiss(f)
+    f = f or self.frame
+    f:Hide()
+    self:Layout()
     self:NextNote()
 end
 
@@ -165,8 +224,8 @@ function Toast:Consider(rec)
 end
 
 function Toast:Show(rec)
-    if not self.frame then self:Build() end
-    local f = self.frame
+    -- (a new group doesn't wait: with every pop-up up it takes the oldest one's place)
+    local f = self:Free() or self:Shown()[1]
     f.id, f.note = rec.id, nil
     f.icon:SetTexture(ns.Profiles and ns.Profiles:Portrait(rec.author) or 134400)
     f.text:SetText(("%s is forming a group for %s"):format(colorName(rec.author), rec.what))
@@ -174,15 +233,13 @@ function Toast:Show(rec)
     if rec.need then parts[#parts + 1] = "needs " .. rec.need end
     if rec.size then parts[#parts + 1] = rec.size .. "/" .. (rec.max or 5) end
     f.sub:SetText(table.concat(parts, "  "))
-    self:Fit()
-    f.age, f.stay, f.hover = 0, Toast.SHOW, false
-    f:SetAlpha(0)
-    f:Show()
+    self:Fit(f)
+    self:Raise(f)
 end
 
--- Other news in the same pop-up (a chat line, kudos): { icon, text, sub,
--- onClick }. One at a time; the rest wait their turn. A fight doesn't hold
--- them back (they used to wait one out, and in a battleground never showed).
+-- Other news in the same pop-ups (a chat line, kudos): { icon, text, sub,
+-- onClick }. Toast.STACK at a time; the rest wait their turn. A fight doesn't
+-- hold them back (they used to wait one out, and in a battleground never showed).
 Toast.notes = {}
 Toast.MAX_NOTES = 5
 
@@ -193,18 +250,17 @@ function Toast:Note(note)
 end
 
 function Toast:NextNote()
-    if not self.notes[1] or (self.frame and self.frame:IsShown()) then return end
-    if not self.frame then self:Build() end
-    local f = self.frame
-    local note = table.remove(self.notes, 1)
-    f.id, f.note = nil, note
-    f.icon:SetTexture(note.icon or 134400)
-    f.text:SetText(note.text or "")
-    f.sub:SetText(note.sub or "")
-    self:Fit()
-    f.age, f.stay, f.hover = 0, Toast.SHOW, false
-    f:SetAlpha(0)
-    f:Show()
+    while self.notes[1] do
+        local f = self:Free()
+        if not f then return end
+        local note = table.remove(self.notes, 1)
+        f.id, f.note = nil, note
+        f.icon:SetTexture(note.icon or 134400)
+        f.text:SetText(note.text or "")
+        f.sub:SetText(note.sub or "")
+        self:Fit(f)
+        self:Raise(f)
+    end
 end
 
 -- As wide as the text needs (between MIN_W and MAX_W); a longer first line
@@ -213,8 +269,8 @@ local function textWidth(fs)
     return (fs.GetUnboundedStringWidth and fs:GetUnboundedStringWidth()) or fs:GetStringWidth() or 0
 end
 
-function Toast:Fit()
-    local f = self.frame
+function Toast:Fit(f)
+    f = f or self.frame
     local textW, subW = textWidth(f.text), textWidth(f.sub)
     local w = math.floor(math.max(Toast.MIN_W, math.min(Toast.MAX_W, math.max(textW, subW) + TEXT_X + TEXT_R)) + 0.5)
     local room = w - TEXT_X - TEXT_R
@@ -230,15 +286,15 @@ function Toast:Fit()
     f.two = two
 end
 
-function Toast:Click(button)
-    local f = self.frame
+function Toast:Click(button, f)
+    f = f or self.frame
     if button == "RightButton" then
-        self:Dismiss()
+        self:Dismiss(f)
         return
     end
     if f.note then
         local note = f.note
-        self:Dismiss()
+        self:Dismiss(f)
         if note.onClick then note.onClick() end
         return
     end

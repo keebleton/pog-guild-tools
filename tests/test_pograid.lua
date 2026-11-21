@@ -35,6 +35,10 @@ for _, file in ipairs(toc) do
     chunk("PogRaid", ns)
 end
 ns.DEV = nil -- (the tests run a release build; the dev build has its own checks)
+-- Several pop-ups can be up at once (0.20.9). Most checks here are about one pop-up and what it says, so they
+-- run with room for one; "stack:" has the checks for several.
+check(ns.GroupToast.STACK == 3 and ns.GroupToast.GAP == 4, "stack: three pop-ups at once, 4 apart")
+ns.GroupToast.STACK = 1
 -- A tab is only ever shown in the open window (/pog and the tabs see to that). The tests go straight to
 -- ShowTab, so here it opens the window too: pages refresh themselves only while they are really on screen
 -- (IsVisible), and a test that wants the window closed hides it.
@@ -6294,6 +6298,61 @@ do
     ns.Social.requested["lfg-chat-test"] = nil
     Sync:Store("lfg")["lfg-chat-test"] = nil
     Sync.index = nil
+
+    -- several at once, one above the other (Jake: "can we make them show more at the same time for all users?")
+    -- (a function of its own: this one is at Lua's limit of 200 locals)
+    ;(function()
+        T.STACK = 3
+        T.notes = {}
+        for _, x in ipairs(T.frames) do x:Hide() end
+        local hit
+        for i = 1, 5 do T:Note({ text = "s" .. i, onClick = function() hit = i end }) end
+        local a, b, c = T.frames[1], T.frames[2], T.frames[3]
+        check(#T.frames == 3 and a == T.frame and a:IsShown() and b:IsShown() and c:IsShown() and a.text:GetText() == "s1" and b.text:GetText() == "s2"
+            and c.text:GetText() == "s3" and #T.notes == 2 and T.notes[1].text == "s4", "stack: three notes are up at once, and the rest wait")
+        local al, at, aw, ah = STUB.rect(a)
+        local bl, bt, bw, bh = STUB.rect(b)
+        local cl, ct, _, ch = STUB.rect(c)
+        check(al == bl and bl == cl and ah == 50 and (bt - bh) - at == T.GAP and (ct - ch) - bt == T.GAP, "stack: one above the other, the oldest at the bottom, 4 apart")
+        check(a ~= b and b ~= c and a ~= c and b:GetAlpha() == 0 and c:GetAlpha() == 0,"stack: (each its own pop-up, fading in)")
+        -- each keeps its own time
+        STUB.Script(a, "OnUpdate", 0.5)
+        check(a:GetAlpha() == 1 and b:GetAlpha() == 0 and b.age == 0, "stack: each fades on its own clock")
+        -- the bottom one goes: the others drop down, and a waiting note takes the free one, on top
+        STUB.Script(a, "OnClick", "RightButton")
+        local bl2, bt2 = STUB.rect(b)
+        local _, ct2, _, ch2 = STUB.rect(c)
+        local _, at2, _, ah2 = STUB.rect(a)
+        check(a:IsShown() and a.text:GetText() == "s4" and #T.notes == 1 and bl2 == al and bt2 == at and (ct2 - ch2) - bt2 == T.GAP
+            and (at2 - ah2) - ct2 == T.GAP, "stack: when one goes the rest drop into its place and the next note comes in on top")
+        -- a click is that pop-up's own
+        STUB.Script(c, "OnClick", "LeftButton")
+        check(hit == 3 and c:IsShown() and c.text:GetText() == "s5" and #T.notes == 0, "stack: clicking one runs that one's click")
+        -- a new group doesn't wait: it takes the oldest one's place
+        local now = ns.Now()
+        Sync:Apply(Sync.collections.lfg, { id = "lfg-stack-test", rev = now, by = B, author = B, t = now, what = "Scholomance", exp = now + 2700 })
+        check(b.id == "lfg-stack-test" and b.note == nil and b:IsShown() and a.text:GetText() == "s4" and c.text:GetText() == "s5",
+            "stack: with all three up a new group takes the oldest one's place")
+        local _, bt3, _, bh3 = STUB.rect(b)
+        local _, ct3 = STUB.rect(c)
+        check((bt3 - bh3) - ct3 == T.GAP, "stack: and sits on top as the newest")
+        -- hidden any other way, the rest still close up
+        a:Hide()
+        local _, ct4, _, ch4 = STUB.rect(c)
+        check(ct4 - ch4 == at - ah, "stack: (however one goes, the rest close up)")
+        -- a taller one (two lines) keeps the gap
+        for _, x in ipairs(T.frames) do x:Hide() end
+        T:Note({ text = ("a long line that has to wrap onto a second one "):rep(3) })
+        T:Note({ text = "short" })
+        local _, t1 = STUB.rect(T.frames[1])
+        local _, t2, _, h2 = STUB.rect(T.frames[2])
+        check(T.frames[1].two and T.frames[1]:GetHeight() == 64 and (t2 - h2) - t1 == T.GAP, "stack: a two-line one below keeps the same gap")
+        for _, x in ipairs(T.frames) do x:Hide() end
+        ns.Social.requested["lfg-stack-test"] = nil
+        Sync:Store("lfg")["lfg-stack-test"] = nil
+        Sync.index = nil
+        T.STACK = 1
+    end)()
 
     -- kudos for us: a pop-up, once per kudos
     local week = P.Week()
