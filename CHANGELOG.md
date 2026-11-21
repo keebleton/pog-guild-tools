@@ -1,4 +1,8 @@
-# Pog Guild Tools 0.20.7
+# Pog Guild Tools 0.20.8
+
+- **Congrats:** clicking a level-up pop-up now says your congrats in guild chat. It used to whisper them. Clicking a level-up in Activity is still a whisper, since that line can be hours old.
+
+New in 0.20.7:
 
 - **Pop-ups now show in combat.** New groups, chat lines, kudos and the level 60 banner used to wait until the fight was over, which in a battleground meant almost never. A new group that turned up mid-fight was never shown at all.
 

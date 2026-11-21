@@ -223,7 +223,11 @@ end
 -- prompt them to make one. input gz by default"). Clicking a level-up, in
 -- Activity or on the level pop-up, whispers them our message. It's kept in
 -- settings.grats; until it's set the first click asks for it, with "gz"
--- typed in ready, and then sends.
+-- typed in ready, and then sends. From the level pop-up it's said in guild
+-- chat instead (`guild`; Jake, 0.20.8: "let's make the grats feature on
+-- popups go to guild chat"): the ding has only just happened, so the guild
+-- knows who it's for. A line in Activity can be hours old, so that one is
+-- still a whisper.
 ------------------------------------------------------------------------
 Home.GRATS_DEFAULT, Home.GRATS_MAX = "gz", 80
 Home.gratsed = {}   -- "name:level" we've congratulated since logging in (once each)
@@ -244,27 +248,39 @@ end
 function Home:Gratsed(name, level) return self.gratsed[tostring(name) .. ":" .. tostring(level)] == true end
 
 -- What hovering a level-up says about clicking it (nil: nothing to click).
-function Home:GratsHint(name, level)
+function Home:GratsHint(name, level, guild)
     if not name or name == ns.Sync:Me() or not ns.Roster.online[name] then return nil end
     if self:Gratsed(name, level) then return "Congrats sent" end
     local msg = self:GratsMessage()
+    if guild then return msg and ("Click to say in guild chat: %s"):format(msg) or "Click to say congrats in guild chat" end
     return msg and ("Click to send: %s"):format(msg) or "Click to send congrats"
 end
 
-function Home:SendGrats(name, level)
+function Home:SendGrats(name, level, guild)
     local msg = self:GratsMessage()
     local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
     if not msg or not send or ns.Comm.IsRestricted() then
-        ns.Print("whispers can't be sent right now")
+        ns.Print(guild and "guild chat can't be sent right now" or "whispers can't be sent right now")
         return false
     end
     -- ("|" starts the game's colour and link codes: a bare one is refused)
-    if not pcall(send, (msg:gsub("|", "||")), "WHISPER", nil, Ambiguate(name, "none")) then
-        ns.Print("that whisper didn't go")
+    local text = msg:gsub("|", "||")
+    local ok
+    if guild then
+        ok = pcall(send, text, "GUILD")
+    else
+        ok = pcall(send, text, "WHISPER", nil, Ambiguate(name, "none"))
+    end
+    if not ok then
+        ns.Print(guild and "that didn't go to guild chat" or "that whisper didn't go")
         return false
     end
     self.gratsed[name .. ":" .. tostring(level)] = true
-    ns.Print(("congrats sent to %s: %s"):format(display(name), msg))
+    if guild then
+        ns.Print(("congrats for %s said in guild chat: %s"):format(display(name), msg))
+    else
+        ns.Print(("congrats sent to %s: %s"):format(display(name), msg))
+    end
     self:Changed()
     return true
 end
@@ -280,7 +296,8 @@ function Home:AskGrats(anchor, x, y, after)
 end
 
 -- A level-up was clicked. Returns true (sent), "asked" (the box is up: it sends once the message is in) or false.
-function Home:Grats(name, level, anchor, x, y)
+-- `guild`: said in guild chat, not whispered (the level pop-up).
+function Home:Grats(name, level, anchor, x, y, guild)
     if not name or name == ns.Sync:Me() then return false end
     if not ns.Roster.online[name] then
         ns.Print(("%s is offline"):format(display(name)))
@@ -290,8 +307,8 @@ function Home:Grats(name, level, anchor, x, y)
         ns.Print(("you already congratulated %s"):format(display(name)))
         return false
     end
-    if self:GratsMessage() then return self:SendGrats(name, level) end
-    self:AskGrats(anchor, x, y, function() self:SendGrats(name, level) end)
+    if self:GratsMessage() then return self:SendGrats(name, level, guild) end
+    self:AskGrats(anchor, x, y, function() self:SendGrats(name, level, guild) end)
     return "asked"
 end
 

@@ -8130,7 +8130,7 @@ do
     Roster:ScanGuild()
     local f = T.frame
     check(f and f:IsShown() and f.note and f.text:GetText():find("Dinger", 1, true) and f.text:GetText():find("reached level 40!", 1, true)
-        and f.sub:GetText() == "Click to send congrats" and f.icon:GetTexture() == ns.Profiles:Portrait("Dinger-Realm") and #STUB.sounds == 0
+        and f.sub:GetText() == "Click to say congrats in guild chat" and f.icon:GetTexture() == ns.Profiles:Portrait("Dinger-Realm") and #STUB.sounds == 0
         and not (M.frame and M.frame:IsShown()), "milestone: a guildie reaching 40 pops up, without a sound (the game's level-up sound read as our own, Jake)")
     check(G.feed[1].kind == "level" and G.feed[1].name == "Dinger-Realm" and G.feed[1].value == 40, "milestone: (Activity still has it)")
     -- 0.20.0 (Jake): clicking a level-up whispers them our congrats. The first time it asks what to say, with "gz" typed in.
@@ -8146,8 +8146,11 @@ do
             and not f:IsShown() and #STUB.said == said0 and not Home:Gratsed("Dinger-Realm", 40), "grats: the first click asks for a message, with gz typed in, and sends nothing yet")
         STUB.Script(pr.box, "OnEnterPressed")
         local last = STUB.said[#STUB.said]
-        check(ns.db.settings.grats == "gz" and #STUB.said == said0 + 1 and last.text == "gz" and last.type == "WHISPER" and last.target:find("Dinger", 1, true)
-            and Home:Gratsed("Dinger-Realm", 40) and not pr:IsShown(), "grats: Enter keeps it and whispers it to them")
+        -- (from the pop-up it goes to guild chat: Jake, "let's make the grats feature on popups go to guild chat")
+        check(ns.db.settings.grats == "gz" and #STUB.said == said0 + 1 and last.text == "gz" and last.type == "GUILD" and last.target == nil
+            and Home:Gratsed("Dinger-Realm", 40) and not pr:IsShown(), "grats: Enter keeps it and says it in guild chat")
+        check(STUB.printed[#STUB.printed]:find("said in guild chat", 1, true) and Home:GratsHint("Dinger-Realm", 41, true) == "Click to say in guild chat: gz"
+            and Home:GratsHint("Dinger-Realm", 40, true) == "Congrats sent", "grats: (and the pop-up's hint says where it goes)")
         STUB.printed = {}
         check(Home:Grats("Dinger-Realm", 40) == false and #STUB.said == said0 + 1 and STUB.printed[1]:find("already congratulated Dinger", 1, true)
             and Home:GratsHint("Dinger-Realm", 40) == "Congrats sent", "grats: once for a level-up")
@@ -8165,7 +8168,8 @@ do
         check(GameTooltip.shown and hinted, "grats: hovering a level-up in Activity says a click sends your message")
         STUB.Script(row, "OnLeave")
         STUB.Script(row, "OnClick", "LeftButton")
-        check(#STUB.said == said0 + 2 and STUB.said[#STUB.said].text == "gz" and Home:Gratsed("Dinger-Realm", 41) and not pr:IsShown(), "grats: clicking it sends at once, now there's a message")
+        check(#STUB.said == said0 + 2 and STUB.said[#STUB.said].text == "gz" and STUB.said[#STUB.said].type == "WHISPER" and STUB.said[#STUB.said].target:find("Dinger", 1, true)
+            and Home:Gratsed("Dinger-Realm", 41) and not pr:IsShown(), "grats: clicking it whispers them at once, now there's a message")
         row.item.value = 40
         -- only a level-up, only someone else, only someone online
         local n = #STUB.said
@@ -8187,7 +8191,14 @@ do
         local realRestricted = ns.Comm.IsRestricted
         ns.Comm.IsRestricted = function() return true end
         check(Home:Grats("Dinger-Realm", 40) == false and #STUB.said == n and not Home:Gratsed("Dinger-Realm", 40), "grats: nothing is marked sent when whispers are locked")
+        STUB.printed = {}
+        check(Home:Grats("Dinger-Realm", 40, nil, nil, nil, true) == false and #STUB.said == n and STUB.printed[1]:find("guild chat can't be sent", 1, true), "grats: (nor to guild chat)")
         ns.Comm.IsRestricted = realRestricted
+        -- the pop-up's click with a message already set: straight to guild chat
+        check(Home:Grats("Dinger-Realm", 40, nil, nil, nil, true) == true and #STUB.said == n + 1 and STUB.said[#STUB.said].type == "GUILD"
+            and STUB.said[#STUB.said].target == nil and Home:Gratsed("Dinger-Realm", 40), "grats: with a message set the pop-up says it in guild chat at once")
+        Home.gratsed = {}
+        n = #STUB.said
         -- the message: trimmed, never empty, not endless, and a bare | is doubled on the way out
         check(Home:SetGrats("   ") == false and Home:SetGrats("") == false and Home:SetGrats(nil) == false and ns.db.settings.grats == "gz", "grats: an empty message isn't kept")
         check(Home:SetGrats("  grats!  ") == true and Home:GratsMessage() == "grats!", "grats: it's trimmed")
