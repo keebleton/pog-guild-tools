@@ -171,7 +171,7 @@ launchers and plain-English steps. Read this whole file before changing anything
   `Kos:OnRecord` pops up once per mark (`Kos.told`, only one marked in the last `FRESH` 10 min, never our own). The
   spotter: PLAYER_TARGET_CHANGED, UPDATE_MOUSEOVER_UNIT and NAME_PLATE_UNIT_ADDED -> `Kos:Check(unit)`: a player whose
   `UnitName` (first, surname; secret values skipped) is on the list is called out (chat line, RAID_WARNING sound, pop-up
-  note; the note waits out combat like all notes, the chat line and sound don't), each player once per `SPOT_EVERY`
+  note; the note, chat line and sound all show in combat), each player once per `SPOT_EVERY`
   5 min. `Kos:Find` matches a whole name, or by first name when the mark or the sighting has only that. `/pog kos`
   opens the window (`PogRaidKos`, DIALOG strata like chat: two boxes and Add, the list, Add target, an Alerts check =
   `settings.kosAlerts`); `/pog kos Name Surname reason` (`Kos.Parse`: up to a comma, else the first two words are the
@@ -362,7 +362,7 @@ launchers and plain-English steps. Read this whole file before changing anything
   the highest of 20/30/40/50/60 passed. Below 60: a note in the new-group pop-up with their portrait (click opens a
   chat to say grats). 60: `PogRaidLevelBanner`, no box, a dark cloud and gold light, their portrait in a gold ring,
   the name in class colour, "LEVEL 60" in 36pt, rules that open out, sparks drifting up; it lands at scale 1.18 and
-  settles, holds 7s, fades; banners queue and wait out combat. Sound: the game's level-up (SOUNDKIT.LEVELUP or 888).
+  settles, holds 7s, fades; banners queue. No pop-up waits out combat any more (0.20.7, Jake: "theyre unintrusive"). Sound: the game's level-up (SOUNDKIT.LEVELUP or 888).
   `settings.levelToasts`; `/pog ding` previews the banner, `/pog ding 40` the small one.
 - 0.16.9 `settings.gamesOnFlight` (off by default): PLAYER_CONTROL_LOST, then a second later `UnitOnTaxi("player")`,
   opens the Games tab if the window is closed (`Games:OnControlLost`). Nothing closes on landing.

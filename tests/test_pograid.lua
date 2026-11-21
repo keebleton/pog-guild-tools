@@ -6261,12 +6261,25 @@ do
     T:Note({ text = "third", onClick = function() clicked = "third" end })
     STUB.Script(f, "OnClick", "LeftButton")
     check(clicked == "third" and not f:IsShown(), "notes: clicking one runs what it's for")
+    -- a fight doesn't hold a pop-up back (Jake: "let's not block any of these popups for combat. theyre unintrusive imo")
     STUB.combat = true
     T:Note({ text = "in a fight" })
-    check(not f:IsShown() and #T.notes == 1, "notes: nothing pops up in a fight")
+    check(f:IsShown() and f.text:GetText() == "in a fight" and #T.notes == 0, "notes: one pops up in a fight too")
+    f:Hide()
+    do
+        local now = ns.Now()
+        local rec = { id = "Fight-1-1", author = "Raider02-Realm", t = now, exp = now + 1800, what = "Deadmines" }
+        T:Consider(rec)
+        check(f:IsShown() and f.id == "Fight-1-1", "notes: and a guildie's new group")
+        f:Hide()
+        ns.db.settings.groupToasts = false
+        T:Consider({ id = "Fight-1-2", author = "Raider02-Realm", t = now, exp = now + 1800, what = "Deadmines" })
+        check(not f:IsShown(), "notes: (not with group pop-ups turned off)")
+        ns.db.settings.groupToasts = nil
+    end
     STUB.combat = false
-    STUB.Fire("PLAYER_REGEN_ENABLED")
-    check(f:IsShown() and f.text:GetText() == "in a fight", "notes: it shows when the fight ends")
+    T:Note({ text = "after" })
+    check(f:IsShown() and f.text:GetText() == "after", "notes: (and out of one)")
     for i = 1, T.MAX_NOTES + 3 do T:Note({ text = "n" .. i }) end
     check(#T.notes == T.MAX_NOTES and T.notes[1].text == "n4", "notes: only the newest few wait")
     T.notes = {}
@@ -6344,13 +6357,11 @@ do
     STUB.Script(checks[7], "OnClick")
     kudos(B, me, 9, 1)
     check(ns.db.settings.kudosToasts == true and not f:IsShown(), "kudos pop-up: and the ones missed don't pop up when it's back on")
-    -- in a fight it waits
+    -- in a fight too
     STUB.combat = true
     kudos(B, me, 7, 1)
-    check(not f:IsShown() and #T.notes == 1, "kudos pop-up: waits out a fight")
+    check(f:IsShown() and f.text:GetText():find("Great leader", 1, true) and #T.notes == 0, "kudos pop-up: shows in a fight too")
     STUB.combat = false
-    STUB.Fire("PLAYER_REGEN_ENABLED")
-    check(f:IsShown() and f.text:GetText():find("Great leader", 1, true), "kudos pop-up: then shows")
     f:Hide()
 
     -- tidy up
@@ -8290,10 +8301,8 @@ do
     check(not bn:IsShown(), "milestone: (and that one)")
     STUB.combat = true
     M:Celebrate("Sixty-Realm", 60)
-    check(not bn:IsShown() and #M.queue == 1, "milestone: a banner waits out a fight")
+    check(bn:IsShown() and #M.queue == 0 and bn.who:GetText() == "Sixty", "milestone: a banner shows in a fight too")
     STUB.combat = false
-    STUB.Fire("PLAYER_REGEN_ENABLED")
-    check(bn:IsShown() and bn.who:GetText() == "Sixty", "milestone: and shows when it ends")
     bn:Hide()
 
     -- our own: "You"

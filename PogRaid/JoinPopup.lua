@@ -159,7 +159,8 @@ function Toast:Consider(rec)
     local now = ns.Now()
     if rec.author == ns.Sync:Me() or rec.exp <= now or rec.t < now - Toast.FRESH then return end
     self.seen[rec.id] = true
-    if ns.db.settings.groupToasts == false or (InCombatLockdown and InCombatLockdown()) then return end
+    -- (in a fight too: Jake, "let's not block any of these popups for combat. theyre unintrusive imo")
+    if ns.db.settings.groupToasts == false then return end
     self:Show(rec)
 end
 
@@ -180,8 +181,8 @@ function Toast:Show(rec)
 end
 
 -- Other news in the same pop-up (a chat line, kudos): { icon, text, sub,
--- onClick }. One at a time; the rest wait their turn, and all of them wait
--- out a fight.
+-- onClick }. One at a time; the rest wait their turn. A fight doesn't hold
+-- them back (they used to wait one out, and in a battleground never showed).
 Toast.notes = {}
 Toast.MAX_NOTES = 5
 
@@ -193,7 +194,6 @@ end
 
 function Toast:NextNote()
     if not self.notes[1] or (self.frame and self.frame:IsShown()) then return end
-    if InCombatLockdown and InCombatLockdown() then return end
     if not self.frame then self:Build() end
     local f = self.frame
     local note = table.remove(self.notes, 1)
@@ -206,8 +206,6 @@ function Toast:NextNote()
     f:SetAlpha(0)
     f:Show()
 end
-
-ns.On("PLAYER_REGEN_ENABLED", function() Toast:NextNote() end)
 
 -- As wide as the text needs (between MIN_W and MAX_W); a longer first line
 -- wraps onto a second and the toast grows taller.
@@ -271,7 +269,7 @@ Milestone.LEVELS = { 20, 30, 40, 50, 60 }
 Milestone.TOP = 60                 -- this one gets the banner
 Milestone.IN, Milestone.HOLD, Milestone.OUT = 0.45, 7, 1.2 -- seconds: the banner arriving, staying, leaving
 Milestone.SPARKS = 16
-Milestone.queue = {}               -- banners waiting their turn (or for a fight to end)
+Milestone.queue = {}               -- banners waiting their turn
 local GOLD = { 1.00, 0.82, 0.20 }
 local BANNER_W, BANNER_H, LINE_W = 520, 150, 380
 
@@ -375,10 +373,9 @@ function Milestone:Build()
     self.frame = f
 end
 
--- The next banner in the queue, unless one is up or we're in a fight.
+-- The next banner in the queue, unless one is up. In a fight too, like the notes.
 function Milestone:Next()
     if not self.queue[1] or (self.frame and self.frame:IsShown()) then return end
-    if InCombatLockdown and InCombatLockdown() then return end
     if not self.frame then self:Build() end
     local f = self.frame
     local it = table.remove(self.queue, 1)
@@ -432,4 +429,3 @@ function Milestone:Dismiss()
     self:Next()
 end
 
-ns.On("PLAYER_REGEN_ENABLED", function() Milestone:Next() end)
