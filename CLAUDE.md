@@ -362,7 +362,7 @@ launchers and plain-English steps. Read this whole file before changing anything
   the highest of 20/30/40/50/60 passed. Below 60: a note in the new-group pop-up with their portrait (click opens a
   chat to say grats). 60: `PogRaidLevelBanner`, no box, a dark cloud and gold light, their portrait in a gold ring,
   the name in class colour, "LEVEL 60" in 36pt, rules that open out, sparks drifting up; it lands at scale 1.18 and
-  settles, holds 7s, fades; banners queue. Small pop-ups stack up to `GroupToast.STACK` (3) at once, oldest at the bottom (0.20.9); the tests run with STACK = 1 except the "stack:" checks. No pop-up waits out combat any more (0.20.7, Jake: "theyre unintrusive"). Sound: the game's level-up (SOUNDKIT.LEVELUP or 888).
+  settles, holds 7s, fades; banners queue. Innkeeper (a game Jake put a pin in, 2026-11) is NOT on main: it's the local branch `innkeeper` (not pushed), see its `PogRaid/Inn.lua` and tests. Profiles: every `Refresh*` part is wrapped to carry `self.memo` (0.20.10), so a part redrawn alone (the list's wheel) doesn't rebuild `Claims()` per name. Small pop-ups stack up to `GroupToast.STACK` (3) at once, oldest at the bottom (0.20.9); the tests run with STACK = 1 except the "stack:" checks. No pop-up waits out combat any more (0.20.7, Jake: "theyre unintrusive"). Sound: the game's level-up (SOUNDKIT.LEVELUP or 888).
   `settings.levelToasts`; `/pog ding` previews the banner, `/pog ding 40` the small one.
 - 0.16.9 `settings.gamesOnFlight` (off by default): PLAYER_CONTROL_LOST, then a second later `UnitOnTaxi("player")`,
   opens the Games tab if the window is closed (`Games:OnControlLost`). Nothing closes on landing.

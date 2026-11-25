@@ -236,10 +236,21 @@ local function describe(unit)
     return table.concat(parts, " ")
 end
 
+-- On our own side? Nobody on our side can be killed, so a mark that fits one of them (a name typed wrong, or
+-- someone marking a player they're cross with) calls nobody out. Jake, 0.20.10: "im getting a notification that
+-- Wally Wharf is KoS or nearby but its a gnome warrior? shouldnt be possible". Not known: not ours.
+local function ours(unit)
+    if not UnitFactionGroup then return false end
+    local theirs, mine = UnitFactionGroup(unit), UnitFactionGroup("player")
+    if not theirs or not mine or secret(theirs) or secret(mine) then return false end
+    return theirs == mine
+end
+
 -- Is this unit (target, mouseover, a nameplate) someone on the list?
 function Kos:Check(unit)
     if not self:Index().any then return end
     if not unit or not UnitExists(unit) or not UnitIsPlayer(unit) then return end
+    if ours(unit) then return end
     local first, last = UnitName(unit)
     if not first or secret(first) or secret(last) then return end
     local rec = (last and last ~= "" and self:Find(first .. " " .. last)) or self:Find(first)

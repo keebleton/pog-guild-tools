@@ -1,4 +1,10 @@
-# Pog Guild Tools 0.20.9
+# Pog Guild Tools 0.20.10
+
+- **Profiles:** scrolling the list of members no longer stutters. It was redoing a slow lookup for every member on every notch of the wheel.
+- **Kill on sight:** players on your own side are no longer called out, even if their name is on the list. You can't attack them anyway.
+- **Officers:** a guild rank with "officer" in its name now counts as an officer rank, wherever it sits in the guild's rank list. Before, only the guild master and the rank right under them counted, so officers in a guild with its ranks in another order couldn't do officer things. Ranks picked in Settings still win.
+
+New in 0.20.9:
 
 - **Pop-ups: up to three at once.** Level-ups, new groups, chat lines and kudos now stack one above the other instead of queueing up one at a time. When one goes, the rest drop down.
 

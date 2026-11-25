@@ -306,11 +306,21 @@ function Sync:OfficerRank()
     return ns.db.guild.officerRank or 1
 end
 
+-- Until the guild picks its officer ranks: the guild master, the rank under them, and any rank with "officer"
+-- in its name. A guild's ranks needn't run from the top down (Jake's has Officer below Member, so he wasn't one:
+-- "it says only an officer can take it off, but i am an officer"). Rank names are the guild master's to set and
+-- everyone reads the same ones, so every addon agrees.
+function Sync:DefaultOfficerRank(rankIndex)
+    if rankIndex <= self:OfficerRank() then return true end
+    local name = GuildControlGetRankName and GuildControlGetRankName(rankIndex + 1)
+    return type(name) == "string" and name:lower():find("officer", 1, true) ~= nil
+end
+
 -- The guild's chosen officer ranks (Settings) win over the default.
 function Sync:RankIsOfficer(rankIndex)
     local set = ns.Settings and ns.Settings:OfficerRanks()
     if set then return set[rankIndex] == true end
-    return rankIndex <= self:OfficerRank()
+    return self:DefaultOfficerRank(rankIndex)
 end
 
 function Sync:IsOfficer(name)

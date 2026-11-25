@@ -2017,6 +2017,21 @@ function Profiles:RefreshAll()
     self:RefreshKudos()
 end
 
+-- A part of the page redrawn on its own (the list on every notch of the wheel, a card when its data
+-- arrives) gets the memo too. Without it every name looked up worked out afresh who owns which alt, by
+-- reading every profile in the guild: the list did that several times for each member, on each notch
+-- (Jake, 0.20.10: "frame drops when scrolling the profile page").
+for _, part in ipairs({ "RefreshList", "RefreshBanner", "RefreshAbout", "RefreshCharacter", "RefreshProfessions", "RefreshBook", "RefreshTop", "RefreshKudos" }) do
+    local draw = Profiles[part]
+    Profiles[part] = function(self, ...)
+        if self.memo then return draw(self, ...) end
+        self.memo = {}
+        local ok, err = pcall(draw, self, ...)
+        self.memo = nil -- (whatever happened: a memo left behind would show the guild as it was then, for good)
+        if not ok then error(err, 0) end
+    end
+end
+
 ------------------------------------------------------------------------
 -- Events, timer, tab
 ------------------------------------------------------------------------

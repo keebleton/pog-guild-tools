@@ -2614,6 +2614,36 @@ do
     check(ns.Sync:IsOfficer("Raider03-Realm") and ns.Sync:Store("config").officers.ranks == "0,1,2", "officers: an officer adds a rank")
     STUB.Script(ranks[3], "OnClick")
     check(not ns.Sync:IsOfficer("Raider03-Realm"), "officers: and removes it")
+    -- a guild's ranks needn't run from the top down: until the guild chooses, a rank called Officer is one wherever
+    -- it sits (Jake: "it says only an officer can take it off, but i am an officer". His guild: Member above Officer)
+    do
+        local store = ns.Sync:Store("config")
+        local keep, keepRanks = store.officers, STUB.ranks
+        store.officers = nil
+        STUB.ranks = { "Guild Master", "Veteran", "Member", "Officer", "Initiate", "Senior officers" }
+        local S = ns.Sync
+        check(S:RankIsOfficer(0) and S:RankIsOfficer(1) and not S:RankIsOfficer(2) and S:RankIsOfficer(3) and not S:RankIsOfficer(4) and S:RankIsOfficer(5)
+            and not S:RankIsOfficer(9), "officers: until the guild chooses, a rank with officer in its name counts, wherever it sits")
+        local me = ns.db.guild.players[S:Me()]
+        local myRank = me.rankIndex
+        me.rankIndex = 3
+        check(S:AmOfficer() and S:IsOfficer(S:Me()), "officers: so someone of that rank is one")
+        me.rankIndex = 2
+        check(not S:AmOfficer(), "officers: (and a Member above them isn't)")
+        me.rankIndex = 3
+        Settings:Refresh()
+        check(ranks[1].checked and ranks[2].checked and not ranks[3].checked and ranks[4].checked and not ranks[5].checked and ranks[6].checked,
+            "officers: Settings ticks the same ranks")
+        -- the first choice starts from those, and from then on the choice is the whole of it
+        STUB.Script(ranks[3], "OnClick")
+        check(store.officers.ranks == "0,1,2,3,5", "officers: the first change keeps the ranks that counted")
+        Settings:SetOfficerRank(5, false)
+        check(store.officers.ranks == "0,1,2,3" and not S:RankIsOfficer(5), "officers: and once chosen, a rank's name counts for nothing")
+        me.rankIndex = myRank
+        store.officers, STUB.ranks = keep, keepRanks
+        ns.Sync.index = nil
+        Settings:Refresh()
+    end
     check(not ns.Sync:Apply(ns.Sync.collections.config, { id = "officers", rev = ns.Now() + 99, by = "Raider03-Realm",
         author = "Raider03-Realm", t = ns.Now(), ranks = "0,1,2,3" }), "officers: a non-officer can't change them")
     -- forged records (0.16.1): any guildie's addon can relay a record claiming any "by"
@@ -3341,6 +3371,38 @@ do
     P.searchBox:SetText("raider20")
     STUB.Script(P.searchBox, "OnTextChanged")
     check(not rows[1]:IsShown() and P.list.empty:GetText() == "Nobody with Pog Guild Tools matches.", "list: searching someone without it")
+    -- scrolling the list doesn't work out who owns which alt over and over (Jake: "frame drops when scrolling the profile page")
+    do
+        local search = P.search
+        P.search = ""
+        -- (how often the whole guild's profiles are read through to see who owns which alt)
+        local realClaims, built = P.Claims, 0
+        P.Claims = function(self, ...)
+            if not (self.memo and self.memo.__claims) then built = built + 1 end
+            return realClaims(self, ...)
+        end
+        STUB.Script(P.list, "OnMouseWheel", -1)
+        local wheel = built
+        built = 0
+        P:Refresh()
+        local whole = built
+        built = 0
+        P:RefreshCharacter()
+        P:RefreshKudos()
+        P:RefreshBanner()
+        local cards = built
+        P.Claims = realClaims
+        check(P.memo == nil and wheel == 1 and whole == 1 and cards <= 3, "list: a notch of the wheel reads the guild's profiles through once, not once a name ("
+            .. wheel .. ", whole page " .. whole .. ", three cards " .. cards .. ")")
+        -- and a redraw that goes wrong doesn't leave its memo behind
+        local realMembers = P.Members
+        P.Members = function() error("broken") end
+        local ok = pcall(P.RefreshList, P)
+        P.Members = realMembers
+        check(not ok and P.memo == nil, "list: (a redraw that fails leaves no memo behind)")
+        P.search = search
+        P:Refresh()
+    end
     STUB.printed = {}
     P:Open("Raider20-Realm")
     check(P.viewing == "Raider03-Realm" and printedContains("doesn't have Pog Guild Tools yet"), "page: no profile without Pog Raid")
@@ -9404,6 +9466,33 @@ do
     STUB.Fire("NAME_PLATE_UNIT_ADDED", "nameplate4")
     STUB.Fire("NAME_PLATE_UNIT_ADDED", "nameplate5")
     check(#STUB.printed == 0, "kos: creatures and players who aren't on the list are left alone")
+    -- someone on our own side can't be killed, so a mark that fits them calls nobody out (Jake: "Wally Wharf is KoS
+    -- or nearby but its a gnome warrior? shouldnt be possible")
+    do
+        local n = 0
+        for _ in pairs(Kos.guids) do n = n + 1 end
+        Kos.spotted["grom hellscream"] = nil
+        STUB.sounds = {}
+        STUB.units.nameplate6 = { first = "Grom", last = "Hellscream", level = 34, race = "Gnome", class = "Warrior", faction = "Alliance", guid = "Player-1-GNOME" }
+        STUB.Fire("NAME_PLATE_UNIT_ADDED", "nameplate6")
+        local m = 0
+        for _ in pairs(Kos.guids) do m = m + 1 end
+        check(#STUB.printed == 0 and #STUB.sounds == 0 and not f:IsShown() and Kos.spotted["grom hellscream"] == nil and m == n and Kos.guids["Player-1-GNOME"] == nil,
+            "kos: a player on our own side with a marked name isn't called out")
+        STUB.units.nameplate6.faction = "Horde"
+        STUB.Fire("NAME_PLATE_UNIT_ADDED", "nameplate6")
+        check(#STUB.printed == 1 and f:IsShown() and Kos.guids["Player-1-GNOME"] == "grom hellscream", "kos: (the other side's is)")
+        f:Hide()
+        STUB.printed = {}
+        Kos.spotted["grom hellscream"] = nil
+        STUB.units.nameplate6.faction = nil
+        STUB.Fire("NAME_PLATE_UNIT_ADDED", "nameplate6")
+        check(#STUB.printed == 1, "kos: (and one whose side the game doesn't say)")
+        f:Hide()
+        STUB.printed = {}
+        Kos.guids["Player-1-GNOME"] = nil
+        STUB.units.nameplate6 = nil
+    end
     ns.db.settings.kosAlerts = false
     STUB.units.nameplate4.npc = nil
     STUB.Fire("NAME_PLATE_UNIT_ADDED", "nameplate4")

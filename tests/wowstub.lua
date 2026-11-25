@@ -642,6 +642,12 @@ do
     local guild = GetGuildInfo
     function GetGuildInfo(unit) local u = STUB.units[unit] if u then return u.guild end return guild(unit) end
 end
+-- which side a unit is on: we're Alliance, another unit is what it says (u.faction), or isn't known
+function UnitFactionGroup(unit)
+    if unit == "player" then return STUB.faction or "Alliance" end
+    local u = STUB.units[unit]
+    return u and u.faction
+end
 -- whose GUID is this? STUB.guids[guid] = name
 STUB.guids = {}
 function GetPlayerInfoByGUID(guid)

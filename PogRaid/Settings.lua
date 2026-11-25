@@ -52,7 +52,15 @@ end
 
 function Settings:SetOfficerRank(index, on)
     if not ns.Sync:AmOfficer() or index == 0 then return end
-    local set = self:OfficerRanks() or { [0] = true, [1] = true }
+    local set = self:OfficerRanks()
+    if not set then
+        -- (the first choice starts from the ranks that count until one is made)
+        set = {}
+        local numRanks = GuildControlGetNumRanks and GuildControlGetNumRanks() or 2
+        for i = 0, math.max(numRanks, 2) - 1 do
+            if ns.Sync:DefaultOfficerRank(i) then set[i] = true end
+        end
+    end
     set[index] = on or nil
     set[0] = true
     local list = {}
@@ -225,9 +233,7 @@ function Settings:Build(page)
 end
 
 function Settings:IsOfficerRank(index)
-    local set = self:OfficerRanks()
-    if set then return set[index] == true end
-    return index <= ns.Sync:OfficerRank()
+    return ns.Sync:RankIsOfficer(index)
 end
 
 function Settings:Changed()
